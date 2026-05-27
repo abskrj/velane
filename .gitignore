@@ -1,0 +1,21 @@
+# Go
+services/control-plane/vendor/
+*.test
+*.out
+
+# Docker
+.docker/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp

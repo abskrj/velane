@@ -1,0 +1,223 @@
+# Runeforge — Build Phases
+
+This document tracks the phased implementation plan for Runeforge. Each phase delivers a working, shippable increment. Phases build on each other — complete Phase N before starting Phase N+1.
+
+---
+
+## Phase 1 — Core Runtime (complete)
+
+**Goal:** A fully runnable local stack that can execute code snippets synchronously.
+
+### Delivered
+- Go control plane HTTP API (chi router)
+- Postgres schema with auto-applied migrations
+- API key authentication (prefix lookup + bcrypt, `invoke` / `manage` / `admin` scopes)
+- Snippet CRUD — create, list, get, delete
+- Versioned deployments — each publish creates an immutable numbered version
+- `dev` and `prod` environments per snippet
+- Sync invocation: `POST /v1/invoke/{tenant}/{snippet}` → blocks until result
+- ProcessExecutor — HTTP bridge to per-language executor containers (Bun, Python)
+- Executor runtimes — Bun (`runner.ts`) and Python (`runner.py`) as persistent HTTP servers
+- Tenant isolation enforced on every read and invocation
+- Full test suite: 28 unit tests (zero deps) + integration tests (require `TEST_DATABASE_URL`)
+- `docker-compose.yml` for local development
+
+### Stack
+- Control plane: Go 1.22, chi, pgx/v5, zap
+- Runtimes: Bun 1.1, Python 3.12 + FastAPI
+- Storage: Postgres 16
+- Infrastructure: Docker Compose (local), Kubernetes + Terraform (production path)
+
+---
+
+## Phase 2 — Async, Streaming & Warm Pool
+
+**Goal:** Support long-running and streaming snippets at scale; eliminate cold-start penalty for hot snippets.
+
+### Scope
+- **Async invocation** — `X-Invoke-Mode: async` returns `202 { invocation_id }` immediately; snippet runs in background
+- **Async polling** — `GET /v1/invocations/{id}` already exists; Phase 2 adds webhook delivery on completion (`callback_url` in invoke body)
+- **Streaming invocation** — `X-Invoke-Mode: stream` returns `text/event-stream`; snippet yields chunks via `yield` (Python) or async generator (Bun)
+- **Redis job queue** — async jobs enqueued to Redis, worker pool dequeues and dispatches to executor
+- **Warm pool manager** — K8s Deployment per language; tenant-configurable `min_instances` per snippet; slot claim/release via Redis atomic ops
+- **Version pinning** — callers can specify `?version=v3` to invoke a pinned version instead of the active one
+
+### New API surface
+```
+POST /v1/invoke/{tenant}/{snippet}
+  X-Invoke-Mode: async    → 202 { invocation_id, status_url }
+  X-Invoke-Mode: stream   → 200 text/event-stream
+  Body: { ..., callback_url?: string }  (async only)
+```
+
+### New infrastructure
+- Redis (added to docker-compose and Terraform)
+- Worker service (Go) — pulls from Redis queue, dispatches to executor, updates invocation record, fires webhook
+- `SnippetEnvironment.min_instances` — warm pool manager watches this and maintains ready slots
+
+---
+
+## Phase 3 — Staging, Canary & Secrets
+
+**Goal:** Full three-environment promotion flow with safe traffic-splitting and secret injection.
+
+### Scope
+- **Staging environment** — third env (`dev` → `staging` → `prod`); `POST /v1/snippets/{id}/versions/{num}/publish?env=staging`
+- **Canary traffic splitting** — `POST /v1/snippets/{id}/canary` sets `{ version_id, percent }` on the prod environment; Traffic Router sends X% to canary version, 100-X% to stable
+- **Rollback** — re-publish any archived version to instantly swap active version
+- **Secrets manager** — `POST /v1/secrets` to store encrypted key-value pairs; injected as env vars at invocation time; never returned in API responses
+- **Egress policy engine** — per-tenant IP/CIDR blocklist enforced via iptables inside executor net namespace; default blocks `169.254.0.0/16`, RFC1918 ranges, and configurable domain sinkhole
+
+### New API surface
+```
+POST   /v1/secrets                    → create secret (manage scope)
+GET    /v1/secrets                    → list secret names (never values)
+DELETE /v1/secrets/{id}              → delete secret
+
+POST   /v1/snippets/{id}/canary       → set canary { version_id, percent }
+DELETE /v1/snippets/{id}/canary       → remove canary (full traffic to active)
+
+GET    /v1/tenants/{slug}/egress      → get egress policy
+PUT    /v1/tenants/{slug}/egress      → update egress policy (admin scope)
+```
+
+### New data model
+```sql
+secrets (id, tenant_id, snippet_id nullable, name, value_encrypted, environments[])
+snippet_environments.canary_version_id
+snippet_environments.canary_pct
+```
+
+---
+
+## Phase 4 — Developer Surfaces
+
+**Goal:** Give engineers three ways to write and deploy snippets: Web IDE, CLI, and Git push-to-deploy.
+
+### Scope
+- **Web IDE** — Monaco editor in React; syntax highlighting for Bun/Python; inline error display; test-invoke panel; version history sidebar; publish button with env selector
+- **CLI tool** (`runeforge` binary, distributed via npm and Homebrew)
+  ```
+  runeforge login               # authenticate, store key in system keychain
+  runeforge snippets list
+  runeforge snippets push <file>  # create/update draft, optionally publish
+  runeforge invoke <slug> [--env prod] [--input '{}']
+  runeforge logs <slug>
+  ```
+- **Git webhook integration** — connect a GitHub/GitLab repo; push to `main` → deploy to `staging`; push a tag (`v*`) → deploy to `prod`; PR branch → deploy to `dev` (preview env)
+
+### New services
+- `web-ide/` — Vite + React SPA, deployed to `app.runeforge.io`
+- `cli/` — Go CLI (cobra), distributed as single binary
+- Webhook receiver endpoint on control plane: `POST /v1/webhooks/git`
+
+---
+
+## Phase 5 — Observability
+
+**Goal:** Give engineers full visibility into every invocation — logs, metrics, and replay.
+
+### Scope
+- **Structured logs** — stdout/stderr captured per invocation, stored in S3-compatible store (MinIO locally), queryable via API with filters (snippet, env, status, time range)
+- **Metrics** — per-invocation row written to ClickHouse: `duration_ms`, `peak_memory_mb`, `cpu_ms`, `status`; aggregated into p50/p95/p99 per snippet
+- **Metrics API** — `GET /v1/metrics/snippets/{id}?window=1h|24h|7d` returns time-series and aggregates
+- **Log query API** — `GET /v1/logs/snippets/{id}?limit=50&status=failed`
+- **Replay** — `POST /v1/invocations/{id}/replay` re-runs with the same input payload; requires `input_ref` stored in S3 (opt-in per tenant for privacy)
+- **Multi-tenant namespace provider** — pluggable `TenantProvider` interface; ships `SharedTenantProvider` (default) and `NamespacedTenantProvider` (dedicated K8s namespace + NetworkPolicy + ResourceQuota per tenant)
+
+### New infrastructure
+- ClickHouse (added to docker-compose and Terraform)
+- MinIO / S3 bucket (log and replay payload storage)
+- `ObservabilityWorker` — async goroutine pool that ships log lines and metrics rows after each invocation
+
+---
+
+## Phase 6 — MCP Server (Cursor / Claude Code Integration)
+
+**Goal:** Let engineers connect Cursor, Claude Code, or any MCP-compatible AI agent directly to Runeforge to generate and deploy snippets without leaving their IDE.
+
+### Scope
+- **MCP server** — Go service implementing the Model Context Protocol; two transports:
+  - HTTP/SSE hosted at `/mcp` (zero install — add URL to IDE config)
+  - stdio via `npx @runeforge/mcp` (for IDEs that only support stdio)
+- **10 MCP tools** exposed:
+
+| Tool | Scope needed |
+|------|-------------|
+| `list_snippets` | invoke |
+| `get_snippet` | invoke |
+| `create_snippet` | manage |
+| `update_draft` | manage |
+| `publish_snippet` | manage |
+| `invoke_snippet` | invoke |
+| `get_logs` | invoke |
+| `list_secrets` | manage |
+| `set_secret` | manage |
+| `get_metrics` | invoke |
+
+### Developer setup (after this phase ships)
+```json
+// .cursor/mcp.json or ~/.claude/mcp.json
+{
+  "mcpServers": {
+    "runeforge": {
+      "url": "https://api.runeforge.io/mcp",
+      "headers": { "Authorization": "Bearer rf_xxxx" }
+    }
+  }
+}
+```
+
+### New services
+- `services/mcp-server/` — Go service, thin wrapper over control plane API
+
+---
+
+## Phase 7 — Embeddable Dashboard
+
+**Goal:** Let any org embed a white-label snippet browser directly into their own portal via a single `<iframe>` tag.
+
+### Scope
+- **Embed token API** — `POST /v1/embed/tokens` issues short-lived, read-only tokens scoped to a tenant (optionally to specific snippet IDs)
+- **Embed app** — React SPA served from `embed.runeforge.io`:
+  - Snippet list with search, language filter, env filter
+  - Snippet detail: code viewer (Monaco, read-only), version sidebar, env status badges, recent invocations summary, p95 latency badge
+  - Environment switcher (dev / staging / prod)
+- **White-label theming** — theme via URL params (`?theme=dark&accent=6366f1`) or persisted branding config per tenant (`logo_url`, `accent_color`, `font_family`)
+- **iframe security** — embed subdomain uses `Content-Security-Policy: frame-ancestors *`; main app keeps `frame-ancestors 'none'`
+
+### Integration (one line for orgs)
+```html
+<iframe src="https://embed.runeforge.io?token=et_xxxx" width="100%" height="700" frameborder="0" />
+```
+
+### New services
+- `services/embed-dashboard/` — Vite + React, deployed to `embed.runeforge.io`
+
+---
+
+## Phase 8 — Hardening & Advanced Features
+
+**Goal:** Production-grade security hardening, full schema-driven API docs, and enterprise auth.
+
+### Scope
+- **Firecracker executor plugin** — pluggable `Executor` interface implementation using AWS Firecracker microVMs; VM-boundary isolation; snapshot/restore for sub-50ms warm starts; requires KVM (bare metal or metal EC2 instances)
+- **OpenAPI spec generation** — at publish time, extract Zod / Pydantic schemas and emit a full OpenAPI 3.1 spec for the snippet's invoke endpoint; expose at `GET /v1/snippets/{id}/openapi.json`
+- **JWT auth** — RS256 JWTs as an alternative to API keys; short-lived (15min) + refresh tokens; intended for Web IDE sessions and user-facing callers
+- **Seccomp profiles** — production-grade syscall allowlist for the ProcessExecutor; block `ptrace`, `mount`, `clone(CLONE_NEWUSER)`, `perf_event_open`, etc.
+- **Audit log** — append-only log of all management actions (publish, secret create, egress change) per tenant; queryable by admin
+
+---
+
+## Summary
+
+| Phase | Theme | Key deliverable |
+|-------|-------|----------------|
+| 1 | Core Runtime | Sync invocation, API keys, Postgres, docker-compose |
+| 2 | Scale | Async + streaming, Redis queue, warm pool |
+| 3 | Safety | Staging, canary, secrets, egress policy |
+| 4 | DX | Web IDE, CLI, git push-to-deploy |
+| 5 | Visibility | Logs, metrics, replay, multi-tenant K8s |
+| 6 | AI Integration | MCP server (Cursor / Claude Code) |
+| 7 | Embedding | iframe dashboard, embed tokens, white-label |
+| 8 | Hardening | Firecracker, OpenAPI gen, JWT, seccomp, audit log |

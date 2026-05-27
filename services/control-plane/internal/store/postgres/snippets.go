@@ -1,0 +1,122 @@
+package postgres
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/runeforge/control-plane/internal/models"
+)
+
+// CreateSnippet inserts a new snippet and ensures dev/prod environment rows
+// exist for it (with no active version yet).
+func (s *Store) CreateSnippet(ctx context.Context, tenantID, name, slug, language, createdBy string) (*models.Snippet, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	row := tx.QueryRow(ctx,
+		`INSERT INTO snippets (tenant_id, name, slug, language, created_by)
+		 VALUES ($1, $2, $3, $4, $5)
+		 RETURNING id, tenant_id, name, slug, language, created_at, created_by`,
+		tenantID, name, slug, language, createdBy,
+	)
+
+	var sn models.Snippet
+	if err := row.Scan(&sn.ID, &sn.TenantID, &sn.Name, &sn.Slug, &sn.Language, &sn.CreatedAt, &sn.CreatedBy); err != nil {
+		return nil, fmt.Errorf("CreateSnippet scan: %w", err)
+	}
+
+	// Seed environment rows for dev and prod.
+	for _, env := range []string{"dev", "prod"} {
+		_, err := tx.Exec(ctx,
+			`INSERT INTO snippet_environments (snippet_id, env)
+			 VALUES ($1, $2)
+			 ON CONFLICT DO NOTHING`,
+			sn.ID, env,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("seed env %s: %w", env, err)
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("commit: %w", err)
+	}
+
+	return &sn, nil
+}
+
+// GetSnippetByID retrieves a snippet by its primary key.
+func (s *Store) GetSnippetByID(ctx context.Context, id string) (*models.Snippet, error) {
+	row := s.pool.QueryRow(ctx,
+		`SELECT id, tenant_id, name, slug, language, created_at, created_by
+		 FROM snippets WHERE id = $1`,
+		id,
+	)
+	return scanSnippet(row)
+}
+
+// GetSnippetBySlug retrieves a snippet by tenant + slug.
+func (s *Store) GetSnippetBySlug(ctx context.Context, tenantID, slug string) (*models.Snippet, error) {
+	row := s.pool.QueryRow(ctx,
+		`SELECT id, tenant_id, name, slug, language, created_at, created_by
+		 FROM snippets WHERE tenant_id = $1 AND slug = $2`,
+		tenantID, slug,
+	)
+	return scanSnippet(row)
+}
+
+// ListSnippets returns all snippets belonging to a tenant.
+func (s *Store) ListSnippets(ctx context.Context, tenantID string) ([]*models.Snippet, error) {
+	rows, err := s.pool.Query(ctx,
+		`SELECT id, tenant_id, name, slug, language, created_at, created_by
+		 FROM snippets WHERE tenant_id = $1
+		 ORDER BY created_at DESC`,
+		tenantID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("ListSnippets query: %w", err)
+	}
+	defer rows.Close()
+
+	var snippets []*models.Snippet
+	for rows.Next() {
+		sn, err := scanSnippet(rows)
+		if err != nil {
+			return nil, err
+		}
+		snippets = append(snippets, sn)
+	}
+	return snippets, rows.Err()
+}
+
+// DeleteSnippet removes a snippet (cascades to versions, environments,
+// invocations via FK).
+func (s *Store) DeleteSnippet(ctx context.Context, id string) error {
+	_, err := s.pool.Exec(ctx, `DELETE FROM snippets WHERE id = $1`, id)
+	return err
+}
+
+// GetSnippetEnvironment retrieves the environment record for a snippet+env pair.
+func (s *Store) GetSnippetEnvironment(ctx context.Context, snippetID, env string) (*models.SnippetEnvironment, error) {
+	row := s.pool.QueryRow(ctx,
+		`SELECT snippet_id, env, active_version_id, min_instances
+		 FROM snippet_environments WHERE snippet_id = $1 AND env = $2`,
+		snippetID, env,
+	)
+	var se models.SnippetEnvironment
+	if err := row.Scan(&se.SnippetID, &se.Env, &se.ActiveVersionID, &se.MinInstances); err != nil {
+		return nil, fmt.Errorf("GetSnippetEnvironment scan: %w", err)
+	}
+	return &se, nil
+}
+
+func scanSnippet(s scannable) (*models.Snippet, error) {
+	var sn models.Snippet
+	if err := s.Scan(&sn.ID, &sn.TenantID, &sn.Name, &sn.Slug, &sn.Language, &sn.CreatedAt, &sn.CreatedBy); err != nil {
+		return nil, fmt.Errorf("scanSnippet: %w", err)
+	}
+	return &sn, nil
+}

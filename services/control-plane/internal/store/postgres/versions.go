@@ -1,0 +1,176 @@
+package postgres
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/runeforge/control-plane/internal/models"
+)
+
+// CreateVersion inserts a new snippet version. The version number is
+// auto-assigned as max(version_number)+1 for the snippet.
+func (s *Store) CreateVersion(ctx context.Context, snippetID, code, inputSchema, outputSchema, createdBy string, timeoutMs, maxMemoryMB, maxCPUPercent int) (*models.SnippetVersion, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	// Determine next version number atomically.
+	var nextNum int
+	err = tx.QueryRow(ctx,
+		`SELECT COALESCE(MAX(version_number), 0) + 1 FROM snippet_versions WHERE snippet_id = $1`,
+		snippetID,
+	).Scan(&nextNum)
+	if err != nil {
+		return nil, fmt.Errorf("compute version number: %w", err)
+	}
+
+	row := tx.QueryRow(ctx,
+		`INSERT INTO snippet_versions
+		   (snippet_id, version_number, code, input_schema, output_schema, timeout_ms, max_memory_mb, max_cpu_percent, created_by)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		 RETURNING id, snippet_id, version_number, code, input_schema, output_schema,
+		           timeout_ms, max_memory_mb, max_cpu_percent, status, created_at, created_by`,
+		snippetID, nextNum, code, inputSchema, outputSchema, timeoutMs, maxMemoryMB, maxCPUPercent, createdBy,
+	)
+
+	v, err := scanVersion(row)
+	if err != nil {
+		return nil, fmt.Errorf("CreateVersion scan: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("commit: %w", err)
+	}
+
+	return v, nil
+}
+
+// GetVersion retrieves a version by its primary key.
+func (s *Store) GetVersion(ctx context.Context, id string) (*models.SnippetVersion, error) {
+	row := s.pool.QueryRow(ctx,
+		`SELECT id, snippet_id, version_number, code, input_schema, output_schema,
+		        timeout_ms, max_memory_mb, max_cpu_percent, status, created_at, created_by
+		 FROM snippet_versions WHERE id = $1`,
+		id,
+	)
+	v, err := scanVersion(row)
+	if err != nil {
+		return nil, fmt.Errorf("GetVersion: %w", err)
+	}
+	return v, nil
+}
+
+// GetVersionByNumber retrieves a version by snippet ID + human-readable number.
+func (s *Store) GetVersionByNumber(ctx context.Context, snippetID string, num int) (*models.SnippetVersion, error) {
+	row := s.pool.QueryRow(ctx,
+		`SELECT id, snippet_id, version_number, code, input_schema, output_schema,
+		        timeout_ms, max_memory_mb, max_cpu_percent, status, created_at, created_by
+		 FROM snippet_versions WHERE snippet_id = $1 AND version_number = $2`,
+		snippetID, num,
+	)
+	v, err := scanVersion(row)
+	if err != nil {
+		return nil, fmt.Errorf("GetVersionByNumber: %w", err)
+	}
+	return v, nil
+}
+
+// ListVersions returns all versions for a snippet ordered by version_number.
+func (s *Store) ListVersions(ctx context.Context, snippetID string) ([]*models.SnippetVersion, error) {
+	rows, err := s.pool.Query(ctx,
+		`SELECT id, snippet_id, version_number, code, input_schema, output_schema,
+		        timeout_ms, max_memory_mb, max_cpu_percent, status, created_at, created_by
+		 FROM snippet_versions WHERE snippet_id = $1
+		 ORDER BY version_number ASC`,
+		snippetID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("ListVersions query: %w", err)
+	}
+	defer rows.Close()
+
+	var versions []*models.SnippetVersion
+	for rows.Next() {
+		v, err := scanVersion(rows)
+		if err != nil {
+			return nil, err
+		}
+		versions = append(versions, v)
+	}
+	return versions, rows.Err()
+}
+
+// PublishVersion sets a version's status to "published" and updates the
+// snippet_environments row for the given env to point at this version.
+// Previously published versions for the same snippet are archived.
+func (s *Store) PublishVersion(ctx context.Context, versionID, env string) (*models.SnippetVersion, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	// Fetch the version to get its snippet_id.
+	row := tx.QueryRow(ctx,
+		`SELECT id, snippet_id, version_number, code, input_schema, output_schema,
+		        timeout_ms, max_memory_mb, max_cpu_percent, status, created_at, created_by
+		 FROM snippet_versions WHERE id = $1`,
+		versionID,
+	)
+	v, err := scanVersion(row)
+	if err != nil {
+		return nil, fmt.Errorf("PublishVersion fetch: %w", err)
+	}
+
+	// Archive any currently published version for this snippet (in any env).
+	_, err = tx.Exec(ctx,
+		`UPDATE snippet_versions SET status = 'archived'
+		 WHERE snippet_id = $1 AND status = 'published' AND id != $2`,
+		v.SnippetID, versionID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("archive old versions: %w", err)
+	}
+
+	// Publish the target version.
+	_, err = tx.Exec(ctx,
+		`UPDATE snippet_versions SET status = 'published' WHERE id = $1`,
+		versionID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("publish version: %w", err)
+	}
+
+	// Update the environment pointer.
+	_, err = tx.Exec(ctx,
+		`INSERT INTO snippet_environments (snippet_id, env, active_version_id)
+		 VALUES ($1, $2, $3)
+		 ON CONFLICT (snippet_id, env) DO UPDATE SET active_version_id = EXCLUDED.active_version_id`,
+		v.SnippetID, env, versionID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("update env pointer: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("commit: %w", err)
+	}
+
+	v.Status = models.StatusPublished
+	return v, nil
+}
+
+func scanVersion(s scannable) (*models.SnippetVersion, error) {
+	var v models.SnippetVersion
+	if err := s.Scan(
+		&v.ID, &v.SnippetID, &v.VersionNumber, &v.Code,
+		&v.InputSchema, &v.OutputSchema,
+		&v.TimeoutMs, &v.MaxMemoryMB, &v.MaxCPUPercent,
+		&v.Status, &v.CreatedAt, &v.CreatedBy,
+	); err != nil {
+		return nil, err
+	}
+	return &v, nil
+}

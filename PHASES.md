@@ -32,7 +32,7 @@ This document tracks the phased implementation plan for Runeforge. Each phase de
 
 ---
 
-## Phase 2 — Async, Streaming & Warm Pool
+## Phase 2 — Async, Streaming & Warm Pool (complete)
 
 **Goal:** Support long-running and streaming snippets at scale; eliminate cold-start penalty for hot snippets.
 
@@ -62,7 +62,7 @@ POST /v1/invoke/{tenant}/{snippet}
 
 ---
 
-## Phase 3 — Staging, Canary & Secrets
+## Phase 3 — Staging, Canary & Secrets (complete)
 
 **Goal:** Full three-environment promotion flow with safe traffic-splitting and secret injection.
 
@@ -98,7 +98,7 @@ snippet_environments.canary_pct
 
 ---
 
-## Phase 4 — Developer Surfaces
+## Phase 4 — Developer Surfaces (complete)
 
 **Goal:** Give engineers three ways to write and deploy snippets: Web IDE, CLI, and Git push-to-deploy.
 
@@ -205,7 +205,7 @@ snippet_environments.canary_pct
 
 ---
 
-## Phase 7 — Embeddable Dashboard
+## Phase 7 — Embeddable Dashboard (complete)
 
 **Goal:** Let any org embed a white-label snippet browser directly into their own portal via a single `<iframe>` tag.
 

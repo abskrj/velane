@@ -27,6 +27,8 @@ func NewRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logge
 	versionsH := handlers.NewVersionsHandler(store, log)
 	invocationsH := handlers.NewInvocationsHandler(store, sched, log)
 	secretsH := handlers.NewSecretsHandler(store, log, encKey)
+	gitIntH := handlers.NewGitIntegrationHandler(store, log)
+	webhookH := handlers.NewWebhookHandler(store, sched, log)
 
 	// Health check — no auth.
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -82,6 +84,14 @@ func NewRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logge
 		r.With(middleware.RequireScope("manage", log)).
 			Delete("/v1/secrets/{secretID}", secretsH.DeleteSecret)
 
+		// Git integrations.
+		r.With(middleware.RequireScope("manage", log)).
+			Post("/v1/snippets/{snippetID}/git-integration", gitIntH.Create)
+		r.With(middleware.RequireScope("manage", log)).
+			Get("/v1/snippets/{snippetID}/git-integration", gitIntH.Get)
+		r.With(middleware.RequireScope("manage", log)).
+			Delete("/v1/snippets/{snippetID}/git-integration", gitIntH.Delete)
+
 		// Invocation detail lookup.
 		r.Get("/v1/invocations/{id}", invocationsH.GetInvocation)
 	})
@@ -90,6 +100,9 @@ func NewRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logge
 	// It is registered outside the auth middleware group because it uses
 	// path-based tenant routing that differs from the standard Bearer flow.
 	r.Post("/v1/invoke/{tenantSlug}/{snippetSlug}", invocationsH.Invoke)
+
+	// Git webhook endpoint — no auth middleware; HMAC signature is verified inline.
+	r.Post("/v1/webhooks/git/{snippetID}", webhookH.GitWebhook)
 
 	return r
 }

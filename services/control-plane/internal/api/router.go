@@ -7,13 +7,14 @@ import (
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/runeforge/control-plane/internal/api/handlers"
 	"github.com/runeforge/control-plane/internal/api/middleware"
+	"github.com/runeforge/control-plane/internal/auth"
 	"github.com/runeforge/control-plane/internal/scheduler"
 	"github.com/runeforge/control-plane/internal/store/postgres"
 	"go.uber.org/zap"
 )
 
 // NewRouter builds and returns the fully configured chi router.
-func NewRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logger, encKey []byte) http.Handler {
+func NewRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logger, encKey []byte, authProvider auth.Provider) http.Handler {
 	r := chi.NewRouter()
 
 	// Global middleware.
@@ -33,6 +34,11 @@ func NewRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logge
 	metricsH := handlers.NewMetricsHandler(store, log)
 	replayH := handlers.NewReplayHandler(store, sched, log)
 	embedH := handlers.NewEmbedHandler(store, log)
+	adminAuthH := handlers.NewAdminAuthHandler(authProvider, store, log)
+	brandingH := handlers.NewBrandingHandler(store, log)
+	membersH := handlers.NewMembersHandler(store, log)
+	usageH := handlers.NewUsageHandler(store, log)
+	apikeysH := handlers.NewAPIKeysHandler(store, log)
 
 	// Health check — no auth.
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -45,6 +51,13 @@ func NewRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logge
 	// See handler comment for production guidance.
 	r.Post("/v1/tenants", tenantsH.CreateTenant)
 
+	// Admin auth — no API key required, session-based.
+	r.Post("/v1/admin/auth/register", adminAuthH.Register)
+	r.Post("/v1/admin/auth/login", adminAuthH.Login)
+	r.Post("/v1/admin/auth/logout", adminAuthH.Logout)
+	r.With(middleware.SessionAuth(authProvider, log)).
+		Get("/v1/admin/auth/me", adminAuthH.Me)
+
 	// Authenticated routes.
 	r.Group(func(r chi.Router) {
 		authMw := middleware.Auth(store, log)
@@ -53,11 +66,34 @@ func NewRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logge
 		// API key management — requires admin scope.
 		r.With(middleware.RequireScope("admin", log)).
 			Post("/v1/tenants/{tenantSlug}/api-keys", tenantsH.CreateAPIKey)
+		r.With(middleware.RequireScope("admin", log)).
+			Get("/v1/tenants/{tenantSlug}/api-keys", apikeysH.ListAPIKeys)
+		r.With(middleware.RequireScope("admin", log)).
+			Delete("/v1/tenants/{tenantSlug}/api-keys/{keyID}", apikeysH.DeleteAPIKey)
 
 		// Egress policy.
 		r.Get("/v1/tenants/{tenantSlug}/egress", tenantsH.GetEgressPolicy)
 		r.With(middleware.RequireScope("admin", log)).
 			Put("/v1/tenants/{tenantSlug}/egress", tenantsH.UpdateEgressPolicy)
+
+		// Branding — GET is invoke scope (public read), PUT is admin scope.
+		r.Get("/v1/tenants/{tenantSlug}/branding", brandingH.GetBranding)
+		r.With(middleware.RequireScope("admin", log)).
+			Put("/v1/tenants/{tenantSlug}/branding", brandingH.UpdateBranding)
+
+		// Team members and invites.
+		r.With(middleware.RequireScope("admin", log)).
+			Get("/v1/tenants/{tenantSlug}/members", membersH.ListMembers)
+		r.With(middleware.RequireScope("admin", log)).
+			Post("/v1/tenants/{tenantSlug}/members/invite", membersH.InviteMember)
+		r.With(middleware.RequireScope("admin", log)).
+			Delete("/v1/tenants/{tenantSlug}/members/{userID}", membersH.RemoveMember)
+		r.With(middleware.RequireScope("admin", log)).
+			Get("/v1/tenants/{tenantSlug}/members/invites", membersH.ListInvites)
+
+		// Usage aggregation.
+		r.With(middleware.RequireScope("admin", log)).
+			Get("/v1/tenants/{tenantSlug}/usage", usageH.GetUsage)
 
 		// Snippets.
 		r.Get("/v1/snippets", snippetsH.ListSnippets)

@@ -15,7 +15,9 @@ type Tenant struct {
 
 // Branding controls visual identity for embed surfaces.
 type Branding struct {
-	LogoURL     string `json:"logo_url,omitempty"`
-	AccentColor string `json:"accent_color,omitempty"`
-	FontFamily  string `json:"font_family,omitempty"`
+	LogoURL      string `json:"logo_url,omitempty"`
+	AccentColor  string `json:"accent_color,omitempty"`
+	FontFamily   string `json:"font_family,omitempty"`
+	CustomDomain string `json:"custom_domain,omitempty"`
+	HideBranding bool   `json:"hide_branding,omitempty"`
 }

@@ -236,65 +236,71 @@ snippet_environments.canary_pct
 
 ---
 
-## Phase 8 — Tenant Admin Dashboard & White-Label
+## Phase 8 — Tenant Admin Dashboard & White-Label (complete)
 
 **Goal:** Give each tenant org a self-serve admin dashboard to manage their Runeforge account, configure white-label branding for the embedded dashboard, and govern their engineers' access.
 
-### Scope
+### Delivered
 
-- **Tenant admin portal** — separate React app at `admin.runeforge.io`; accessible to users with the `admin` API scope
-- **White-label branding config** — org admins set logo URL, accent colour, font family, and custom domain from a UI; stored per-tenant in DB; fetched by the embed app on load; URL params remain as overrides
-- **Custom domain for embed** — org configures `snippets.acme.com` → points to `embed.runeforge.io` via CNAME; TLS via Let's Encrypt / cert-manager
-- **API key management UI** — create, revoke, and scope API keys; view last-used timestamps; copy key on creation (never shown again)
-- **Team member management** — invite engineers by email; assign `invoke / manage / admin` roles; revoke access
-- **Usage dashboard** — invocation counts, GB-seconds consumed, error rates — per snippet and per time window; powered by Phase 5 ClickHouse metrics
-- **Egress policy editor** — visual UI to add/remove blocked CIDRs and domains instead of raw JSON via API
+- **Email/password auth** — `AuthProvider` interface + `PasswordProvider` (bcrypt + Postgres sessions); designed for future OIDC/SAML swap via interface
+- **Session auth middleware** — `SessionAuth` middleware validates Bearer session tokens; chainable with API key auth
+- **Admin auth API** — `POST /v1/admin/auth/register`, `POST /v1/admin/auth/login`, `POST /v1/admin/auth/logout`, `GET /v1/admin/auth/me`
+- **Invite flow** — admins generate a signed invite token (72h TTL) and share a `/register?invite=xxx` link; invitee registers and is auto-added as tenant member
+- **Team member management API** — list, invite, remove members; list pending invites
+- **Branding API** — GET/PUT branding config per tenant (logo, accent color, font family, custom domain, hide-branding toggle); extends existing `branding` JSONB column on tenants
+- **Usage aggregation API** — `GET /v1/tenants/{slug}/usage?window=24h|7d|30d` aggregates invocations across all tenant snippets
+- **API key management API** — `GET` and `DELETE` endpoints for API keys (create already existed)
+- **Migration 007** — `users`, `user_sessions`, `tenant_members`, `invite_tokens` tables
+- **Admin SPA** (`apps/admin/`) — Vite + React + TypeScript + Tailwind:
+  - Login / Register pages with invite token pre-fill from URL
+  - Dashboard layout with sidebar navigation
+  - Overview (stats cards: API keys, members, 24h invocations)
+  - API Keys (create with scope checkboxes, one-time raw key display, revoke)
+  - Team (invite with role selector, member list with remove, pending invites)
+  - Branding (logo URL + preview, color picker, font, custom domain, hide-branding toggle, live preview panel)
+  - Usage (window selector, stats cards, top-snippets table)
+  - Egress Policy (add/remove CIDRs and domains with tag chips)
 
 ### New data model
 
 ```sql
--- Branding config (extends existing egress_policy pattern on tenants)
-ALTER TABLE tenants ADD COLUMN branding JSONB NOT NULL DEFAULT '{}';
--- { logo_url, accent_color, font_family, custom_domain, hide_branding }
-
--- Team members / user accounts
-CREATE TABLE users (
-    id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-    email TEXT NOT NULL UNIQUE,
-    password_hash TEXT,           -- null if OAuth-only
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE TABLE tenant_members (
-    tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    role TEXT NOT NULL DEFAULT 'manage' CHECK (role IN ('invoke', 'manage', 'admin')),
-    invited_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (tenant_id, user_id)
-);
+-- Migration 007
+CREATE TABLE users (id, email UNIQUE, password_hash, created_at, updated_at);
+CREATE TABLE user_sessions (id, user_id REFERENCES users, token_hash UNIQUE, expires_at, created_at);
+CREATE TABLE tenant_members (tenant_id, user_id, role CHECK IN ('invoke','manage','admin'), invited_at, PRIMARY KEY(tenant_id, user_id));
+CREATE TABLE invite_tokens (id, tenant_id, email, role, token_hash UNIQUE, expires_at, accepted_at, created_at);
+-- branding column was already added in migration 006 — extended with custom_domain, hide_branding fields
 ```
 
 ### New API surface
 
 ```
-GET  /v1/tenants/{slug}/branding              → get branding config
-PUT  /v1/tenants/{slug}/branding              → update branding (admin scope)
+POST /v1/admin/auth/register          → create user (+ accept invite if token provided)
+POST /v1/admin/auth/login             → email/password login → session token
+POST /v1/admin/auth/logout            → invalidate session
+GET  /v1/admin/auth/me                → current user (session auth)
 
-GET  /v1/tenants/{slug}/members               → list team members
-POST /v1/tenants/{slug}/members/invite        → invite by email
-DELETE /v1/tenants/{slug}/members/{userID}    → revoke access
+GET  /v1/tenants/{slug}/branding      → get branding config (invoke scope)
+PUT  /v1/tenants/{slug}/branding      → update branding (admin scope)
 
-GET  /v1/tenants/{slug}/usage                 → usage summary (from ClickHouse)
+GET    /v1/tenants/{slug}/members              → list members (admin scope)
+POST   /v1/tenants/{slug}/members/invite       → invite by email (admin scope)
+DELETE /v1/tenants/{slug}/members/{userID}     → remove member (admin scope)
+GET    /v1/tenants/{slug}/members/invites      → list pending invites (admin scope)
+
+GET /v1/tenants/{slug}/usage           → usage summary (admin scope)
+
+GET    /v1/tenants/{slug}/api-keys     → list keys without raw values (admin scope)
+DELETE /v1/tenants/{slug}/api-keys/{id} → revoke key (admin scope)
 ```
 
 ### New services
 
-- `apps/admin/` — Vite + React, deployed to `admin.runeforge.io`
-- Reuses `packages/ui` components from Phase 4 (MetricsBadge, API key management UI)
+- `apps/admin/` — Vite + React SPA, deployable to `admin.runeforge.io`
 
 ### Relationship to Phase 7 embed
 
-Phase 7 builds the embed app and accepts branding config as URL params. Phase 8 adds the admin UI where orgs configure that branding through a proper form — the embed app simply fetches it from `GET /v1/tenants/{slug}/branding` on load instead of relying on URL params alone. No changes to the embed app itself.
+Phase 7 builds the embed app and accepts branding config as URL params. Phase 8 adds the admin UI where orgs configure that branding through a proper form — the embed app fetches it from `GET /v1/tenants/{slug}/branding` on load. No changes to the embed app itself.
 
 ---
 

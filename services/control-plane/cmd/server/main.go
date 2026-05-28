@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/runeforge/control-plane/internal/api"
+	"github.com/runeforge/control-plane/internal/auth"
 	"github.com/runeforge/control-plane/internal/config"
 	"github.com/runeforge/control-plane/internal/executor/remote"
 	"github.com/runeforge/control-plane/internal/observability"
@@ -84,8 +85,11 @@ func main() {
 		log.Info("background worker started", zap.Int("workers", cfg.WorkerCount))
 	}
 
+	// --- Auth provider ---
+	authProvider := auth.NewPasswordProvider(store)
+
 	// --- Router ---
-	router := api.NewRouter(store, sched, log, encKey)
+	router := api.NewRouter(store, sched, log, encKey, authProvider)
 
 	// --- HTTP server ---
 	srv := &http.Server{

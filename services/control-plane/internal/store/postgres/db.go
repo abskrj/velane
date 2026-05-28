@@ -26,6 +26,9 @@ var migrationSQL5 string
 //go:embed migrations/006_embed.sql
 var migrationSQL6 string
 
+//go:embed migrations/007_phase8.sql
+var migrationSQL7 string
+
 // Store wraps a pgxpool.Pool and provides all database operations.
 type Store struct {
 	pool *pgxpool.Pool
@@ -44,7 +47,7 @@ func New(ctx context.Context, dsn string) (*Store, error) {
 		return nil, fmt.Errorf("postgres ping: %w", err)
 	}
 
-	for i, sql := range []string{migrationSQL1, migrationSQL2, migrationSQL3, migrationSQL4, migrationSQL5, migrationSQL6} {
+	for i, sql := range []string{migrationSQL1, migrationSQL2, migrationSQL3, migrationSQL4, migrationSQL5, migrationSQL6, migrationSQL7} {
 		if _, err := pool.Exec(ctx, sql); err != nil {
 			pool.Close()
 			return nil, fmt.Errorf("running migration %d: %w", i+1, err)

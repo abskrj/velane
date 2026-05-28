@@ -78,6 +78,7 @@ services:
       CLICKHOUSE_DSN: http://clickhouse:8123
       LOGS_BUCKET: runeforge-logs
       REPLAY_BUCKET: runeforge-replays
+      SESSION_DURATION_HOURS: "24"
     depends_on:
       postgres:
         condition: service_healthy

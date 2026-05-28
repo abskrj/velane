@@ -17,6 +17,7 @@ import (
 	"time"
 
 	api "github.com/runeforge/control-plane/internal/api"
+	"github.com/runeforge/control-plane/internal/auth"
 	"github.com/runeforge/control-plane/internal/executor/remote"
 	"github.com/runeforge/control-plane/internal/models"
 	"github.com/runeforge/control-plane/internal/scheduler"
@@ -66,7 +67,7 @@ func setup(t *testing.T) *testEnv {
 	exec := remote.New(mockExec.URL, mockExec.URL)
 	sched := scheduler.New(store, exec, testEncKey)
 	log := zap.NewNop()
-	router := api.NewRouter(store, sched, log, testEncKey)
+	router := api.NewRouter(store, sched, log, testEncKey, auth.NewPasswordProvider(store))
 
 	// Bootstrap tenant.
 	slug := fmt.Sprintf("test-%d", time.Now().UnixNano())
@@ -613,7 +614,7 @@ func setupWithStreaming(t *testing.T) *testEnv {
 	exec := remote.New(mockExec.URL, mockExec.URL)
 	sched := scheduler.New(store, exec, testEncKey)
 	log := zap.NewNop()
-	router := api.NewRouter(store, sched, log, testEncKey)
+	router := api.NewRouter(store, sched, log, testEncKey, auth.NewPasswordProvider(store))
 
 	slug := fmt.Sprintf("test-stream-%d", time.Now().UnixNano())
 	tenant, err := store.CreateTenant(context.Background(), "Stream Tenant", slug)
@@ -679,7 +680,7 @@ func setupWithRedis(t *testing.T) (*testEnv, *redisstore.Client) {
 	exec := remote.New(mockExec.URL, mockExec.URL)
 	sched := scheduler.NewWithQueue(store, exec, rc, testEncKey)
 	log := zap.NewNop()
-	router := api.NewRouter(store, sched, log, testEncKey)
+	router := api.NewRouter(store, sched, log, testEncKey, auth.NewPasswordProvider(store))
 
 	slug := fmt.Sprintf("test-async-%d", time.Now().UnixNano())
 	tenant, err := store.CreateTenant(context.Background(), "Async Tenant", slug)

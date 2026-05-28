@@ -118,6 +118,39 @@ func (s *Store) GetAPIKey(ctx context.Context, id string) (*models.APIKey, error
 	return k, nil
 }
 
+// ListAPIKeys returns all API keys for a given tenant.
+func (s *Store) ListAPIKeys(ctx context.Context, tenantID string) ([]*models.APIKey, error) {
+	rows, err := s.pool.Query(ctx,
+		`SELECT id, tenant_id, key_hash, key_prefix, name, scopes, expires_at, last_used_at, created_at
+		 FROM api_keys WHERE tenant_id = $1
+		 ORDER BY created_at DESC`,
+		tenantID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("ListAPIKeys query: %w", err)
+	}
+	defer rows.Close()
+
+	var keys []*models.APIKey
+	for rows.Next() {
+		k, err := scanAPIKey(rows)
+		if err != nil {
+			return nil, fmt.Errorf("ListAPIKeys scan: %w", err)
+		}
+		keys = append(keys, k)
+	}
+	if keys == nil {
+		keys = []*models.APIKey{}
+	}
+	return keys, rows.Err()
+}
+
+// DeleteAPIKey removes an API key by its primary key.
+func (s *Store) DeleteAPIKey(ctx context.Context, id string) error {
+	_, err := s.pool.Exec(ctx, `DELETE FROM api_keys WHERE id = $1`, id)
+	return err
+}
+
 // ---------------------------------------------------------------------------
 // Scan helpers
 // ---------------------------------------------------------------------------

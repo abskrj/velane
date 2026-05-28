@@ -93,6 +93,9 @@ export interface SnippetEnvironment {
 export interface InvocationResult {
   output: string
   error: string
+  stderr: string
   duration_ms: number
   exit_code: number
+  invocation_id?: string
+  status?: string
 }

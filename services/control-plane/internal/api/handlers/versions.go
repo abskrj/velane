@@ -80,10 +80,16 @@ type createVersionRequest struct {
 // CreateVersion handles POST /v1/snippets/{snippetID}/versions.
 func (h *VersionsHandler) CreateVersion(w http.ResponseWriter, r *http.Request) {
 	tenant := middleware.TenantFromContext(r.Context())
-	key := middleware.APIKeyFromContext(r.Context())
-	if tenant == nil || key == nil {
+	if tenant == nil {
 		writeError(w, http.StatusUnauthorized, "unauthenticated")
 		return
+	}
+
+	createdBy := ""
+	if key := middleware.APIKeyFromContext(r.Context()); key != nil {
+		createdBy = key.ID
+	} else if user := middleware.SessionUserFromContext(r.Context()); user != nil {
+		createdBy = user.ID
 	}
 
 	snippetID := chi.URLParam(r, "snippetID")
@@ -124,7 +130,7 @@ func (h *VersionsHandler) CreateVersion(w http.ResponseWriter, r *http.Request) 
 
 	version, err := h.store.CreateVersion(r.Context(),
 		snippetID, req.Code, req.InputSchema, req.OutputSchema,
-		key.ID, req.TimeoutMs, req.MaxMemoryMB, req.MaxCPUPercent,
+		createdBy, req.TimeoutMs, req.MaxMemoryMB, req.MaxCPUPercent,
 	)
 	if err != nil {
 		h.log.Error("create version failed", zap.Error(err))

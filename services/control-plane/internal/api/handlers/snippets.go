@@ -53,10 +53,17 @@ type createSnippetRequest struct {
 // CreateSnippet handles POST /v1/snippets.
 func (h *SnippetsHandler) CreateSnippet(w http.ResponseWriter, r *http.Request) {
 	tenant := middleware.TenantFromContext(r.Context())
-	key := middleware.APIKeyFromContext(r.Context())
-	if tenant == nil || key == nil {
+	if tenant == nil {
 		writeError(w, http.StatusUnauthorized, "unauthenticated")
 		return
+	}
+
+	// Resolve the creator ID from whichever auth path is active.
+	createdBy := ""
+	if key := middleware.APIKeyFromContext(r.Context()); key != nil {
+		createdBy = key.ID
+	} else if user := middleware.SessionUserFromContext(r.Context()); user != nil {
+		createdBy = user.ID
 	}
 
 	var req createSnippetRequest
@@ -75,7 +82,7 @@ func (h *SnippetsHandler) CreateSnippet(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	snippet, err := h.store.CreateSnippet(r.Context(), tenant.ID, req.Name, req.Slug, req.Language, key.ID)
+	snippet, err := h.store.CreateSnippet(r.Context(), tenant.ID, req.Name, req.Slug, req.Language, createdBy)
 	if err != nil {
 		h.log.Error("create snippet failed", zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "failed to create snippet")

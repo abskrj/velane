@@ -9,6 +9,7 @@ import type {
   Snippet,
   SnippetVersion,
   InvocationResult,
+  EmbedToken,
 } from '../types'
 
 const BASE = '/api'
@@ -166,6 +167,19 @@ export const api = {
 
   async publishVersion(snippetId: string, versionNum: number, env: string): Promise<void> {
     return request('POST', `/v1/snippets/${snippetId}/versions/${versionNum}/publish?env=${env}`, undefined, 'apikey')
+  },
+
+  // Embed tokens
+  async listEmbedTokens(): Promise<EmbedToken[]> {
+    return request('GET', '/v1/embed/tokens', undefined, 'apikey')
+  },
+
+  async createEmbedToken(snippetIds: string[], ttlSeconds = 3600): Promise<{ id: string; token: string; expires_at: string }> {
+    return request('POST', '/v1/embed/tokens', { snippet_ids: snippetIds, ttl_seconds: ttlSeconds }, 'apikey')
+  },
+
+  async revokeEmbedToken(id: string): Promise<void> {
+    return request('DELETE', `/v1/embed/tokens/${id}`, undefined, 'apikey')
   },
 
   // Invocation

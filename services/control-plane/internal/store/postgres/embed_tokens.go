@@ -67,6 +67,34 @@ func formatInterval(ttl time.Duration) string {
 	return fmt.Sprintf("%d seconds", seconds)
 }
 
+// ListEmbedTokens returns all non-revoked embed tokens for a tenant.
+func (s *Store) ListEmbedTokens(ctx context.Context, tenantID string) ([]*models.EmbedToken, error) {
+	rows, err := s.pool.Query(ctx,
+		`SELECT id, tenant_id, allowed_snippet_ids, expires_at, revoked_at, created_by, last_used_at, created_at
+		 FROM embed_tokens
+		 WHERE tenant_id = $1 AND revoked_at IS NULL
+		 ORDER BY created_at DESC`,
+		tenantID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("ListEmbedTokens query: %w", err)
+	}
+	defer rows.Close()
+
+	var tokens []*models.EmbedToken
+	for rows.Next() {
+		t, err := scanEmbedToken(rows)
+		if err != nil {
+			return nil, fmt.Errorf("ListEmbedTokens scan: %w", err)
+		}
+		tokens = append(tokens, t)
+	}
+	if tokens == nil {
+		tokens = []*models.EmbedToken{}
+	}
+	return tokens, nil
+}
+
 // ValidateEmbedToken validates token hash and expiration/revocation checks.
 func (s *Store) ValidateEmbedToken(ctx context.Context, plain string) (*models.EmbedToken, error) {
 	row := s.pool.QueryRow(ctx,

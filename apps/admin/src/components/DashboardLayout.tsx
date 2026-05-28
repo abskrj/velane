@@ -7,6 +7,7 @@ import {
   BarChart2,
   Shield,
   Code,
+  MonitorSmartphone,
   LogOut,
 } from 'lucide-react'
 import clsx from 'clsx'
@@ -20,6 +21,7 @@ const navItems = [
   { to: '/dashboard/branding', label: 'Branding', icon: Paintbrush },
   { to: '/dashboard/usage', label: 'Usage', icon: BarChart2 },
   { to: '/dashboard/egress', label: 'Egress Policy', icon: Shield },
+  { to: '/dashboard/embed', label: 'Embed', icon: MonitorSmartphone },
 ]
 
 export default function DashboardLayout() {

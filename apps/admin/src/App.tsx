@@ -10,6 +10,7 @@ import UsagePage from './pages/UsagePage'
 import EgressPage from './pages/EgressPage'
 import SnippetsPage from './pages/SnippetsPage'
 import SnippetEditorPage from './pages/SnippetEditorPage'
+import EmbedPage from './pages/EmbedPage'
 import ProtectedRoute from './components/ProtectedRoute'
 
 export default function App() {
@@ -36,6 +37,7 @@ export default function App() {
           <Route path="egress" element={<EgressPage />} />
           <Route path="snippets" element={<SnippetsPage />} />
           <Route path="snippets/:id" element={<SnippetEditorPage />} />
+          <Route path="embed" element={<EmbedPage />} />
         </Route>
       </Routes>
     </BrowserRouter>

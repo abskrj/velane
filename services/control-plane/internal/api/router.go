@@ -174,6 +174,8 @@ func newRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logge
 
 		// Embed token management.
 		r.With(middleware.RequireScope("manage", log)).
+			Get("/v1/embed/tokens", embedH.ListTokens)
+		r.With(middleware.RequireScope("manage", log)).
 			Post("/v1/embed/tokens", embedH.CreateToken)
 		r.With(middleware.RequireScope("manage", log)).
 			Delete("/v1/embed/tokens/{tokenID}", embedH.RevokeToken)

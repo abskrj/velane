@@ -90,6 +90,16 @@ export interface SnippetEnvironment {
   active_version_number: number | null
 }
 
+export interface EmbedToken {
+  id: string
+  tenant_id: string
+  allowed_snippet_ids: string[]
+  expires_at: string
+  created_by: string
+  last_used_at: string | null
+  created_at: string
+}
+
 export interface InvocationResult {
   output: unknown
   error: string

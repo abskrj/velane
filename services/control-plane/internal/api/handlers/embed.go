@@ -47,26 +47,40 @@ func toAllowedSet(ids []string) map[string]struct{} {
 	return set
 }
 
+// ListTokens handles GET /v1/embed/tokens.
+func (h *EmbedHandler) ListTokens(w http.ResponseWriter, r *http.Request) {
+	tenant := middleware.TenantFromContext(r.Context())
+	if tenant == nil {
+		writeError(w, http.StatusUnauthorized, "unauthenticated")
+		return
+	}
+	tokens, err := h.store.ListEmbedTokens(r.Context(), tenant.ID)
+	if err != nil {
+		h.log.Error("list embed tokens failed", zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "failed to list embed tokens")
+		return
+	}
+	writeJSON(w, http.StatusOK, tokens)
+}
+
 // CreateToken handles POST /v1/embed/tokens.
 func (h *EmbedHandler) CreateToken(w http.ResponseWriter, r *http.Request) {
 	tenant := middleware.TenantFromContext(r.Context())
-	key := middleware.APIKeyFromContext(r.Context())
-	if tenant == nil || key == nil {
+	if tenant == nil {
 		writeError(w, http.StatusUnauthorized, "unauthenticated")
 		return
+	}
+
+	createdBy := ""
+	if key := middleware.APIKeyFromContext(r.Context()); key != nil {
+		createdBy = key.ID
+	} else if user := middleware.SessionUserFromContext(r.Context()); user != nil {
+		createdBy = user.ID
 	}
 
 	var req createEmbedTokenRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
-		return
-	}
-	if req.TenantSlug == "" {
-		writeError(w, http.StatusBadRequest, "tenant_slug is required")
-		return
-	}
-	if req.TenantSlug != tenant.Slug {
-		writeError(w, http.StatusForbidden, "tenant_slug does not match authenticated tenant")
 		return
 	}
 	if req.TTLSeconds <= 0 {
@@ -86,7 +100,7 @@ func (h *EmbedHandler) CreateToken(w http.ResponseWriter, r *http.Request) {
 		tenant.ID,
 		req.SnippetIDs,
 		time.Duration(req.TTLSeconds)*time.Second,
-		key.ID,
+		createdBy,
 	)
 	if err != nil {
 		h.log.Error("create embed token failed", zap.Error(err))
@@ -98,7 +112,6 @@ func (h *EmbedHandler) CreateToken(w http.ResponseWriter, r *http.Request) {
 		"id":         token.ID,
 		"token":      plain,
 		"expires_at": token.ExpiresAt,
-		"embed_url":  "https://embed.runeforge.io?token=" + plain,
 	})
 }
 

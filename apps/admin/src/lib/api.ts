@@ -169,8 +169,8 @@ export const api = {
   },
 
   // Invocation
-  async invokeSnippet(snippetId: string, input: string, env = 'dev'): Promise<InvocationResult> {
-    const slug = getSlug()
-    return request('POST', `/v1/invoke/${slug}/${snippetId}?env=${env}`, JSON.parse(input || '{}'), 'apikey')
+  async invokeSnippet(snippetSlug: string, input: string, env = 'dev'): Promise<InvocationResult> {
+    const tenantSlug = getSlug()
+    return request('POST', `/v1/invoke/${tenantSlug}/${snippetSlug}?env=${env}`, JSON.parse(input || '{}'), 'apikey')
   },
 }

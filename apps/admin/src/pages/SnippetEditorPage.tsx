@@ -119,11 +119,11 @@ export default function SnippetEditorPage() {
   }
 
   async function handleRun() {
-    if (!id) return
+    if (!snippet?.slug) return
     setInvoking(true)
     setInvokeResult(null)
     try {
-      const result = await api.invokeSnippet(id, testInput, testEnv)
+      const result = await api.invokeSnippet(snippet.slug, testInput, testEnv)
       setInvokeResult(result)
     } catch (err) {
       setInvokeResult({

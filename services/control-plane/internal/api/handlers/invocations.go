@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/runeforge/control-plane/internal/api/middleware"
+	"github.com/runeforge/control-plane/internal/auth"
 	"github.com/runeforge/control-plane/internal/scheduler"
 	"github.com/runeforge/control-plane/internal/store/postgres"
 	"go.uber.org/zap"
@@ -20,11 +21,19 @@ type InvocationsHandler struct {
 	store     *postgres.Store
 	scheduler *scheduler.Scheduler
 	log       *zap.Logger
+	provider  auth.Provider // optional; enables session JWT auth on /invoke
 }
 
 // NewInvocationsHandler constructs an InvocationsHandler.
 func NewInvocationsHandler(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logger) *InvocationsHandler {
 	return &InvocationsHandler{store: store, scheduler: sched, log: log}
+}
+
+// WithAuthProvider enables session JWT auth on the Invoke endpoint in addition
+// to API key auth. Call this when wiring up the router.
+func (h *InvocationsHandler) WithAuthProvider(p auth.Provider) *InvocationsHandler {
+	h.provider = p
+	return h
 }
 
 // invokeBody is the optional JSON body for invoke requests.
@@ -53,7 +62,7 @@ func (h *InvocationsHandler) Invoke(w http.ResponseWriter, r *http.Request) {
 	tenantSlug := chi.URLParam(r, "tenantSlug")
 	snippetSlug := chi.URLParam(r, "snippetSlug")
 
-	// --- Inline API key auth ---
+	// --- Inline auth: session JWT first, then API key ---
 	authHdr := r.Header.Get("Authorization")
 	if authHdr == "" {
 		writeError(w, http.StatusUnauthorized, "missing Authorization header")
@@ -64,30 +73,52 @@ func (h *InvocationsHandler) Invoke(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "malformed Authorization header")
 		return
 	}
-	plainKey := strings.TrimSpace(parts[1])
+	token := strings.TrimSpace(parts[1])
 
-	key, err := h.store.ValidateAPIKey(r.Context(), plainKey)
-	if err != nil {
-		h.log.Debug("invoke: invalid api key", zap.Error(err))
-		writeError(w, http.StatusUnauthorized, "invalid api key")
-		return
-	}
-
-	if !key.HasScope("invoke") {
-		writeError(w, http.StatusForbidden, "api key missing 'invoke' scope")
-		return
-	}
-
-	// Resolve the tenant from the URL and verify the key belongs to it.
+	// Resolve the tenant from the URL path (shared by both auth paths).
 	tenant, err := h.store.GetTenantBySlug(r.Context(), tenantSlug)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "tenant not found")
 		return
 	}
-	if key.TenantID != tenant.ID {
-		writeError(w, http.StatusForbidden, "api key does not belong to this tenant")
-		return
+
+	// Try session JWT auth when an auth provider is configured.
+	if h.provider != nil {
+		if user, err := h.provider.ValidateSession(r.Context(), token); err == nil {
+			// Verify the user is a member of this tenant with at least invoke role.
+			role, err := h.store.GetMemberRole(r.Context(), tenant.ID, user.ID)
+			if err != nil {
+				writeError(w, http.StatusForbidden, "not a member of this tenant")
+				return
+			}
+			if role != "invoke" && role != "manage" && role != "admin" {
+				writeError(w, http.StatusForbidden, "insufficient role for invoke")
+				return
+			}
+			// Session auth OK — fall through to invocation.
+			goto authOK
+		}
 	}
+
+	// Fall back to API key auth.
+	{
+		key, err := h.store.ValidateAPIKey(r.Context(), token)
+		if err != nil {
+			h.log.Debug("invoke: invalid api key", zap.Error(err))
+			writeError(w, http.StatusUnauthorized, "invalid api key")
+			return
+		}
+		if !key.HasScope("invoke") {
+			writeError(w, http.StatusForbidden, "api key missing 'invoke' scope")
+			return
+		}
+		if key.TenantID != tenant.ID {
+			writeError(w, http.StatusForbidden, "api key does not belong to this tenant")
+			return
+		}
+	}
+
+authOK:
 
 	// --- Read the input payload ---
 	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20)) // 1 MiB limit

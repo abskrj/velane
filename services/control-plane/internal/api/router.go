@@ -40,7 +40,7 @@ func newRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logge
 	tenantsH := handlers.NewTenantsHandler(store, log).WithAuditor(auditor)
 	snippetsH := handlers.NewSnippetsHandler(store, log)
 	versionsH := handlers.NewVersionsHandler(store, log).WithAuditor(auditor)
-	invocationsH := handlers.NewInvocationsHandler(store, sched, log)
+	invocationsH := handlers.NewInvocationsHandler(store, sched, log).WithAuthProvider(authProvider)
 	secretsH := handlers.NewSecretsHandler(store, log, encKey).WithAuditor(auditor)
 	gitIntH := handlers.NewGitIntegrationHandler(store, log)
 	webhookH := handlers.NewWebhookHandler(store, sched, log)

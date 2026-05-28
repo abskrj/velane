@@ -265,13 +265,23 @@ export default function SnippetEditorPage() {
                     invokeResult.error ? 'bg-red-950' : 'bg-gray-900'
                   }`}
                 >
-                  <pre
-                    className={`overflow-auto text-xs ${
-                      invokeResult.error ? 'text-red-300' : 'text-green-300'
-                    }`}
-                  >
-                    {JSON.stringify(invokeResult, null, 2)}
-                  </pre>
+                  {invokeResult.stderr?.includes("Missing 'default' export") ? (
+                    <p className="text-xs text-red-300">
+                      Your snippet must export a default function. Add this to your code:
+                      <br /><br />
+                      <code className="rounded bg-red-900 px-1">export default async function handler(input) {'{ ... }'}</code>
+                    </p>
+                  ) : (
+                    <pre
+                      className={`overflow-auto text-xs ${
+                        invokeResult.error ? 'text-red-300' : 'text-green-300'
+                      }`}
+                    >
+                      {invokeResult.error
+                        ? `Error: ${invokeResult.error}\n${invokeResult.stderr || ''}`.trim()
+                        : JSON.stringify(JSON.parse(invokeResult.output || '{}'), null, 2)}
+                    </pre>
+                  )}
                 </div>
               )}
             </div>

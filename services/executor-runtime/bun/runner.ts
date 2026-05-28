@@ -91,14 +91,16 @@ function buildHarnessCode(snippetPath: string, input: string, egressPolicy?: Egr
   const safeEgress = JSON.stringify(egressPolicy ?? null);
 
   return `
-import snippetModule from ${safePath};
+import * as snippetModule from ${safePath};
 
-const handler = typeof snippetModule === 'function'
-  ? snippetModule
-  : (snippetModule.default ?? snippetModule.handler);
+const handler = typeof snippetModule.default === 'function'
+  ? snippetModule.default
+  : typeof snippetModule.handler === 'function'
+  ? snippetModule.handler
+  : null;
 
 if (typeof handler !== 'function') {
-  console.error('Snippet must export a default function or a function named "handler"');
+  console.error('Snippet must export a default function (export default async function handler) or a named "handler" export');
   process.exit(1);
 }
 
@@ -152,14 +154,16 @@ function buildStreamHarnessCode(snippetPath: string, input: string, egressPolicy
   const safeEgress = JSON.stringify(egressPolicy ?? null);
 
   return `
-import snippetModule from ${safePath};
+import * as snippetModule from ${safePath};
 
-const handler = typeof snippetModule === 'function'
-  ? snippetModule
-  : (snippetModule.default ?? snippetModule.handler);
+const handler = typeof snippetModule.default === 'function'
+  ? snippetModule.default
+  : typeof snippetModule.handler === 'function'
+  ? snippetModule.handler
+  : null;
 
 if (typeof handler !== 'function') {
-  console.error(JSON.stringify({ chunk: '', error: 'Snippet must export a default function', done: true }));
+  console.error(JSON.stringify({ chunk: '', error: 'Snippet must export a default function (export default async function handler) or a named "handler" export', done: true }));
   process.exit(1);
 }
 

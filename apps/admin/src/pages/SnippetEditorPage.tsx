@@ -143,6 +143,7 @@ export default function SnippetEditorPage() {
       setInvokeResult({
         output: '',
         error: String(err),
+        stderr: '',
         duration_ms: 0,
         exit_code: 1,
       })

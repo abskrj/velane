@@ -84,6 +84,10 @@ services:
       REPLAY_BUCKET: runeforge-replays
       SESSION_DURATION_HOURS: "24"
       EXECUTOR_TYPE: "process"
+      # First-boot only: creates an admin user + tenant on startup, then remove these.
+      # BOOTSTRAP_EMAIL: admin@example.com
+      # BOOTSTRAP_PASSWORD: changeme123
+      # BOOTSTRAP_TENANT: myorg
     depends_on:
       postgres:
         condition: service_healthy

@@ -29,6 +29,11 @@ type Config struct {
 	JWTPrivateKeyPEM string // RS256 private key PEM (env: JWT_PRIVATE_KEY); if empty, generate ephemeral key with warning
 	JWTPublicKeyPEM  string // derived from private key, not loaded from env
 
+	// Bootstrap (first-run admin seeding)
+	BootstrapEmail    string // BOOTSTRAP_EMAIL: email for the initial admin user
+	BootstrapPassword string // BOOTSTRAP_PASSWORD: password for the initial admin user
+	BootstrapTenant   string // BOOTSTRAP_TENANT: slug for the initial tenant (default: "default")
+
 	// Executor selection (Phase 9)
 	ExecutorType              string // "process" (default) | "firecracker"
 	FirecrackerBinary         string // path to firecracker binary, default "/usr/local/bin/firecracker"
@@ -59,6 +64,9 @@ func Load() Config {
 		ClickHouseDSN:           os.Getenv("CLICKHOUSE_DSN"),
 		LogsBucket:              os.Getenv("LOGS_BUCKET"),
 		ReplayBucket:            os.Getenv("REPLAY_BUCKET"),
+		BootstrapEmail:          os.Getenv("BOOTSTRAP_EMAIL"),
+		BootstrapPassword:       os.Getenv("BOOTSTRAP_PASSWORD"),
+		BootstrapTenant:         getEnv("BOOTSTRAP_TENANT", "default"),
 		JWTPrivateKeyPEM:        os.Getenv("JWT_PRIVATE_KEY"),
 		ExecutorType:            getEnv("EXECUTOR_TYPE", "process"),
 		FirecrackerBinary:       getEnv("FIRECRACKER_BINARY", "/usr/local/bin/firecracker"),

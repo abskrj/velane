@@ -57,6 +57,13 @@ func main() {
 	defer store.Close()
 	log.Info("postgres connected and migrations applied")
 
+	// --- Auth provider (needed early for bootstrap) ---
+	privKey, pubKey := cfg.JWTKeyPair(log)
+	authProvider := auth.NewJWTProvider(store, privKey, "https://api.runeforge.io")
+
+	// --- Bootstrap first admin (no-op if users already exist or env vars not set) ---
+	bootstrapAdminIfNeeded(ctx, store, authProvider, cfg, log)
+
 	// --- Executor ---
 	var exec executor.Executor
 	switch cfg.ExecutorType {
@@ -102,10 +109,6 @@ func main() {
 		go w.Run(ctx)
 		log.Info("background worker started", zap.Int("workers", cfg.WorkerCount))
 	}
-
-	// --- Auth provider ---
-	privKey, pubKey := cfg.JWTKeyPair(log)
-	authProvider := auth.NewJWTProvider(store, privKey, "https://api.runeforge.io")
 
 	// --- Router ---
 	router := api.NewRouterWithJWT(store, sched, log, encKey, authProvider, pubKey)

@@ -43,12 +43,19 @@ func ExportedTenantKey() any { return tenantKey }
 // Intended for use in tests that need to inject an API key into the context.
 func ExportedAPIKeyKey() any { return apikeyKey }
 
-// Auth returns a middleware that validates the Bearer token in the
-// Authorization header and attaches the resolved Tenant and APIKey to the
-// request context. Requests without a valid key receive 401.
+// Auth returns a middleware that validates the Bearer token in the Authorization header and
+// attaches the resolved Tenant and APIKey to the request context. If SessionAuth has already
+// authenticated the request via JWT (session user in context), this middleware passes through
+// so that RequireScope can use the session role instead.
 func Auth(store AuthStore, log *zap.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// If SessionAuth already authenticated this request via JWT, skip API key validation.
+			if SessionUserFromContext(r.Context()) != nil {
+				next.ServeHTTP(w, r)
+				return
+			}
+
 			plain, ok := bearerToken(r)
 			if !ok {
 				writeUnauthorized(w, "missing or malformed Authorization header")
@@ -76,23 +83,49 @@ func Auth(store AuthStore, log *zap.Logger) func(http.Handler) http.Handler {
 	}
 }
 
-// RequireScope returns a middleware that enforces that the authenticated key
-// carries the specified scope. Must be applied after Auth.
+// RequireScope returns a middleware that enforces that the caller has the specified scope.
+// Accepts both API key auth (checked via key.HasScope) and session JWT auth (checked via
+// the tenant membership role stored by SessionAuth). Must be applied after Auth/SessionAuth.
 func RequireScope(scope string, log *zap.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			key := APIKeyFromContext(r.Context())
-			if key == nil {
-				writeUnauthorized(w, "unauthenticated")
+			// API key path.
+			if key := APIKeyFromContext(r.Context()); key != nil {
+				if !key.HasScope(scope) {
+					http.Error(w, `{"error":"forbidden: missing scope `+scope+`"}`, http.StatusForbidden)
+					return
+				}
+				next.ServeHTTP(w, r)
 				return
 			}
-			if !key.HasScope(scope) {
+			// Session (JWT) path — derive scopes from tenant membership role.
+			if role := SessionRoleFromContext(r.Context()); role != "" {
+				if roleHasScope(role, scope) {
+					next.ServeHTTP(w, r)
+					return
+				}
 				http.Error(w, `{"error":"forbidden: missing scope `+scope+`"}`, http.StatusForbidden)
 				return
 			}
-			next.ServeHTTP(w, r)
+			writeUnauthorized(w, "missing or malformed Authorization header")
 		})
 	}
+}
+
+// roleHasScope maps a tenant member role to the scopes it grants.
+// admin → invoke + manage + admin
+// manage → invoke + manage
+// invoke → invoke only
+func roleHasScope(role, scope string) bool {
+	switch role {
+	case "admin":
+		return true
+	case "manage":
+		return scope == "invoke" || scope == "manage"
+	case "invoke":
+		return scope == "invoke"
+	}
+	return false
 }
 
 // bearerToken extracts the token from "Authorization: Bearer <token>".

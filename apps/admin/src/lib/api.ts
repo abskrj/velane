@@ -34,9 +34,14 @@ async function request<T>(
     const token = getToken()
     if (token) headers['Authorization'] = `Bearer ${token}`
   } else if (authType === 'apikey') {
-    const key = localStorage.getItem('apiKey') ?? ''
+    // Fall back to session token if no dedicated API key is stored — the backend
+    // accepts JWT session tokens on all scoped endpoints when X-Tenant is provided.
+    const key = localStorage.getItem('apiKey') ?? getToken()
     if (key) headers['Authorization'] = `Bearer ${key}`
   }
+  // Always send X-Tenant so the backend can resolve session user's membership role.
+  const slug = getSlug()
+  if (slug) headers['X-Tenant'] = slug
 
   const res = await fetch(`${BASE}${path}`, {
     method,

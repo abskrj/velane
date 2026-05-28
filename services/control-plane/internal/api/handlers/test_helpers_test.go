@@ -19,7 +19,7 @@ func setSessionUser(ctx context.Context, user *models.User) context.Context {
 	}
 	// Run the middleware against a fake request to capture the enriched context.
 	var enriched context.Context
-	mw := middleware.SessionAuth(provider, nil)
+	mw := middleware.SessionAuth(provider, (middleware.SessionStore)(nil), nil)
 	handler := mw(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		enriched = r.Context()
 	}))

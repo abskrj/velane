@@ -77,11 +77,16 @@ func newRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logge
 	r.Post("/v1/admin/auth/login", adminAuthH.Login)
 	r.Post("/v1/admin/auth/logout", adminAuthH.Logout)
 	r.Post("/v1/admin/auth/refresh", adminAuthH.RefreshToken)
-	r.With(middleware.SessionAuth(authProvider, log)).
+	r.With(middleware.SessionAuth(authProvider, store, log)).
 		Get("/v1/admin/auth/me", adminAuthH.Me)
 
 	// Authenticated routes.
 	r.Group(func(r chi.Router) {
+		// SessionAuth runs first: if the Bearer token is a valid JWT it sets the session user
+		// and (when X-Tenant is present) their tenant membership role in context.
+		// Auth then attempts API key validation — if the token was a JWT, ValidateAPIKey will
+		// fail harmlessly and the session context values are used by RequireScope instead.
+		r.Use(middleware.SessionAuth(authProvider, store, log))
 		authMw := middleware.Auth(store, log)
 		r.Use(authMw)
 

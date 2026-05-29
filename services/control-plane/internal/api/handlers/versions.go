@@ -67,6 +67,34 @@ func (h *VersionsHandler) ListVersions(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, versions)
 }
 
+// ListEnvironments handles GET /v1/snippets/{snippetID}/environments.
+func (h *VersionsHandler) ListEnvironments(w http.ResponseWriter, r *http.Request) {
+	tenant := middleware.TenantFromContext(r.Context())
+	if tenant == nil {
+		writeError(w, http.StatusUnauthorized, "unauthenticated")
+		return
+	}
+
+	snippetID := chi.URLParam(r, "snippetID")
+	snippet, err := h.store.GetSnippetByID(r.Context(), snippetID)
+	if err != nil || snippet.TenantID != tenant.ID {
+		writeError(w, http.StatusNotFound, "snippet not found")
+		return
+	}
+
+	envs, err := h.store.GetSnippetEnvironments(r.Context(), snippetID)
+	if err != nil {
+		h.log.Error("list environments failed", zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "failed to list environments")
+		return
+	}
+	if envs == nil {
+		writeJSON(w, http.StatusOK, []any{})
+		return
+	}
+	writeJSON(w, http.StatusOK, envs)
+}
+
 // createVersionRequest is the expected POST body.
 type createVersionRequest struct {
 	Code          string `json:"code"`

@@ -138,6 +138,7 @@ func newRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logge
 			Delete("/v1/snippets/{snippetID}", snippetsH.DeleteSnippet)
 
 		// Versions.
+		r.Get("/v1/snippets/{snippetID}/environments", versionsH.ListEnvironments)
 		r.Get("/v1/snippets/{snippetID}/versions", versionsH.ListVersions)
 		r.With(middleware.RequireScope("manage", log)).
 			Post("/v1/snippets/{snippetID}/versions", versionsH.CreateVersion)

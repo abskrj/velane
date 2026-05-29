@@ -8,6 +8,7 @@ import type {
   EgressPolicy,
   Snippet,
   SnippetVersion,
+  SnippetEnvironment,
   InvocationResult,
   EmbedToken,
   Secret,
@@ -55,6 +56,27 @@ async function request<T>(
   })
 
   if (!res.ok) {
+    if (res.status === 401) {
+      const credential =
+        authType === 'apikey'
+          ? (localStorage.getItem('apiKey') ?? getToken())
+          : authType === 'session'
+            ? getToken()
+            : ''
+
+      if (credential.startsWith('vl_')) {
+        throw new Error('Invalid API key')
+      }
+      if (credential.startsWith('et_')) {
+        throw new Error('Unauthenticated')
+      }
+      // Session JWT expired or invalid — clear session and redirect to login.
+      localStorage.removeItem('sessionToken')
+      localStorage.removeItem('tenantSlug')
+      window.location.href = '/login'
+      throw new Error('Unauthenticated')
+    }
+
     const err = await res.json().catch(() => ({ error: res.statusText }))
     throw new Error(err.error ?? res.statusText)
   }
@@ -163,6 +185,10 @@ export const api = {
   // Versions
   async listVersions(snippetId: string): Promise<SnippetVersion[]> {
     return request('GET', `/v1/snippets/${snippetId}/versions`, undefined, 'apikey')
+  },
+
+  async listEnvironments(snippetId: string): Promise<SnippetEnvironment[]> {
+    return request('GET', `/v1/snippets/${snippetId}/environments`, undefined, 'apikey')
   },
 
   async createVersion(snippetId: string, code: string): Promise<SnippetVersion> {

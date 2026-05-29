@@ -86,6 +86,7 @@ export interface SnippetVersion {
 }
 
 export interface SnippetEnvironment {
+  snippet_id: string
   env: string
   active_version_number: number | null
 }

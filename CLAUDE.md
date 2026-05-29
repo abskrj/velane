@@ -1,0 +1,120 @@
+# Velane — Claude Code Guide
+
+## Repo layout
+
+```
+velane/
+├── services/
+│   ├── control-plane/      # Go 1.22 API server (chi, pgx/v5, zap)
+│   ├── executor-runtime/   # Bun + Python sandboxed HTTP runners
+│   ├── mcp-server/         # MCP protocol server for Cursor / Claude Code
+│   └── cli/                # Cobra CLI (velane login / push / invoke)
+├── apps/
+│   ├── admin/              # Vite + React admin portal
+│   └── embed-dashboard/    # Vite + React embeddable viewer
+└── platform-libraries/     # Canonical source for built-in libs (bun/ + python/)
+```
+
+Each Go service has its own `go.mod`. Module paths:
+- `github.com/abskrj/velane/services/control-plane`
+- `github.com/abskrj/velane/services/mcp-server`
+- `github.com/abskrj/velane/services/cli`
+
+## Essential commands
+
+```bash
+# Build + start everything
+make up           # docker compose up --build -d
+
+# Stop + wipe volumes
+make down         # docker compose down -v
+
+# Compile control-plane locally (requires Go 1.22+)
+make build        # runs copy-platform-libs first, then go build ./...
+
+# Run Go tests (control-plane)
+cd services/control-plane && go test ./...
+
+# TypeScript type-check (admin)
+cd apps/admin && npx tsc --noEmit
+
+# Add a new platform library
+# 1. Add files under platform-libraries/{bun|python}/<slug>/
+# 2. Run: make copy-platform-libs
+# 3. Rebuild: make build  (or make up)
+```
+
+## Go conventions (control-plane)
+
+- **Never commit** unless explicitly asked. The user's standing instruction is: do not commit unless told.
+- Always run `go build ./...` from inside `services/control-plane/` — not from the repo root.
+- Handler pattern: each handler file exposes a `*Store` interface for its DB needs (e.g. `BrandingStore`). Use the narrowest interface, not `*postgres.Store`, except in `TenantsHandler` which needs direct store access.
+- **Tenant isolation** — every slug-based handler must verify the authenticated tenant matches the URL slug:
+  ```go
+  authTenant := middleware.TenantFromContext(r.Context())
+  if authTenant == nil || authTenant.ID != tenant.ID {
+      writeError(w, http.StatusForbidden, "access denied")
+      return
+  }
+  ```
+  This is already in: egress, branding, usage, members handlers. Do NOT skip it for new slug-based endpoints.
+- **Scope middleware** — all authenticated routes must use `middleware.RequireScope(scope, log)`. Minimum scopes: `invoke` for reads, `manage` for writes, `admin` for destructive/team actions.
+- **Error helpers** — use `writeError(w, status, msg)` and `writeJSON(w, status, v)` from `handlers/helpers.go`. Never write raw JSON inline.
+- **API key prefix** is `vl_`. Embed token prefix is `et_`. Do not change these.
+- Migrations live in `internal/store/postgres/migrations/`. Number them sequentially (`011_`, `012_`, …). They run automatically on startup.
+- Platform libraries are embedded via `//go:embed all:files` in `internal/platformlibs/loader.go`. The `files/` directory is gitignored (except `.gitkeep`). Always run `make copy-platform-libs` before building locally.
+
+## Auth model
+
+| Credential | Where stored | Validated by |
+|---|---|---|
+| Session JWT (RS256) | `localStorage.sessionToken` | `SessionAuth` middleware → `JWTProvider.ValidateSession` |
+| API key (`vl_…`) | `localStorage.apiKey` | `Auth` middleware → `ValidateAPIKey` |
+| Embed token (`et_…`) | `localStorage.apiKey` | `AuthEmbed` middleware or `Auth` middleware (synthetic key) |
+
+JWT access tokens expire in 15 min; refresh tokens last 7 days. `ValidateSession` checks issuer — do not remove that check.
+
+Embed tokens get a synthetic API key with scopes `["invoke", "manage"]` — they must NOT have `admin` scope.
+
+## Frontend conventions (apps/admin)
+
+- API calls go through `src/lib/api.ts`. The `request()` function handles 401s automatically:
+  - `vl_` key → throws `"Invalid API key"`
+  - expired JWT → clears localStorage and redirects to `/login`
+  - `et_` embed token → throws `"Unauthenticated"`
+- Tenant slug comes from `localStorage.getItem('tenantSlug')`.
+- Tailwind only — no CSS files, no inline `style=`. Monochrome palette (`gray-900` primary, `gray-50`/`gray-100` backgrounds).
+- Primary buttons: `rounded-lg bg-gray-900 text-white hover:bg-gray-800`.
+- Do not add `console.log` statements.
+- Type-check before reporting done: `npx tsc --noEmit`.
+
+## Security rules (non-negotiable)
+
+1. **Tenant isolation** on every slug-based endpoint (see pattern above).
+2. **No admin scope for embed tokens** — synthetic key scopes must stay `["invoke", "manage"]`.
+3. **JWT issuer check** in `ValidateSession` must remain.
+4. **Slug validation** on `CreateTenant`: must match `^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$`.
+5. **Role validation** on `InviteMember`: only `invoke`, `manage`, `admin` are valid roles.
+6. **RequireScope** on every authenticated route — no naked authenticated routes.
+
+## Adding a new platform library
+
+1. Create `platform-libraries/{bun|python}/<slug>/` with:
+   - `index.ts` (Bun) or `module.py` (Python) — the library code
+   - `meta.json` — `{"name": "...", "description": "..."}`
+   - `README.md` — markdown docs shown in the admin UI
+2. Run `make copy-platform-libs` to sync into `services/control-plane/internal/platformlibs/files/`.
+3. The library is auto-loaded at startup — no DB changes needed.
+4. Import path: `@velane/<slug>` (Bun) or `from velane import <slug_with_underscores>` (Python).
+
+## Docker / local dev notes
+
+- First run: `make down` first if you have an old `postgres_data` volume with stale credentials.
+- Bootstrap env vars (`BOOTSTRAP_EMAIL`, `BOOTSTRAP_PASSWORD`, `BOOTSTRAP_TENANT`) create the first admin user on startup — remove them after first boot in production.
+- `ENCRYPTION_KEY` and `JWT_PRIVATE_KEY` must be stable in production. Ephemeral (default) values mean secrets can't be decrypted and all JWTs invalidate on restart.
+- MCP server runs on `:8090`, admin portal on `:8092`, control-plane on `:8080`.
+
+## License
+
+Dual-licensed: AGPL-3.0 (open source) + commercial license for proprietary use.
+Contact: abskrj@icloud.com

@@ -194,6 +194,36 @@ func (s *Store) ClearCanary(ctx context.Context, snippetID, env string) error {
 	return nil
 }
 
+// GetSnippetEnvironments returns the active version number per environment for a snippet.
+// Only environments that have had a version published are returned.
+func (s *Store) GetSnippetEnvironments(ctx context.Context, snippetID string) ([]models.SnippetEnvironment, error) {
+	rows, err := s.pool.Query(ctx,
+		`SELECT se.env, sv.version_number
+		 FROM snippet_environments se
+		 LEFT JOIN snippet_versions sv ON sv.id = se.active_version_id
+		 WHERE se.snippet_id = $1
+		 ORDER BY se.env`,
+		snippetID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("GetSnippetEnvironments query: %w", err)
+	}
+	defer rows.Close()
+
+	var envs []models.SnippetEnvironment
+	for rows.Next() {
+		var env models.SnippetEnvironment
+		var versionNumber *int
+		if err := rows.Scan(&env.Env, &versionNumber); err != nil {
+			return nil, fmt.Errorf("GetSnippetEnvironments scan: %w", err)
+		}
+		env.SnippetID = snippetID
+		env.ActiveVersionNumber = versionNumber
+		envs = append(envs, env)
+	}
+	return envs, rows.Err()
+}
+
 func scanVersion(s scannable) (*models.SnippetVersion, error) {
 	var v models.SnippetVersion
 	if err := s.Scan(

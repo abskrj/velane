@@ -1,12 +1,12 @@
 import Editor from '@monaco-editor/react'
-import { Trash2 } from 'lucide-react'
+import { Check, ChevronRight, Copy, History, MoreHorizontal, Plug, Trash2, X } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import LanguageBadge from '../components/LanguageBadge'
 import PublishDropdown from '../components/PublishDropdown'
 import { Toast, useToast } from '../components/Toast'
 import { api } from '../lib/api'
-import type { InvocationResult, Snippet, SnippetVersion } from '../types'
+import type { InvocationResult, Snippet, SnippetEnvironment, SnippetVersion } from '../types'
 
 type ActiveTab = 'test' | 'logs'
 
@@ -28,9 +28,18 @@ export default function SnippetEditorPage() {
 
   const [snippet, setSnippet] = useState<Snippet | null>(null)
   const [versions, setVersions] = useState<SnippetVersion[]>([])
+  const [environments, setEnvironments] = useState<SnippetEnvironment[]>([])
+  const [openEnvs, setOpenEnvs] = useState<Record<string, boolean>>({ dev: true, staging: true, prod: true })
   const [code, setCode] = useState('')
   const [loading, setLoading] = useState(!!id)
-  const [saving, setSaving] = useState(false)
+  const [autoSaving, setAutoSaving] = useState(false)
+  const [autoSaved, setAutoSaved] = useState(false)
+  const [showVersions, setShowVersions] = useState(false)
+  const [showConnect, setShowConnect] = useState(false)
+  const [connectTab, setConnectTab] = useState<'endpoint' | 'claude' | 'cursor'>('endpoint')
+  const [copied, setCopied] = useState<string | null>(null)
+  const [showMenu, setShowMenu] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
   const [activeTab, setActiveTab] = useState<ActiveTab>('test')
   const [testInput, setTestInput] = useState('{}')
   const [testEnv, setTestEnv] = useState<'dev' | 'staging' | 'prod'>('dev')
@@ -45,9 +54,10 @@ export default function SnippetEditorPage() {
     if (!id) return
     async function load() {
       try {
-        const [sn, vs] = await Promise.all([api.getSnippet(id!), api.listVersions(id!)])
+        const [sn, vs, envs] = await Promise.all([api.getSnippet(id!), api.listVersions(id!), api.listEnvironments(id!)])
         setSnippet(sn)
         setVersions(vs)
+        setEnvironments(envs ?? [])
         if (vs.length > 0) {
           setCode(vs[vs.length - 1].code)
         } else {
@@ -65,8 +75,9 @@ export default function SnippetEditorPage() {
   async function reloadVersions() {
     if (!id) return
     try {
-      const vs = await api.listVersions(id)
+      const [vs, envs] = await Promise.all([api.listVersions(id), api.listEnvironments(id)])
       setVersions(vs)
+      setEnvironments(envs ?? [])
     } catch {
       // ignore
     }
@@ -80,32 +91,24 @@ export default function SnippetEditorPage() {
       setCode(newCode)
       if (!id) return
 
+      setAutoSaving(true)
+      setAutoSaved(false)
       if (autosaveTimer.current) clearTimeout(autosaveTimer.current)
       autosaveTimer.current = setTimeout(async () => {
         try {
           await api.createVersion(id, newCode)
-          reloadVersions()
+          await reloadVersions()
+          setAutoSaved(true)
+          setTimeout(() => setAutoSaved(false), 2000)
         } catch {
           // silent auto-save failure
+        } finally {
+          setAutoSaving(false)
         }
       }, 1500)
     },
     [id],
   )
-
-  async function handleSaveDraft() {
-    if (!id) return
-    setSaving(true)
-    try {
-      await api.createVersion(id, code)
-      await reloadVersions()
-      showToast('Draft saved')
-    } catch (err) {
-      showToast(String(err), 'error')
-    } finally {
-      setSaving(false)
-    }
-  }
 
   async function handlePublish(env: 'dev' | 'staging' | 'prod') {
     if (!id) return
@@ -158,6 +161,30 @@ export default function SnippetEditorPage() {
 
   const displayCode = selectedVersion ? selectedVersion.code : code
   const isReadOnly = !!selectedVersion
+  const hasDraft = versions.some((v) => v.status === 'draft')
+
+  const tenantSlug = localStorage.getItem('tenantSlug') ?? 'your-tenant'
+  const invokeUrl = snippet
+    ? `${window.location.origin}/api/v1/invoke/${tenantSlug}/${snippet.slug}`
+    : ''
+  function copyToClipboard(text: string, key: string) {
+    navigator.clipboard.writeText(text)
+    setCopied(key)
+    setTimeout(() => setCopied(null), 2000)
+  }
+
+  const claudeConfig = JSON.stringify({
+    mcpServers: {
+      velane: {
+        url: `${window.location.origin.replace(/:\d+$/, ':8090')}/mcp`,
+        headers: { Authorization: 'Bearer vl_YOUR_API_KEY' },
+      },
+    },
+  }, null, 2)
+
+  const curlExample = snippet
+    ? `curl -X POST "${invokeUrl}" \\\n  -H "Authorization: Bearer vl_YOUR_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{"key": "value"}'`
+    : ''
 
   return (
     <div className="flex h-full flex-col">
@@ -175,22 +202,52 @@ export default function SnippetEditorPage() {
           {snippet && <LanguageBadge language={snippet.language} />}
         </div>
         <div className="flex items-center gap-2">
-          <button
-            className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-            onClick={handleSaveDraft}
-            disabled={saving}
-          >
-            {saving ? 'Saving...' : 'Save Draft'}
-          </button>
-          <PublishDropdown onPublish={handlePublish} disabled={!id} />
-          {id && (
+          {autoSaving && <span className="text-xs text-gray-400">Saving…</span>}
+          {!autoSaving && autoSaved && <span className="text-xs text-gray-400">Saved</span>}
+          {versions.length > 0 && (
             <button
-              className="rounded-md border border-red-200 px-2 py-1.5 text-sm text-red-600 hover:bg-red-50"
-              onClick={handleDelete}
-              title="Delete snippet"
+              className="flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              onClick={() => setShowVersions(true)}
             >
-              <Trash2 className="h-4 w-4" />
+              <History className="h-3.5 w-3.5" />
+              Versions
+              <span className="rounded bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-600">
+                {versions.length}
+              </span>
             </button>
+          )}
+          <button
+            className="flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            onClick={() => { setConnectTab('endpoint'); setShowConnect(true) }}
+          >
+            <Plug className="h-3.5 w-3.5" />
+            Connect
+          </button>
+          <PublishDropdown onPublish={handlePublish} disabled={!hasDraft} />
+          {id && (
+            <div className="relative" ref={menuRef}>
+              <button
+                className="rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-600 hover:bg-gray-50"
+                onClick={() => setShowMenu((v) => !v)}
+                title="More options"
+              >
+                <MoreHorizontal className="h-4 w-4" />
+              </button>
+              {showMenu && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setShowMenu(false)} />
+                  <div className="absolute right-0 z-20 mt-1 w-40 rounded-md border border-gray-200 bg-white py-1 shadow-lg">
+                    <button
+                      className="flex w-full items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50"
+                      onClick={() => { setShowMenu(false); handleDelete() }}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      Delete snippet
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
           )}
         </div>
       </header>
@@ -253,6 +310,21 @@ export default function SnippetEditorPage() {
                   <option value="prod">prod</option>
                 </select>
               </div>
+              {invokeUrl && (
+                <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2">
+                  <p className="mb-1 text-xs font-medium text-gray-500">Endpoint</p>
+                  <div className="flex items-center gap-2">
+                    <code className="flex-1 truncate text-xs text-gray-700">{invokeUrl}</code>
+                    <button
+                      className="shrink-0 text-gray-400 hover:text-gray-700"
+                      onClick={() => copyToClipboard(invokeUrl, 'endpoint-panel')}
+                      title="Copy URL"
+                    >
+                      {copied === 'endpoint-panel' ? <Check className="h-3.5 w-3.5 text-green-600" /> : <Copy className="h-3.5 w-3.5" />}
+                    </button>
+                  </div>
+                </div>
+              )}
               <button
                 className="w-full rounded-md bg-gray-900 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
                 onClick={handleRun}
@@ -296,34 +368,258 @@ export default function SnippetEditorPage() {
         </div>
       </div>
 
-      {versions.length > 0 && (
-        <footer className="flex shrink-0 items-center gap-2 border-t border-gray-200 bg-white px-4 py-2">
-          <span className="text-xs text-gray-500">Versions:</span>
-          {selectedVersion && (
-            <button
-              className="rounded px-2 py-0.5 text-xs text-gray-500 hover:bg-gray-100"
-              onClick={() => setSelectedVersion(null)}
-            >
-              Latest (editable)
-            </button>
-          )}
-          {versions.map((v) => (
-            <button
-              key={v.id}
-              className={`rounded px-2 py-0.5 text-xs ${
-                selectedVersion?.id === v.id
-                  ? 'bg-gray-100 font-medium text-gray-900'
-                  : 'text-gray-600 hover:bg-gray-100'
-              }`}
-              onClick={() => setSelectedVersion(selectedVersion?.id === v.id ? null : v)}
-            >
-              v{v.version_number}
-              {v.status === 'published' && (
-                <span className="ml-1 text-green-600">●</span>
+      {showConnect && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
+          <div className="w-full max-w-lg rounded-xl border border-gray-200 bg-white shadow-xl">
+            {/* Modal header */}
+            <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4">
+              <div>
+                <h2 className="text-base font-semibold text-gray-900">Connect</h2>
+                <p className="mt-0.5 text-xs text-gray-500">Call this snippet from your agent or IDE</p>
+              </div>
+              <button
+                className="rounded-md p-1.5 text-gray-400 hover:bg-gray-100"
+                onClick={() => setShowConnect(false)}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Tabs */}
+            <div className="flex border-b border-gray-200 px-5">
+              {([
+                { key: 'endpoint', label: 'HTTP' },
+                { key: 'claude', label: 'Claude Code' },
+                { key: 'cursor', label: 'Cursor / Codex' },
+              ] as const).map(({ key, label }) => (
+                <button
+                  key={key}
+                  className={`mr-4 py-2.5 text-sm font-medium ${
+                    connectTab === key
+                      ? 'border-b-2 border-gray-900 text-gray-900'
+                      : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                  onClick={() => setConnectTab(key)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <div className="px-5 py-4">
+              {connectTab === 'endpoint' && (
+                <div className="space-y-4">
+                  <div>
+                    <p className="mb-1.5 text-xs font-medium text-gray-700">Invoke URL</p>
+                    <div className="flex items-center gap-2 rounded-md border border-gray-200 bg-gray-50 px-3 py-2">
+                      <code className="flex-1 truncate text-xs text-gray-800">{invokeUrl}</code>
+                      <button onClick={() => copyToClipboard(invokeUrl, 'invoke-url')} className="shrink-0 text-gray-400 hover:text-gray-700">
+                        {copied === 'invoke-url' ? <Check className="h-3.5 w-3.5 text-green-600" /> : <Copy className="h-3.5 w-3.5" />}
+                      </button>
+                    </div>
+                  </div>
+                  <div>
+                    <p className="mb-1.5 text-xs font-medium text-gray-700">Example request</p>
+                    <div className="relative rounded-md bg-gray-900 px-4 py-3">
+                      <pre className="overflow-x-auto text-xs leading-relaxed text-gray-100">{curlExample}</pre>
+                      <button
+                        className="absolute right-2 top-2 rounded p-1 text-gray-400 hover:text-gray-200"
+                        onClick={() => copyToClipboard(curlExample, 'curl')}
+                      >
+                        {copied === 'curl' ? <Check className="h-3.5 w-3.5 text-green-400" /> : <Copy className="h-3.5 w-3.5" />}
+                      </button>
+                    </div>
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    Use <code className="rounded bg-gray-100 px-1">X-Invoke-Mode: async</code> or{' '}
+                    <code className="rounded bg-gray-100 px-1">stream</code> headers for async / streaming modes.
+                  </p>
+                </div>
               )}
-            </button>
-          ))}
-        </footer>
+
+              {(connectTab === 'claude' || connectTab === 'cursor') && (
+                <div className="space-y-4">
+                  <p className="text-xs text-gray-600">
+                    {connectTab === 'claude'
+                      ? 'Add to your ~/.claude/mcp.json to connect Claude Code directly to Velane.'
+                      : 'Add to your .cursor/mcp.json to connect Cursor or Codex to Velane.'}
+                  </p>
+                  <div className="relative rounded-md bg-gray-900 px-4 py-3">
+                    <pre className="overflow-x-auto text-xs leading-relaxed text-gray-100">{claudeConfig}</pre>
+                    <button
+                      className="absolute right-2 top-2 rounded p-1 text-gray-400 hover:text-gray-200"
+                      onClick={() => copyToClipboard(claudeConfig, 'mcp-config')}
+                    >
+                      {copied === 'mcp-config' ? <Check className="h-3.5 w-3.5 text-green-400" /> : <Copy className="h-3.5 w-3.5" />}
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    Replace <code className="rounded bg-gray-100 px-1">vl_YOUR_API_KEY</code> with an API key from{' '}
+                    <strong>Settings → API Keys</strong>. Available MCP tools: list_snippets, get_snippet,
+                    create_snippet, update_draft, publish_snippet, invoke_snippet, get_logs, list_secrets, set_secret.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showVersions && (
+        <>
+          <div
+            className="fixed inset-0 z-30 bg-black/20"
+            onClick={() => setShowVersions(false)}
+          />
+          <aside className="fixed inset-y-0 right-0 z-40 flex w-72 flex-col border-l border-gray-200 bg-white shadow-xl">
+            <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
+              <span className="text-sm font-semibold text-gray-900">Versions</span>
+              <button
+                className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                onClick={() => setShowVersions(false)}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            {selectedVersion && (
+              <div className="border-b border-gray-100 bg-blue-50 px-4 py-2">
+                <button
+                  className="text-xs font-medium text-blue-700 hover:underline"
+                  onClick={() => { setSelectedVersion(null); setShowVersions(false) }}
+                >
+                  ← Back to latest (editable)
+                </button>
+              </div>
+            )}
+            <div className="flex-1 overflow-y-auto">
+              {(['dev', 'staging', 'prod'] as const).map((env) => {
+                const envData = environments.find((e) => e.env === env)
+                const activeNum = envData?.active_version_number ?? null
+                const activeVersion = activeNum != null
+                  ? versions.find((v) => v.version_number === activeNum) ?? null
+                  : null
+                const isOpen = openEnvs[env]
+
+                return (
+                  <div key={env} className="border-b border-gray-100">
+                    <button
+                      className="flex w-full items-center justify-between px-4 py-2.5 text-left hover:bg-gray-50"
+                      onClick={() => setOpenEnvs((p) => ({ ...p, [env]: !p[env] }))}
+                    >
+                      <div className="flex items-center gap-2">
+                        <ChevronRight
+                          className={`h-3.5 w-3.5 text-gray-400 transition-transform ${isOpen ? 'rotate-90' : ''}`}
+                        />
+                        <span className="text-sm font-medium capitalize text-gray-800">{env}</span>
+                      </div>
+                      {activeVersion ? (
+                        <span className="text-xs text-gray-400">v{activeVersion.version_number}</span>
+                      ) : (
+                        <span className="text-xs text-gray-300">—</span>
+                      )}
+                    </button>
+
+                    {isOpen && (
+                      <div className="pb-2 pt-0.5">
+                        {activeVersion ? (
+                          <div className={`mx-3 rounded-md border border-gray-200 px-3 py-2.5 ${selectedVersion?.id === activeVersion.id ? 'bg-gray-50' : ''}`}>
+                            <div className="mb-1.5 flex items-center justify-between">
+                              <span className="text-xs font-medium text-gray-900">v{activeVersion.version_number}</span>
+                              <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
+                                published
+                              </span>
+                            </div>
+                            <p className="mb-2 text-xs text-gray-400">
+                              {new Date(activeVersion.created_at).toLocaleString()}
+                            </p>
+                            <div className="flex gap-2">
+                              <button
+                                className="flex-1 rounded border border-gray-300 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                                onClick={() => { setSelectedVersion(selectedVersion?.id === activeVersion.id ? null : activeVersion); setShowVersions(false) }}
+                              >
+                                {selectedVersion?.id === activeVersion.id ? 'Viewing' : 'View'}
+                              </button>
+                              <button
+                                className="flex-1 rounded border border-gray-300 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                                onClick={async () => {
+                                  setCode(activeVersion.code)
+                                  setSelectedVersion(null)
+                                  setShowVersions(false)
+                                  if (id) {
+                                    try { await api.createVersion(id, activeVersion.code); await reloadVersions() } catch { /* silent */ }
+                                  }
+                                }}
+                              >
+                                Restore
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="px-4 pb-1 text-xs text-gray-400">Nothing published yet</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+
+              {/* Drafts */}
+              {(() => {
+                const drafts = [...versions].reverse().filter((v) => v.status === 'draft')
+                if (drafts.length === 0) return null
+                const isOpen = openEnvs['drafts']
+                return (
+                  <div key="drafts" className="border-b border-gray-100">
+                    <button
+                      className="flex w-full items-center justify-between px-4 py-2.5 text-left hover:bg-gray-50"
+                      onClick={() => setOpenEnvs((p) => ({ ...p, drafts: !p['drafts'] }))}
+                    >
+                      <div className="flex items-center gap-2">
+                        <ChevronRight className={`h-3.5 w-3.5 text-gray-400 transition-transform ${isOpen ? 'rotate-90' : ''}`} />
+                        <span className="text-sm font-medium text-gray-800">Drafts</span>
+                      </div>
+                      <span className="text-xs text-gray-400">{drafts.length}</span>
+                    </button>
+                    {isOpen && (
+                      <div className="space-y-1.5 px-3 pb-2 pt-0.5">
+                        {drafts.map((v) => (
+                          <div key={v.id} className={`rounded-md border border-gray-200 px-3 py-2.5 ${selectedVersion?.id === v.id ? 'bg-gray-50' : ''}`}>
+                            <div className="mb-1.5 flex items-center justify-between">
+                              <span className="text-xs font-medium text-gray-900">v{v.version_number}</span>
+                              <span className="rounded-full bg-yellow-50 px-2 py-0.5 text-xs font-medium text-yellow-700">draft</span>
+                            </div>
+                            <p className="mb-2 text-xs text-gray-400">{new Date(v.created_at).toLocaleString()}</p>
+                            <div className="flex gap-2">
+                              <button
+                                className="flex-1 rounded border border-gray-300 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                                onClick={() => { setSelectedVersion(selectedVersion?.id === v.id ? null : v); setShowVersions(false) }}
+                              >
+                                {selectedVersion?.id === v.id ? 'Viewing' : 'View'}
+                              </button>
+                              <button
+                                className="flex-1 rounded border border-gray-300 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                                onClick={async () => {
+                                  setCode(v.code)
+                                  setSelectedVersion(null)
+                                  setShowVersions(false)
+                                  if (id) {
+                                    try { await api.createVersion(id, v.code); await reloadVersions() } catch { /* silent */ }
+                                  }
+                                }}
+                              >
+                                Restore
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
+            </div>
+          </aside>
+        </>
       )}
     </div>
   )

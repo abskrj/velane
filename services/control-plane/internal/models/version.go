@@ -30,10 +30,11 @@ type SnippetVersion struct {
 // SnippetEnvironment pins a specific version of a snippet to a deployment
 // environment (dev, staging, or prod).
 type SnippetEnvironment struct {
-	SnippetID       string  `json:"snippet_id"`
-	Env             string  `json:"env"` // "dev" | "staging" | "prod"
-	ActiveVersionID *string `json:"active_version_id,omitempty"`
-	MinInstances    int     `json:"min_instances"`
-	CanaryVersionID *string `json:"canary_version_id,omitempty"`
-	CanaryPct       int     `json:"canary_pct"`
+	SnippetID           string  `json:"snippet_id"`
+	Env                 string  `json:"env"` // "dev" | "staging" | "prod"
+	ActiveVersionID     *string `json:"active_version_id,omitempty"`
+	ActiveVersionNumber *int    `json:"active_version_number,omitempty"`
+	MinInstances        int     `json:"min_instances"`
+	CanaryVersionID     *string `json:"canary_version_id,omitempty"`
+	CanaryPct           int     `json:"canary_pct"`
 }

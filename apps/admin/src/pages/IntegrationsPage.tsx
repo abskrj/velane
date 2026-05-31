@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { Plug, Search, CheckCircle2, Loader2, X, Settings, ChevronDown, ChevronUp } from 'lucide-react'
+import Nango from '@nangohq/frontend'
 import { api } from '../lib/api'
 import type { Connection, NangoProvider, IntegrationConfig } from '../types'
 
@@ -15,11 +16,12 @@ function isOAuthMode(authMode: string) {
 interface ConfigureModalProps {
   provider: NangoProvider
   existing?: IntegrationConfig
+  callbackUrl: string
   onClose: () => void
   onSaved: () => void
 }
 
-function ConfigureModal({ provider, existing, onClose, onSaved }: ConfigureModalProps) {
+function ConfigureModal({ provider, existing, callbackUrl, onClose, onSaved }: ConfigureModalProps) {
   const [clientId, setClientId]     = useState('')
   const [clientSecret, setClientSecret] = useState('')
   const [scopes, setScopes]         = useState(existing?.oauth_scopes ?? '')
@@ -86,6 +88,29 @@ function ConfigureModal({ provider, existing, onClose, onSaved }: ConfigureModal
           <div className="px-6 py-5 space-y-4">
             {error && (
               <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">{error}</p>
+            )}
+
+            {isOAuthMode(provider.auth_mode) && callbackUrl && (
+              <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 space-y-1">
+                <p className="text-xs font-medium text-blue-800">
+                  OAuth redirect URL
+                </p>
+                <p className="text-xs text-blue-700">
+                  Register this as the callback / redirect URI in your {provider.name} OAuth app settings before pasting credentials below.
+                </p>
+                <div className="flex items-center gap-2 mt-1">
+                  <code className="flex-1 rounded bg-white border border-blue-200 px-2 py-1 text-xs font-mono text-blue-900 select-all break-all">
+                    {callbackUrl}
+                  </code>
+                  <button
+                    type="button"
+                    onClick={() => navigator.clipboard.writeText(callbackUrl)}
+                    className="shrink-0 rounded px-2 py-1 text-xs text-blue-700 hover:bg-blue-100"
+                  >
+                    Copy
+                  </button>
+                </div>
+              </div>
             )}
 
             {isOAuthMode(provider.auth_mode) && (
@@ -238,18 +263,16 @@ function ProviderCard({ provider, status, connectingOrBusy, onAction }: Provider
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-2.5 min-w-0">
           {/* Logo with fallback */}
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-gray-50 border border-gray-100 overflow-hidden">
-            {provider.logo_url && !imgError ? (
-              <img
-                src={provider.logo_url}
-                alt={provider.name}
-                className="h-5 w-5 object-contain"
-                onError={() => setImgError(true)}
-              />
-            ) : (
-              <Plug size={13} className="text-gray-400" />
-            )}
-          </div>
+          {provider.logo_url && !imgError ? (
+            <img
+              src={provider.logo_url}
+              alt={provider.name}
+              className="h-8 w-8 shrink-0 object-contain"
+              onError={() => setImgError(true)}
+            />
+          ) : (
+            <Plug size={18} className="shrink-0 text-gray-400" />
+          )}
           <div className="min-w-0 flex-1">
             <p className="text-sm font-medium text-gray-900 leading-tight" style={{
               display: '-webkit-box',
@@ -349,6 +372,7 @@ export default function IntegrationsPage() {
   const [busy,         setBusy]         = useState<string | null>(null)
   const [error,        setError]        = useState<string | null>(null)
   const [configModal,  setConfigModal]  = useState<NangoProvider | null>(null)
+  const [callbackUrl,  setCallbackUrl]  = useState('')
 
   const configuredSet = useMemo(() => new Set(configs.map(c => c.unique_key)), [configs])
   const connectedSet  = useMemo(() => new Set(connections.map(c => c.provider)), [connections])
@@ -365,7 +389,9 @@ export default function IntegrationsPage() {
   }
 
   useEffect(() => {
-    reload().catch(e => setError(e.message)).finally(() => setLoading(false))
+    Promise.all([reload(), api.getConnectInfo().then(info => setCallbackUrl(info.oauth_callback_url))])
+      .catch(e => setError(e.message))
+      .finally(() => setLoading(false))
   }, [])
 
   function getStatus(providerKey: string): 'connected' | 'configured' | 'available' {
@@ -402,14 +428,25 @@ export default function IntegrationsPage() {
           await api.configureIntegration({ provider: provider.unique_key })
           await reload()
         }
-        const { session_token } = await api.createConnectionSession(provider.unique_key)
-        const { default: Nango } = await import('@nangohq/frontend')
+        const { session_token, connect_url, api_url } = await api.createConnectionSession(provider.unique_key)
         const nango = new Nango({ connectSessionToken: session_token })
-        await nango.openConnectUI({
-          onSuccess: async () => {
-            await api.recordConnection(provider.unique_key)
-            await reload()
-          },
+        await new Promise<void>((resolve, reject) => {
+          const ui = nango.openConnectUI({
+            sessionToken: session_token,
+            baseURL: connect_url,
+            apiURL: api_url,
+            onEvent: (event) => {
+              if (event.type === 'connect') {
+                api.recordConnection(provider.unique_key)
+                  .then(() => reload())
+                  .then(resolve)
+                  .catch(reject)
+              } else if (event.type === 'close') {
+                resolve()
+              }
+            },
+          })
+          ui.open()
         })
         return
       }
@@ -440,7 +477,7 @@ export default function IntegrationsPage() {
   }
 
   return (
-    <div className="max-w-5xl">
+    <div>
       <div className="mb-6">
         <h1 className="text-xl font-semibold text-gray-900">Integrations</h1>
         <p className="mt-1 text-sm text-gray-500">
@@ -538,6 +575,7 @@ export default function IntegrationsPage() {
         <ConfigureModal
           provider={configModal}
           existing={configs.find(c => c.unique_key === configModal.unique_key)}
+          callbackUrl={callbackUrl}
           onClose={() => setConfigModal(null)}
           onSaved={async () => {
             setConfigModal(null)
@@ -553,7 +591,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   return (
     <section className="mb-8">
       <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">{title}</h2>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
         {children}
       </div>
     </section>

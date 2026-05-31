@@ -81,6 +81,9 @@ func (m *mockStore) GetTenantByID(ctx context.Context, id string) (*models.Tenan
 		},
 	}, nil
 }
+func (m *mockStore) GetTenantLibrariesForInvocation(ctx context.Context, tenantID, tenantSlug, language string) (map[string]string, error) {
+	return map[string]string{}, nil
+}
 
 // mockExecutor implements executor.Executor.
 type mockExecutor struct {
@@ -210,7 +213,7 @@ func TestScheduler_Invoke_Success(t *testing.T) {
 		},
 	}
 
-	sched := scheduler.New(store, exec, testEncKey)
+	sched := scheduler.New(store, exec, testEncKey, nil)
 	inv, err := sched.Invoke(context.Background(), scheduler.InvokeRequest{
 		TenantID:    "tenant-1",
 		SnippetSlug: "hello",
@@ -236,7 +239,7 @@ func TestScheduler_Invoke_SnippetNotFound(t *testing.T) {
 		},
 	}
 
-	sched := scheduler.New(store, &mockExecutor{}, testEncKey)
+	sched := scheduler.New(store, &mockExecutor{}, testEncKey, nil)
 	_, err := sched.Invoke(context.Background(), scheduler.InvokeRequest{
 		TenantID:    "tenant-1",
 		SnippetSlug: "missing",
@@ -262,7 +265,7 @@ func TestScheduler_Invoke_NoPublishedVersion(t *testing.T) {
 		},
 	}
 
-	sched := scheduler.New(store, &mockExecutor{}, testEncKey)
+	sched := scheduler.New(store, &mockExecutor{}, testEncKey, nil)
 	_, err := sched.Invoke(context.Background(), scheduler.InvokeRequest{
 		TenantID:    "tenant-1",
 		SnippetSlug: "hello",
@@ -297,7 +300,7 @@ func TestScheduler_Invoke_ExecutorTimeout(t *testing.T) {
 		},
 	}
 
-	sched := scheduler.New(store, exec, testEncKey)
+	sched := scheduler.New(store, exec, testEncKey, nil)
 	inv, err := sched.Invoke(context.Background(), scheduler.InvokeRequest{
 		TenantID:    "tenant-1",
 		SnippetSlug: "hello",
@@ -336,7 +339,7 @@ func TestScheduler_Invoke_ExecutorOOM(t *testing.T) {
 		},
 	}
 
-	sched := scheduler.New(store, exec, testEncKey)
+	sched := scheduler.New(store, exec, testEncKey, nil)
 	inv, err := sched.Invoke(context.Background(), scheduler.InvokeRequest{
 		TenantID: "tenant-1", SnippetSlug: "hello", Env: "prod", Input: `{}`,
 	})
@@ -367,7 +370,7 @@ func TestScheduler_Invoke_DefaultsEmptyInputToEmptyObject(t *testing.T) {
 		},
 	}
 
-	sched := scheduler.New(store, exec, testEncKey)
+	sched := scheduler.New(store, exec, testEncKey, nil)
 	_, err := sched.Invoke(context.Background(), scheduler.InvokeRequest{
 		TenantID: "tenant-1", SnippetSlug: "hello", Env: "prod",
 		Input: "", // empty — should default to "{}"
@@ -410,7 +413,7 @@ func TestScheduler_Invoke_PinnedVersion(t *testing.T) {
 		},
 	}
 
-	sched := scheduler.New(store, exec, testEncKey)
+	sched := scheduler.New(store, exec, testEncKey, nil)
 	_, err := sched.Invoke(context.Background(), scheduler.InvokeRequest{
 		TenantID:      "tenant-1",
 		SnippetSlug:   "hello",
@@ -437,7 +440,7 @@ func TestScheduler_Invoke_PinnedVersionNotFound(t *testing.T) {
 		return nil, errors.New("version not found")
 	}
 
-	sched := scheduler.New(store, &mockExecutor{}, testEncKey)
+	sched := scheduler.New(store, &mockExecutor{}, testEncKey, nil)
 	_, err := sched.Invoke(context.Background(), scheduler.InvokeRequest{
 		TenantID:      "tenant-1",
 		SnippetSlug:   "hello",
@@ -461,7 +464,7 @@ func TestScheduler_InvokeAsync_Success(t *testing.T) {
 	queue := &mockQueue{}
 	exec := &mockExecutor{}
 
-	sched := scheduler.NewWithQueue(store, exec, queue, testEncKey)
+	sched := scheduler.NewWithQueue(store, exec, queue, testEncKey, nil)
 	inv, err := sched.InvokeAsync(context.Background(), scheduler.InvokeRequest{
 		TenantID:    "tenant-1",
 		SnippetSlug: "hello",
@@ -503,7 +506,7 @@ func TestScheduler_InvokeAsync_NoQueue(t *testing.T) {
 	store := buildDefaultStore(invocationID, versionID, &activeVersion)
 
 	// No queue — New (not NewWithQueue).
-	sched := scheduler.New(store, &mockExecutor{}, testEncKey)
+	sched := scheduler.New(store, &mockExecutor{}, testEncKey, nil)
 	_, err := sched.InvokeAsync(context.Background(), scheduler.InvokeRequest{
 		TenantID:    "tenant-1",
 		SnippetSlug: "hello",
@@ -536,7 +539,7 @@ func TestScheduler_InvokeStream_Success(t *testing.T) {
 		},
 	}
 
-	sched := scheduler.New(store, exec, testEncKey)
+	sched := scheduler.New(store, exec, testEncKey, nil)
 	ch, inv, err := sched.InvokeStream(context.Background(), scheduler.InvokeRequest{
 		TenantID:    "tenant-1",
 		SnippetSlug: "hello",
@@ -608,7 +611,7 @@ func TestScheduler_Invoke_CanaryRouting(t *testing.T) {
 		},
 	}
 
-	sched := scheduler.New(store, exec, testEncKey)
+	sched := scheduler.New(store, exec, testEncKey, nil)
 	_, err := sched.Invoke(context.Background(), scheduler.InvokeRequest{
 		TenantID:    "tenant-1",
 		SnippetSlug: "hello",
@@ -649,7 +652,7 @@ func TestScheduler_Invoke_SecretsInjected(t *testing.T) {
 		},
 	}
 
-	sched := scheduler.New(store, exec, testEncKey)
+	sched := scheduler.New(store, exec, testEncKey, nil)
 	_, err := sched.Invoke(context.Background(), scheduler.InvokeRequest{
 		TenantID:    "tenant-1",
 		SnippetSlug: "hello",

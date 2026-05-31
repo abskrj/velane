@@ -34,8 +34,12 @@ func New(baseURL, secretKey string) *Client {
 }
 
 // CreateConnectSession asks Nango for a short-lived Connect session token.
-// The session is scoped to one provider and one end-user (tenantID).
-func (c *Client) CreateConnectSession(ctx context.Context, tenantID, tenantName, provider string) (string, error) {
+// alias is not passed to Nango (this version of the self-hosted server rejects
+// unknown fields); the alias is stored when the frontend calls RecordConnection.
+func (c *Client) CreateConnectSession(ctx context.Context, tenantID, tenantName, provider, alias string) (string, error) {
+	if alias == "" {
+		alias = "default"
+	}
 	body := map[string]any{
 		"end_user": map[string]any{
 			"id":           tenantID,
@@ -72,6 +76,35 @@ func (c *Client) CreateConnectSession(ctx context.Context, tenantID, tenantName,
 		return "", fmt.Errorf("nango CreateConnectSession decode: %w", err)
 	}
 	return out.Data.Token, nil
+}
+
+// PatchConnectionMetadata updates metadata on an existing Nango connection without
+// overwriting fields not included in the patch (PATCH semantics).
+func (c *Client) PatchConnectionMetadata(ctx context.Context, connectionID, providerConfigKey string, metadata map[string]any) error {
+	body := map[string]any{
+		"connection_id":       connectionID,
+		"provider_config_key": providerConfigKey,
+		"metadata":            metadata,
+	}
+	b, _ := json.Marshal(body)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, c.baseURL+"/connections/metadata", bytes.NewReader(b))
+	if err != nil {
+		return err
+	}
+	c.setAuth(req)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("nango PatchConnectionMetadata: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 300 {
+		raw, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("nango PatchConnectionMetadata %d: %s", resp.StatusCode, raw)
+	}
+	return nil
 }
 
 // DeleteConnection removes a connection from Nango.

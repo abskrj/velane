@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/base64"
 	"fmt"
 	"io"
 	"net/http"
@@ -18,41 +19,72 @@ type IntegrationsHandler struct {
 	nango            *nango.Client
 	log              *zap.Logger
 	nangoInternalURL string // used to proxy Nango assets through control plane
+	nangoApiURL      string // browser-accessible Nango API URL, used to derive OAuth callback URL
 }
 
-func NewIntegrationsHandler(nangoClient *nango.Client, log *zap.Logger, nangoInternalURL string) *IntegrationsHandler {
-	return &IntegrationsHandler{nango: nangoClient, log: log, nangoInternalURL: nangoInternalURL}
+func NewIntegrationsHandler(nangoClient *nango.Client, log *zap.Logger, nangoInternalURL, nangoApiURL string) *IntegrationsHandler {
+	return &IntegrationsHandler{nango: nangoClient, log: log, nangoInternalURL: nangoInternalURL, nangoApiURL: nangoApiURL}
 }
 
-// rewriteLogoURL replaces Nango's self-reported logo URL (which points back at
-// Nango directly) with a path served through the control plane proxy so the
-// browser never needs to reach Nango.
+// ConnectInfo handles GET /v1/connect/info.
+// Returns public connection metadata — currently just the OAuth callback URL that
+// operators must register in their OAuth app settings (e.g. GitHub, Salesforce).
+// No authentication required.
+func (h *IntegrationsHandler) ConnectInfo(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]string{
+		"oauth_callback_url": h.nangoApiURL + "/oauth/callback",
+	})
+}
+
+// rewriteLogoURL replaces Nango's self-reported logo URL with a path served
+// through the control plane proxy so the browser never reaches Nango directly.
+// The original URL is base64-encoded in the path so ProxyAsset knows where to
+// fetch the asset from.
+//
+// Nango reports http:// logo URLs using its public NANGO_SERVER_URL (e.g.
+// http://localhost:3003), which is unreachable inside Docker. We replace the
+// host with nangoInternalURL so the proxy fetches from the correct container.
+// https:// URLs (CDN assets) are kept verbatim.
 func (h *IntegrationsHandler) rewriteLogoURL(nangoLogoURL string) string {
 	if nangoLogoURL == "" {
 		return ""
 	}
-	// Extract just the path portion (e.g. /images/template-logos/github.svg)
-	// regardless of what host Nango reports.
-	for _, prefix := range []string{"http://", "https://"} {
-		if strings.HasPrefix(nangoLogoURL, prefix) {
-			rest := strings.TrimPrefix(nangoLogoURL, prefix)
-			idx := strings.Index(rest, "/")
-			if idx >= 0 {
-				return "/v1/nango-assets" + rest[idx:]
-			}
+	fetchURL := nangoLogoURL
+	if strings.HasPrefix(nangoLogoURL, "http://") {
+		rest := strings.TrimPrefix(nangoLogoURL, "http://")
+		if idx := strings.Index(rest, "/"); idx >= 0 {
+			fetchURL = h.nangoInternalURL + rest[idx:]
 		}
 	}
-	return nangoLogoURL
+	encoded := base64.RawURLEncoding.EncodeToString([]byte(fetchURL))
+	return "/api/v1/nango-assets/" + encoded
 }
 
 // ProxyAsset handles GET /v1/nango-assets/* and proxies static assets
-// (logos, icons) from Nango's internal server to the browser.
+// (logos, icons) through the control plane so the browser never reaches Nango.
 // No auth required — these are public image files.
+//
+// The path segment is a base64url-encoded original URL (new format). Legacy
+// path-based requests fall back to fetching from the internal Nango server.
 func (h *IntegrationsHandler) ProxyAsset(w http.ResponseWriter, r *http.Request) {
 	assetPath := chi.URLParam(r, "*")
-	url := h.nangoInternalURL + "/" + assetPath
 
-	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, url, nil)
+	var fetchURL string
+	if decoded, err := base64.RawURLEncoding.DecodeString(assetPath); err == nil &&
+		(strings.HasPrefix(string(decoded), "http://") || strings.HasPrefix(string(decoded), "https://")) {
+		fetchURL = string(decoded)
+	} else {
+		// Legacy path-based format: proxy from internal Nango server.
+		fetchURL = h.nangoInternalURL + "/" + assetPath
+	}
+
+	// SSRF guard: only allow HTTPS URLs or the known internal Nango URL.
+	if !strings.HasPrefix(fetchURL, "https://") && !strings.HasPrefix(fetchURL, h.nangoInternalURL) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, fetchURL, nil)
 	if err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return

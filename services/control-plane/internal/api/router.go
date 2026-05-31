@@ -19,16 +19,16 @@ import (
 )
 
 // NewRouter builds and returns the fully configured chi router.
-func NewRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logger, encKey []byte, authProvider auth.Provider, nangoClient *nango.Client, nangoInternalURL string, platLibs []platformlibs.PlatformLib) http.Handler {
-	return newRouter(store, sched, log, encKey, authProvider, nil, nangoClient, nangoInternalURL, platLibs)
+func NewRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logger, encKey []byte, authProvider auth.Provider, nangoClient *nango.Client, nangoInternalURL, nangoConnectURL, nangoApiURL, nangoWebhookSecret string, platLibs []platformlibs.PlatformLib) http.Handler {
+	return newRouter(store, sched, log, encKey, authProvider, nil, nangoClient, nangoInternalURL, nangoConnectURL, nangoApiURL, nangoWebhookSecret, platLibs)
 }
 
 // NewRouterWithJWT builds the router and wires the RSA public key for the JWKS endpoint.
-func NewRouterWithJWT(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logger, encKey []byte, authProvider auth.Provider, pubKey *rsa.PublicKey, nangoClient *nango.Client, nangoInternalURL string, platLibs []platformlibs.PlatformLib) http.Handler {
-	return newRouter(store, sched, log, encKey, authProvider, pubKey, nangoClient, nangoInternalURL, platLibs)
+func NewRouterWithJWT(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logger, encKey []byte, authProvider auth.Provider, pubKey *rsa.PublicKey, nangoClient *nango.Client, nangoInternalURL, nangoConnectURL, nangoApiURL, nangoWebhookSecret string, platLibs []platformlibs.PlatformLib) http.Handler {
+	return newRouter(store, sched, log, encKey, authProvider, pubKey, nangoClient, nangoInternalURL, nangoConnectURL, nangoApiURL, nangoWebhookSecret, platLibs)
 }
 
-func newRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logger, encKey []byte, authProvider auth.Provider, pubKey *rsa.PublicKey, nangoClient *nango.Client, nangoInternalURL string, platLibs []platformlibs.PlatformLib) http.Handler {
+func newRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logger, encKey []byte, authProvider auth.Provider, pubKey *rsa.PublicKey, nangoClient *nango.Client, nangoInternalURL, nangoConnectURL, nangoApiURL, nangoWebhookSecret string, platLibs []platformlibs.PlatformLib) http.Handler {
 	r := chi.NewRouter()
 
 	// Global middleware.
@@ -47,13 +47,14 @@ func newRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logge
 	invocationsH := handlers.NewInvocationsHandler(store, sched, log).WithAuthProvider(authProvider)
 	secretsH := handlers.NewSecretsHandler(store, log, encKey).WithAuditor(auditor)
 	gitIntH := handlers.NewGitIntegrationHandler(store, log)
-	webhookH := handlers.NewWebhookHandler(store, sched, log)
+	webhookH      := handlers.NewWebhookHandler(store, sched, log)
+	nangoWebhookH := handlers.NewNangoWebhookHandler(store, nangoClient, nangoWebhookSecret, log)
 	logsH := handlers.NewLogsHandler(store, log)
 	metricsH := handlers.NewMetricsHandler(store, log)
 	replayH := handlers.NewReplayHandler(store, sched, log)
 	embedH := handlers.NewEmbedHandler(store, log)
-	connectionsH    := handlers.NewConnectionsHandler(store, nangoClient, log).WithAuditor(auditor)
-	integrationsH   := handlers.NewIntegrationsHandler(nangoClient, log, nangoInternalURL)
+	connectionsH    := handlers.NewConnectionsHandler(store, nangoClient, log, nangoConnectURL, nangoApiURL).WithAuditor(auditor)
+	integrationsH   := handlers.NewIntegrationsHandler(nangoClient, log, nangoInternalURL, nangoApiURL)
 	configureIntH   := handlers.NewConfigureIntegrationsHandler(nangoClient, log)
 	adminAuthH := handlers.NewAdminAuthHandler(authProvider, store, log)
 	if pubKey != nil {
@@ -86,8 +87,9 @@ func newRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logge
 	r.With(middleware.SessionAuth(authProvider, store, log)).
 		Get("/v1/admin/auth/me", adminAuthH.Me)
 
-	// Provider catalog — public, no auth.
+	// Provider catalog and connect info — public, no auth.
 	r.Get("/v1/integrations", integrationsH.ListProviders)
+	r.Get("/v1/connect/info", integrationsH.ConnectInfo)
 
 	// Nango asset proxy — serves Nango's logo images through the control plane.
 	// Nango is never exposed directly to the browser; all static assets go through here.
@@ -233,6 +235,9 @@ func newRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logge
 
 	// Git webhook endpoint — HMAC signature verified inline.
 	r.Post("/v1/webhooks/git/{snippetID}", webhookH.GitWebhook)
+
+	// Nango webhook — receives auth events and stores the real Nango connection UUID.
+	r.Post("/v1/webhooks/nango", nangoWebhookH.HandleNangoEvent)
 
 	// Embed read routes authenticated by opaque embed token.
 	r.Group(func(r chi.Router) {

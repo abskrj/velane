@@ -7,6 +7,7 @@ type Connection struct {
 	ID                string    `json:"id"`
 	TenantID          string    `json:"tenant_id"`
 	Provider          string    `json:"provider"`
+	Alias             string    `json:"alias"`
 	NangoConnectionID string    `json:"nango_connection_id"`
 	DisplayName       string    `json:"display_name,omitempty"`
 	CreatedAt         time.Time `json:"created_at"`

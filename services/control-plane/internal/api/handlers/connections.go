@@ -18,7 +18,7 @@ import (
 // ConnectionStore is the subset of postgres.Store needed by ConnectionsHandler.
 type ConnectionStore interface {
 	GetTenantBySlug(ctx context.Context, slug string) (*models.Tenant, error)
-	UpsertConnection(ctx context.Context, tenantID, provider, nangoConnectionID, displayName string) (*models.Connection, error)
+	UpsertConnection(ctx context.Context, tenantID, provider, alias, displayName string) (*models.Connection, error)
 	ListConnections(ctx context.Context, tenantID string) ([]*models.Connection, error)
 	GetConnection(ctx context.Context, tenantID, provider string) (*models.Connection, error)
 	DeleteConnection(ctx context.Context, tenantID, provider string) error
@@ -27,14 +27,16 @@ type ConnectionStore interface {
 // ConnectionsHandler handles all OAuth connection management endpoints
 // and the internal proxy that snippet code calls at runtime.
 type ConnectionsHandler struct {
-	store   *postgres.Store
-	nango   *nango.Client
-	log     *zap.Logger
-	auditor *audit.Logger
+	store           *postgres.Store
+	nango           *nango.Client
+	log             *zap.Logger
+	auditor         *audit.Logger
+	nangoConnectURL string // browser-accessible Connect UI URL, returned with session tokens
+	nangoApiURL     string // browser-accessible Nango API URL, returned with session tokens
 }
 
-func NewConnectionsHandler(store *postgres.Store, nangoClient *nango.Client, log *zap.Logger) *ConnectionsHandler {
-	return &ConnectionsHandler{store: store, nango: nangoClient, log: log}
+func NewConnectionsHandler(store *postgres.Store, nangoClient *nango.Client, log *zap.Logger, nangoConnectURL, nangoApiURL string) *ConnectionsHandler {
+	return &ConnectionsHandler{store: store, nango: nangoClient, log: log, nangoConnectURL: nangoConnectURL, nangoApiURL: nangoApiURL}
 }
 
 func (h *ConnectionsHandler) WithAuditor(a *audit.Logger) *ConnectionsHandler {
@@ -64,20 +66,28 @@ func (h *ConnectionsHandler) CreateSession(w http.ResponseWriter, r *http.Reques
 
 	var req struct {
 		Provider string `json:"provider"`
+		Alias    string `json:"alias"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Provider == "" {
 		writeError(w, http.StatusBadRequest, "provider is required")
 		return
 	}
+	if req.Alias == "" {
+		req.Alias = "default"
+	}
 
-	token, err := h.nango.CreateConnectSession(r.Context(), tenant.ID, tenant.Name, req.Provider)
+	token, err := h.nango.CreateConnectSession(r.Context(), tenant.ID, tenant.Name, req.Provider, req.Alias)
 	if err != nil {
 		h.log.Error("create nango connect session", zap.String("provider", req.Provider), zap.Error(err))
 		writeError(w, http.StatusBadGateway, "failed to create connect session")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]string{"session_token": token})
+	writeJSON(w, http.StatusOK, map[string]string{
+		"session_token": token,
+		"connect_url":   h.nangoConnectURL,
+		"api_url":       h.nangoApiURL,
+	})
 }
 
 // RecordConnection handles POST /v1/tenants/{slug}/connections.
@@ -102,13 +112,17 @@ func (h *ConnectionsHandler) RecordConnection(w http.ResponseWriter, r *http.Req
 	var req struct {
 		Provider    string `json:"provider"`
 		DisplayName string `json:"display_name"`
+		Alias       string `json:"alias"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Provider == "" {
 		writeError(w, http.StatusBadRequest, "provider is required")
 		return
 	}
+	if req.Alias == "" {
+		req.Alias = "default"
+	}
 
-	conn, err := h.store.UpsertConnection(r.Context(), tenant.ID, req.Provider, tenant.ID, req.DisplayName)
+	conn, err := h.store.UpsertConnection(r.Context(), tenant.ID, req.Provider, req.Alias, req.DisplayName)
 	if err != nil {
 		h.log.Error("record connection", zap.String("provider", req.Provider), zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "failed to record connection")

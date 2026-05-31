@@ -95,6 +95,7 @@ export interface Connection {
   id: string
   tenant_id: string
   provider: string
+  alias: string
   nango_connection_id: string
   display_name: string
   created_at: string

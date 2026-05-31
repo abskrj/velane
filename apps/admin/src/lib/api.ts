@@ -257,6 +257,10 @@ export const api = {
     return request('GET', '/v1/integrations', undefined, 'none')
   },
 
+  async getConnectInfo(): Promise<{ oauth_callback_url: string }> {
+    return request('GET', '/v1/connect/info', undefined, 'none')
+  },
+
   async listConfigured(): Promise<IntegrationConfig[]> {
     return request('GET', '/v1/integrations/configured', undefined, 'apikey')
   },
@@ -278,12 +282,12 @@ export const api = {
     return request('GET', `/v1/tenants/${getSlug()}/connections`, undefined, 'apikey')
   },
 
-  async createConnectionSession(provider: string): Promise<{ session_token: string }> {
-    return request('POST', `/v1/tenants/${getSlug()}/connections/session`, { provider }, 'apikey')
+  async createConnectionSession(provider: string, alias = 'default'): Promise<{ session_token: string; connect_url: string; api_url: string }> {
+    return request('POST', `/v1/tenants/${getSlug()}/connections/session`, { provider, alias }, 'apikey')
   },
 
-  async recordConnection(provider: string, displayName = ''): Promise<Connection> {
-    return request('POST', `/v1/tenants/${getSlug()}/connections`, { provider, display_name: displayName }, 'apikey')
+  async recordConnection(provider: string, displayName = '', alias = 'default'): Promise<Connection> {
+    return request('POST', `/v1/tenants/${getSlug()}/connections`, { provider, display_name: displayName, alias }, 'apikey')
   },
 
   async disconnectProvider(provider: string): Promise<void> {

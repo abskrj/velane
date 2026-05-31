@@ -2,7 +2,7 @@
 
 **AI Agent Code Runtime** — write Bun or Python snippets, expose them as POST APIs, connect to 800+ integrations, and run at scale in secure sandboxed runtimes.
 
-Velane is an open-source, multi-tenant platform that lets AI agent engineers deploy code snippets as callable HTTP endpoints — with versioning, secrets injection, canary traffic splitting, streaming, an admin dashboard, native MCP integration for Cursor and Claude Code, and **built-in OAuth connections to over 800 third-party services** (Salesforce, GitHub, Slack, HubSpot, Stripe, Notion, Linear, and hundreds more).
+Velane is an open-source, multi-tenant platform that lets AI agents deploy code snippets as callable HTTP endpoints — with versioning, secrets injection, canary traffic splitting, streaming, an admin dashboard, native MCP integration for Cursor and Claude Code, and **built-in OAuth connections to over 800 third-party services** (Salesforce, GitHub, Slack, HubSpot, Stripe, Notion, Linear, and hundreds more).
 
 ---
 
@@ -74,7 +74,7 @@ Supported categories include CRM, ticketing, project management, communication, 
 ```
 ┌──────────────────────────────────────────────────────────┐
 │                        Clients                           │
-│   Admin Portal  ·  Embed Dashboard  ·  CLI  ·  MCP      │
+│   Admin Portal  ·  Embed Dashboard  ·  CLI  ·  MCP       │
 └───────────────────────────┬──────────────────────────────┘
                             │
 ┌───────────────────────────▼──────────────────────────────┐
@@ -542,7 +542,7 @@ Requires `/dev/kvm` — runs on bare metal servers, AWS metal instances (e.g. `c
 
 - [ ] OIDC / OAuth2 social login (Google, GitHub)
 - [ ] SAML for enterprise SSO
-- [ ] Multiple connections per provider per tenant (e.g. two Salesforce orgs)
+- [x] Multiple connections per provider per tenant (e.g. two Salesforce orgs)
 - [ ] Real ClickHouse metrics writes (currently Postgres-backed stubs)
 - [ ] Real S3/MinIO log writes (interfaces wired, writes stubbed)
 - [ ] Firecracker rootfs image builder
@@ -560,14 +560,3 @@ Requires `/dev/kvm` — runs on bare metal servers, AWS metal instances (e.g. `c
 4. Open a pull request
 
 All Go changes must pass `go vet ./...` and `go test ./...`. Frontend changes should build without TypeScript errors (`tsc --noEmit`).
-
----
-
-## License
-
-Velane is dual-licensed:
-
-- **AGPLv3** (open source) — free to use, modify, and self-host under the terms of the [GNU Affero General Public License v3.0](LICENSE). Any modifications you deploy over a network must also be released under AGPLv3.
-- **Commercial license** — if you want to use Velane in a proprietary product, embed it in a SaaS offering, or cannot comply with AGPLv3's copyleft requirements, a commercial license is available. Contact **abskrj@icloud.com** to discuss pricing.
-
-> **In short:** build on it freely if you open-source your work. Pay for a commercial license if you keep your code closed.

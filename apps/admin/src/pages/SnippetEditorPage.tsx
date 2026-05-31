@@ -36,7 +36,7 @@ export default function SnippetEditorPage() {
   const [autoSaved, setAutoSaved] = useState(false)
   const [showVersions, setShowVersions] = useState(false)
   const [showConnect, setShowConnect] = useState(false)
-  const [connectTab, setConnectTab] = useState<'endpoint' | 'claude' | 'cursor'>('endpoint')
+  const [connectTab, setConnectTab] = useState<'endpoint' | 'mcp'>('endpoint')
   const [copied, setCopied] = useState<string | null>(null)
   const [showMenu, setShowMenu] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -48,6 +48,7 @@ export default function SnippetEditorPage() {
   const [selectedVersion, setSelectedVersion] = useState<SnippetVersion | null>(null)
 
   const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const isDirty = useRef(false)
   const { toast, showToast, dismissToast } = useToast()
 
   useEffect(() => {
@@ -83,6 +84,23 @@ export default function SnippetEditorPage() {
     }
   }
 
+  useEffect(() => {
+    if (!id || loading) return
+    const stop = api.watchSnippet(id, (incoming) => {
+      if (isDirty.current) {
+        showToast('Snippet updated by another editor — your edits take priority', 'error')
+        return
+      }
+      setCode(incoming.code)
+      setVersions((prev) => {
+        const exists = prev.some((v) => v.id === incoming.id)
+        if (exists) return prev
+        return [...prev, incoming]
+      })
+    })
+    return stop
+  }, [id, loading])
+
   const monacoLanguage = snippet?.language === 'python' ? 'python' : 'typescript'
 
   const handleCodeChange = useCallback(
@@ -91,6 +109,7 @@ export default function SnippetEditorPage() {
       setCode(newCode)
       if (!id) return
 
+      isDirty.current = true
       setAutoSaving(true)
       setAutoSaved(false)
       if (autosaveTimer.current) clearTimeout(autosaveTimer.current)
@@ -98,6 +117,7 @@ export default function SnippetEditorPage() {
         try {
           await api.createVersion(id, newCode)
           await reloadVersions()
+          isDirty.current = false
           setAutoSaved(true)
           setTimeout(() => setAutoSaved(false), 2000)
         } catch {
@@ -389,8 +409,7 @@ export default function SnippetEditorPage() {
             <div className="flex border-b border-gray-200 px-5">
               {([
                 { key: 'endpoint', label: 'HTTP' },
-                { key: 'claude', label: 'Claude Code' },
-                { key: 'cursor', label: 'Cursor / Codex' },
+                { key: 'mcp', label: 'MCP' },
               ] as const).map(({ key, label }) => (
                 <button
                   key={key}
@@ -437,12 +456,10 @@ export default function SnippetEditorPage() {
                 </div>
               )}
 
-              {(connectTab === 'claude' || connectTab === 'cursor') && (
+              {connectTab === 'mcp' && (
                 <div className="space-y-4">
                   <p className="text-xs text-gray-600">
-                    {connectTab === 'claude'
-                      ? 'Add to your ~/.claude/mcp.json to connect Claude Code directly to Velane.'
-                      : 'Add to your .cursor/mcp.json to connect Cursor or Codex to Velane.'}
+                    Add to your MCP config to connect Claude Code, Cursor, or Codex to Velane.
                   </p>
                   <div className="relative rounded-md bg-gray-900 px-4 py-3">
                     <pre className="overflow-x-auto text-xs leading-relaxed text-gray-100">{claudeConfig}</pre>
@@ -453,10 +470,13 @@ export default function SnippetEditorPage() {
                       {copied === 'mcp-config' ? <Check className="h-3.5 w-3.5 text-green-400" /> : <Copy className="h-3.5 w-3.5" />}
                     </button>
                   </div>
+                  <ul className="space-y-0.5 text-xs text-gray-500">
+                    <li><span className="font-medium text-gray-700">Claude Code:</span> <code className="rounded bg-gray-100 px-1">~/.claude/mcp.json</code></li>
+                    <li><span className="font-medium text-gray-700">Cursor / Codex:</span> <code className="rounded bg-gray-100 px-1">.cursor/mcp.json</code></li>
+                  </ul>
                   <p className="text-xs text-gray-500">
                     Replace <code className="rounded bg-gray-100 px-1">vl_YOUR_API_KEY</code> with an API key from{' '}
-                    <strong>Settings → API Keys</strong>. Available MCP tools: list_snippets, get_snippet,
-                    create_snippet, update_draft, publish_snippet, invoke_snippet, get_logs, list_secrets, set_secret.
+                    <strong>Settings → API Keys</strong>.
                   </p>
                 </div>
               )}

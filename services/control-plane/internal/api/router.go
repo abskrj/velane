@@ -10,6 +10,8 @@ import (
 	"github.com/abskrj/velane/services/control-plane/internal/api/middleware"
 	"github.com/abskrj/velane/services/control-plane/internal/audit"
 	"github.com/abskrj/velane/services/control-plane/internal/auth"
+	"github.com/abskrj/velane/services/control-plane/internal/hub"
+	"github.com/abskrj/velane/services/control-plane/internal/nango"
 	"github.com/abskrj/velane/services/control-plane/internal/platformlibs"
 	"github.com/abskrj/velane/services/control-plane/internal/scheduler"
 	"github.com/abskrj/velane/services/control-plane/internal/store/postgres"
@@ -17,16 +19,16 @@ import (
 )
 
 // NewRouter builds and returns the fully configured chi router.
-func NewRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logger, encKey []byte, authProvider auth.Provider, platLibs []platformlibs.PlatformLib) http.Handler {
-	return newRouter(store, sched, log, encKey, authProvider, nil, platLibs)
+func NewRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logger, encKey []byte, authProvider auth.Provider, nangoClient *nango.Client, nangoInternalURL, nangoConnectURL, nangoApiURL, nangoWebhookSecret string, platLibs []platformlibs.PlatformLib) http.Handler {
+	return newRouter(store, sched, log, encKey, authProvider, nil, nangoClient, nangoInternalURL, nangoConnectURL, nangoApiURL, nangoWebhookSecret, platLibs)
 }
 
 // NewRouterWithJWT builds the router and wires the RSA public key for the JWKS endpoint.
-func NewRouterWithJWT(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logger, encKey []byte, authProvider auth.Provider, pubKey *rsa.PublicKey, platLibs []platformlibs.PlatformLib) http.Handler {
-	return newRouter(store, sched, log, encKey, authProvider, pubKey, platLibs)
+func NewRouterWithJWT(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logger, encKey []byte, authProvider auth.Provider, pubKey *rsa.PublicKey, nangoClient *nango.Client, nangoInternalURL, nangoConnectURL, nangoApiURL, nangoWebhookSecret string, platLibs []platformlibs.PlatformLib) http.Handler {
+	return newRouter(store, sched, log, encKey, authProvider, pubKey, nangoClient, nangoInternalURL, nangoConnectURL, nangoApiURL, nangoWebhookSecret, platLibs)
 }
 
-func newRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logger, encKey []byte, authProvider auth.Provider, pubKey *rsa.PublicKey, platLibs []platformlibs.PlatformLib) http.Handler {
+func newRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logger, encKey []byte, authProvider auth.Provider, pubKey *rsa.PublicKey, nangoClient *nango.Client, nangoInternalURL, nangoConnectURL, nangoApiURL, nangoWebhookSecret string, platLibs []platformlibs.PlatformLib) http.Handler {
 	r := chi.NewRouter()
 
 	// Global middleware.
@@ -40,16 +42,20 @@ func newRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logge
 	// Instantiate handlers.
 	tenantsH := handlers.NewTenantsHandler(store, log).WithAuditor(auditor)
 	snippetsH := handlers.NewSnippetsHandler(store, log)
-	versionsH := handlers.NewVersionsHandler(store, log).WithAuditor(auditor)
+	snippetHub := hub.New()
+	versionsH := handlers.NewVersionsHandler(store, log).WithAuditor(auditor).WithHub(snippetHub)
 	invocationsH := handlers.NewInvocationsHandler(store, sched, log).WithAuthProvider(authProvider)
 	secretsH := handlers.NewSecretsHandler(store, log, encKey).WithAuditor(auditor)
 	gitIntH := handlers.NewGitIntegrationHandler(store, log)
-	webhookH := handlers.NewWebhookHandler(store, sched, log)
+	webhookH      := handlers.NewWebhookHandler(store, sched, log)
+	nangoWebhookH := handlers.NewNangoWebhookHandler(store, nangoClient, nangoWebhookSecret, log)
 	logsH := handlers.NewLogsHandler(store, log)
 	metricsH := handlers.NewMetricsHandler(store, log)
 	replayH := handlers.NewReplayHandler(store, sched, log)
 	embedH := handlers.NewEmbedHandler(store, log)
-	librariesH := handlers.NewLibrariesHandler(store, log, platLibs)
+	connectionsH    := handlers.NewConnectionsHandler(store, nangoClient, log, nangoConnectURL, nangoApiURL).WithAuditor(auditor)
+	integrationsH   := handlers.NewIntegrationsHandler(nangoClient, log, nangoInternalURL, nangoApiURL)
+	configureIntH   := handlers.NewConfigureIntegrationsHandler(nangoClient, log)
 	adminAuthH := handlers.NewAdminAuthHandler(authProvider, store, log)
 	if pubKey != nil {
 		adminAuthH = adminAuthH.WithPublicKey(pubKey)
@@ -68,7 +74,6 @@ func newRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logge
 	})
 
 	// Bootstrap endpoint — intentionally unauthenticated.
-	// See handler comment for production guidance.
 	r.Post("/v1/tenants", tenantsH.CreateTenant)
 
 	// JWKS — used by third parties to verify Velane JWTs (no auth).
@@ -82,17 +87,26 @@ func newRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logge
 	r.With(middleware.SessionAuth(authProvider, store, log)).
 		Get("/v1/admin/auth/me", adminAuthH.Me)
 
+	// Provider catalog and connect info — public, no auth.
+	r.Get("/v1/integrations", integrationsH.ListProviders)
+	r.Get("/v1/connect/info", integrationsH.ConnectInfo)
+
+	// Nango asset proxy — serves Nango's logo images through the control plane.
+	// Nango is never exposed directly to the browser; all static assets go through here.
+	r.Get("/v1/nango-assets/*", integrationsH.ProxyAsset)
+
+	// Internal proxy — no public auth middleware; network isolation is the boundary.
+	// Executor containers call /v1/proxy/{provider}/{path} with X-Velane-Tenant header.
+	// This path must NOT be added to the authenticated group below.
+	r.HandleFunc("/v1/proxy/{provider}/*", connectionsH.Proxy)
+
 	// Authenticated routes.
 	r.Group(func(r chi.Router) {
-		// SessionAuth runs first: if the Bearer token is a valid JWT it sets the session user
-		// and (when X-Tenant is present) their tenant membership role in context.
-		// Auth then attempts API key validation — if the token was a JWT, ValidateAPIKey will
-		// fail harmlessly and the session context values are used by RequireScope instead.
 		r.Use(middleware.SessionAuth(authProvider, store, log))
 		authMw := middleware.Auth(store, log)
 		r.Use(authMw)
 
-		// API key management — requires admin scope.
+		// API key management.
 		r.With(middleware.RequireScope("admin", log)).
 			Post("/v1/tenants/{tenantSlug}/api-keys", tenantsH.CreateAPIKey)
 		r.With(middleware.RequireScope("admin", log)).
@@ -129,6 +143,33 @@ func newRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logge
 		r.With(middleware.RequireScope("admin", log)).
 			Get("/v1/tenants/{slug}/audit-log", auditH.ListAuditLog)
 
+		// Connections (OAuth integrations).
+		r.With(middleware.RequireScope("invoke", log)).
+			Get("/v1/tenants/{tenantSlug}/connections", connectionsH.ListConnections)
+		r.With(middleware.RequireScope("manage", log)).
+			Post("/v1/tenants/{tenantSlug}/connections/session", connectionsH.CreateSession)
+		r.With(middleware.RequireScope("manage", log)).
+			Post("/v1/tenants/{tenantSlug}/connections", connectionsH.RecordConnection)
+		r.With(middleware.RequireScope("manage", log)).
+			Delete("/v1/tenants/{tenantSlug}/connections/{provider}", connectionsH.DisconnectProvider)
+
+		// Provider docs.
+		r.With(middleware.RequireScope("invoke", log)).
+			Get("/v1/integrations/{provider}/docs", integrationsH.GetProviderDocs)
+
+		// Integration config management (operator-level, admin scope).
+		r.With(middleware.RequireScope("invoke", log)).
+			Get("/v1/integrations/configured", configureIntH.ListConfigured)
+		r.With(middleware.RequireScope("admin", log)).
+			Post("/v1/integrations/configured", configureIntH.Configure)
+		r.With(middleware.RequireScope("admin", log)).
+			Delete("/v1/integrations/configured/{providerConfigKey}", configureIntH.DeleteConfigured)
+
+		// Connection shortcuts — slug-free paths used by the MCP server
+		// (auth middleware resolves tenant from the Bearer token).
+		r.With(middleware.RequireScope("invoke", log)).
+			Get("/v1/connections", connectionsH.ListConnectionsForToken)
+
 		// Snippets.
 		r.Get("/v1/snippets", snippetsH.ListSnippets)
 		r.With(middleware.RequireScope("manage", log)).
@@ -145,6 +186,8 @@ func newRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logge
 		r.Get("/v1/snippets/{snippetID}/versions/{num}", versionsH.GetVersion)
 		r.With(middleware.RequireScope("manage", log)).
 			Post("/v1/snippets/{snippetID}/versions/{num}/publish", versionsH.PublishVersion)
+		r.With(middleware.RequireScope("invoke", log)).
+			Get("/v1/snippets/{snippetID}/watch", versionsH.WatchVersions)
 
 		// Canary traffic splitting.
 		r.With(middleware.RequireScope("manage", log)).
@@ -178,18 +221,6 @@ func newRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logge
 		r.With(middleware.RequireScope("manage", log)).
 			Post("/v1/invocations/{id}/replay", replayH.ReplayInvocation)
 
-		// Libraries.
-		r.Get("/v1/libraries", librariesH.ListAll)
-		r.With(middleware.RequireScope("manage", log)).
-			Post("/v1/libraries", librariesH.Create)
-		r.With(middleware.RequireScope("manage", log)).
-			Delete("/v1/libraries/{libraryID}", librariesH.Delete)
-		r.Get("/v1/libraries/{libraryID}/versions", librariesH.ListVersions)
-		r.With(middleware.RequireScope("manage", log)).
-			Post("/v1/libraries/{libraryID}/versions", librariesH.CreateVersion)
-		r.With(middleware.RequireScope("manage", log)).
-			Post("/v1/libraries/{libraryID}/versions/{num}/publish", librariesH.PublishVersion)
-
 		// Embed token management.
 		r.With(middleware.RequireScope("manage", log)).
 			Get("/v1/embed/tokens", embedH.ListTokens)
@@ -199,13 +230,14 @@ func newRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logge
 			Delete("/v1/embed/tokens/{tokenID}", embedH.RevokeToken)
 	})
 
-	// The invoke endpoint performs its own auth inline (see handler comment).
-	// It is registered outside the auth middleware group because it uses
-	// path-based tenant routing that differs from the standard Bearer flow.
+	// The invoke endpoint performs its own auth inline.
 	r.Post("/v1/invoke/{tenantSlug}/{snippetSlug}", invocationsH.Invoke)
 
-	// Git webhook endpoint — no auth middleware; HMAC signature is verified inline.
+	// Git webhook endpoint — HMAC signature verified inline.
 	r.Post("/v1/webhooks/git/{snippetID}", webhookH.GitWebhook)
+
+	// Nango webhook — receives auth events and stores the real Nango connection UUID.
+	r.Post("/v1/webhooks/nango", nangoWebhookH.HandleNangoEvent)
 
 	// Embed read routes authenticated by opaque embed token.
 	r.Group(func(r chi.Router) {

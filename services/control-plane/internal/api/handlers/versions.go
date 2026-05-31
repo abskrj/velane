@@ -2,12 +2,15 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/abskrj/velane/services/control-plane/internal/api/middleware"
 	"github.com/abskrj/velane/services/control-plane/internal/audit"
+	"github.com/abskrj/velane/services/control-plane/internal/hub"
 	"github.com/abskrj/velane/services/control-plane/internal/models"
 	"github.com/abskrj/velane/services/control-plane/internal/store/postgres"
 	"go.uber.org/zap"
@@ -15,9 +18,10 @@ import (
 
 // VersionsHandler bundles all snippet version HTTP handlers.
 type VersionsHandler struct {
-	store  *postgres.Store
-	log    *zap.Logger
+	store   *postgres.Store
+	log     *zap.Logger
 	auditor *audit.Logger
+	hub     *hub.Hub
 }
 
 // NewVersionsHandler constructs a VersionsHandler.
@@ -28,6 +32,12 @@ func NewVersionsHandler(store *postgres.Store, log *zap.Logger) *VersionsHandler
 // WithAuditor attaches an audit logger to the VersionsHandler.
 func (h *VersionsHandler) WithAuditor(a *audit.Logger) *VersionsHandler {
 	h.auditor = a
+	return h
+}
+
+// WithHub attaches a live-update hub to the VersionsHandler.
+func (h *VersionsHandler) WithHub(hub *hub.Hub) *VersionsHandler {
+	h.hub = hub
 	return h
 }
 
@@ -164,6 +174,10 @@ func (h *VersionsHandler) CreateVersion(w http.ResponseWriter, r *http.Request) 
 		h.log.Error("create version failed", zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "failed to create version")
 		return
+	}
+
+	if h.hub != nil {
+		h.hub.Publish(snippetID, version)
 	}
 
 	writeJSON(w, http.StatusCreated, version)
@@ -383,4 +397,58 @@ func (h *VersionsHandler) ClearCanary(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// WatchVersions handles GET /v1/snippets/{snippetID}/watch.
+// It streams SSE events (event: version) each time a new draft is created,
+// allowing the editor UI to update live for all connected viewers.
+func (h *VersionsHandler) WatchVersions(w http.ResponseWriter, r *http.Request) {
+	tenant := middleware.TenantFromContext(r.Context())
+	if tenant == nil {
+		writeError(w, http.StatusUnauthorized, "unauthenticated")
+		return
+	}
+
+	snippetID := chi.URLParam(r, "snippetID")
+	snippet, err := h.store.GetSnippetByID(r.Context(), snippetID)
+	if err != nil || snippet.TenantID != tenant.ID {
+		writeError(w, http.StatusNotFound, "snippet not found")
+		return
+	}
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		writeError(w, http.StatusInternalServerError, "streaming not supported")
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	fmt.Fprintf(w, "event: connected\ndata: {}\n\n")
+	flusher.Flush()
+
+	ch, cancel := h.hub.Subscribe(snippetID)
+	defer cancel()
+
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case v, ok := <-ch:
+			if !ok {
+				return
+			}
+			data, _ := json.Marshal(v)
+			fmt.Fprintf(w, "event: version\ndata: %s\n\n", data)
+			flusher.Flush()
+		case <-ticker.C:
+			fmt.Fprintf(w, ": ping\n\n")
+			flusher.Flush()
+		}
+	}
 }

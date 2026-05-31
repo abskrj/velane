@@ -44,12 +44,13 @@ type InvokeRequest struct {
 
 // Scheduler resolves, executes, and records snippet invocations.
 type Scheduler struct {
-	store    Store
-	executor executor.Executor
-	queue    Queue  // nil in sync-only mode
-	encKey   []byte // for secret decryption
-	observer observability.InvocationObserver
-	platLibs []platformlibs.PlatformLib
+	store         Store
+	executor      executor.Executor
+	queue         Queue  // nil in sync-only mode
+	encKey        []byte // for secret decryption
+	observer      observability.InvocationObserver
+	platLibs      []platformlibs.PlatformLib
+	internalProxyURL string // injected as VELANE_PROXY_URL into every invocation
 }
 
 // New creates a Scheduler wired to the given store and executor (sync only, no queue).
@@ -75,6 +76,13 @@ func NewWithQueue(store Store, exec executor.Executor, q Queue, encKey []byte, p
 	}
 }
 
+// WithInternalProxyURL sets the URL executors use to reach the control plane proxy.
+// This is injected as VELANE_PROXY_URL into every invocation's environment.
+func (s *Scheduler) WithInternalProxyURL(url string) *Scheduler {
+	s.internalProxyURL = url
+	return s
+}
+
 // getLibraries merges platform libs (from the embedded binary) with the
 // tenant's latest published libs. Tenant libs override platform libs on
 // the same import path.
@@ -95,6 +103,15 @@ func (s *Scheduler) getLibraries(ctx context.Context, tenantID, tenantSlug, lang
 		result[k] = v
 	}
 	return result, nil
+}
+
+// injectProxyEnv adds VELANE_PROXY_URL and VELANE_TENANT_ID to the env map so
+// that @velane/integrations inside snippet code can reach the internal proxy.
+func (s *Scheduler) injectProxyEnv(env map[string]string, tenantID string) {
+	if s.internalProxyURL != "" {
+		env["VELANE_PROXY_URL"] = s.internalProxyURL
+	}
+	env["VELANE_TENANT_ID"] = tenantID
 }
 
 // SetObserver injects a post-invocation observer for observability pipelines.
@@ -217,6 +234,7 @@ func (s *Scheduler) Invoke(ctx context.Context, req InvokeRequest) (*models.Invo
 		return nil, fmt.Errorf("create invocation: %w", err)
 	}
 
+	s.injectProxyEnv(secrets, req.TenantID)
 	result := s.executor.Run(ctx, executor.RunSpec{
 		Language:      string(snippet.Language),
 		Code:          version.Code,

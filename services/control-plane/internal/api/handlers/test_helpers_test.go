@@ -8,6 +8,17 @@ import (
 	"github.com/abskrj/velane/services/control-plane/internal/models"
 )
 
+// withAuthTenant injects a tenant into the request context the same way the Auth
+// middleware does. Required for any handler that calls middleware.TenantFromContext.
+func withAuthTenant(r *http.Request, tenant *models.Tenant) *http.Request {
+	ctx := context.WithValue(r.Context(), middleware.ExportedTenantKey(), tenant)
+	ctx = context.WithValue(ctx, middleware.ExportedAPIKeyKey(), &models.APIKey{
+		TenantID: tenant.ID,
+		Scopes:   []string{"admin", "manage", "invoke"},
+	})
+	return r.WithContext(ctx)
+}
+
 // setSessionUser injects a user into the context the same way SessionAuth middleware does.
 // This is achieved by running a real SessionAuth middleware with a mock provider.
 func setSessionUser(ctx context.Context, user *models.User) context.Context {

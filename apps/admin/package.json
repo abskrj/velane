@@ -9,6 +9,8 @@
   },
   "dependencies": {
     "@monaco-editor/react": "^4.6.0",
+    "@nangohq/frontend": "^0.42.0",
+    "@nangohq/types": "^0.70.5",
     "clsx": "^2.1.1",
     "lucide-react": "^0.395.0",
     "react": "^18.3.0",

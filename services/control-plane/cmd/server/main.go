@@ -15,6 +15,7 @@ import (
 	"github.com/abskrj/velane/services/control-plane/internal/executor"
 	"github.com/abskrj/velane/services/control-plane/internal/executor/firecracker"
 	"github.com/abskrj/velane/services/control-plane/internal/executor/remote"
+	"github.com/abskrj/velane/services/control-plane/internal/nango"
 	"github.com/abskrj/velane/services/control-plane/internal/observability"
 	"github.com/abskrj/velane/services/control-plane/internal/platformlibs"
 	"github.com/abskrj/velane/services/control-plane/internal/scheduler"
@@ -72,6 +73,13 @@ func main() {
 	// --- Bootstrap first admin (no-op if users already exist or env vars not set) ---
 	bootstrapAdminIfNeeded(ctx, store, authProvider, cfg, log)
 
+	// --- Nango client ---
+	nangoClient := nango.New(cfg.NangoInternalURL, cfg.NangoSecretKey)
+	if cfg.NangoSecretKey == "" {
+		log.Warn("NANGO_SECRET_KEY not set — integration OAuth connections will not function")
+	}
+	log.Info("nango client configured", zap.String("url", cfg.NangoInternalURL))
+
 	// --- Executor ---
 	var exec executor.Executor
 	switch cfg.ExecutorType {
@@ -108,6 +116,7 @@ func main() {
 		log.Info("redis connected", zap.String("redis_url", cfg.RedisURL))
 		sched = scheduler.NewWithQueue(store, exec, redisClient, encKey, platLibs)
 	}
+	sched.WithInternalProxyURL(cfg.InternalProxyURL)
 	sched.SetObserver(observer)
 
 	// --- Background worker (only if Redis is available) ---
@@ -119,7 +128,7 @@ func main() {
 	}
 
 	// --- Router ---
-	router := api.NewRouterWithJWT(store, sched, log, encKey, authProvider, pubKey, platLibs)
+	router := api.NewRouterWithJWT(store, sched, log, encKey, authProvider, pubKey, nangoClient, cfg.NangoInternalURL, cfg.NangoConnectURL, cfg.NangoApiURL, cfg.NangoWebhookSecret, platLibs)
 
 	// --- HTTP server ---
 	srv := &http.Server{

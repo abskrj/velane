@@ -91,35 +91,43 @@ export interface SnippetEnvironment {
   active_version_number: number | null
 }
 
-export interface PlatformLibrary {
-  id: string
-  slug: string
-  language: string
-  name: string
-  description: string
-  updated_at: string
-  docs?: string
-}
-
-export interface Library {
+export interface Connection {
   id: string
   tenant_id: string
-  slug: string
-  language: string
-  name: string
-  description: string
+  provider: string
+  alias: string
+  nango_connection_id: string
+  display_name: string
   created_at: string
   updated_at: string
 }
 
-export interface LibraryVersion {
-  id: string
-  library_id: string
-  version_number: number
-  code: string
-  status: 'draft' | 'published' | 'archived'
-  published_at?: string
-  created_at: string
+export interface ConnectionField {
+  type: string
+  title: string
+  description?: string
+  example?: string
+  optional?: boolean
+  automated?: boolean
+  prefix?: string
+}
+
+export interface NangoProvider {
+  unique_key: string
+  name: string
+  auth_mode: string
+  categories?: string[]
+  docs?: string
+  logo_url?: string
+  connection_config?: Record<string, ConnectionField>
+  credentials?: Record<string, ConnectionField>
+}
+
+export interface IntegrationConfig {
+  unique_key: string
+  provider: string
+  oauth_scopes?: string
+  created_at?: string
 }
 
 export interface Secret {

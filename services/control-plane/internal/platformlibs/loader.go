@@ -14,6 +14,7 @@ var embedded embed.FS
 
 type meta struct {
 	Name        string `json:"name"`
+	Integration string `json:"integration"`
 	Description string `json:"description"`
 }
 
@@ -23,6 +24,7 @@ type PlatformLib struct {
 	Slug        string    `json:"slug"`
 	Language    string    `json:"language"`
 	Name        string    `json:"name"`
+	Integration string    `json:"integration,omitempty"`
 	Description string    `json:"description"`
 	UpdatedAt   time.Time `json:"updated_at"`
 
@@ -103,6 +105,7 @@ func Load() ([]PlatformLib, error) {
 				Slug:        slug,
 				Language:    language,
 				Name:        m.Name,
+				Integration: m.Integration,
 				Description: m.Description,
 				Code:        string(codeBytes),
 				Docs:        docs,

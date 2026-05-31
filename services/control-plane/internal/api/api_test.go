@@ -65,9 +65,9 @@ func setup(t *testing.T) *testEnv {
 	t.Cleanup(mockExec.Close)
 
 	exec := remote.New(mockExec.URL, mockExec.URL)
-	sched := scheduler.New(store, exec, testEncKey)
+	sched := scheduler.New(store, exec, testEncKey, nil)
 	log := zap.NewNop()
-	router := api.NewRouter(store, sched, log, testEncKey, auth.NewPasswordProvider(store))
+	router := api.NewRouter(store, sched, log, testEncKey, auth.NewPasswordProvider(store), nil, "", "", "", "", nil)
 
 	// Bootstrap tenant.
 	slug := fmt.Sprintf("test-%d", time.Now().UnixNano())
@@ -612,9 +612,9 @@ func setupWithStreaming(t *testing.T) *testEnv {
 	t.Cleanup(mockExec.Close)
 
 	exec := remote.New(mockExec.URL, mockExec.URL)
-	sched := scheduler.New(store, exec, testEncKey)
+	sched := scheduler.New(store, exec, testEncKey, nil)
 	log := zap.NewNop()
-	router := api.NewRouter(store, sched, log, testEncKey, auth.NewPasswordProvider(store))
+	router := api.NewRouter(store, sched, log, testEncKey, auth.NewPasswordProvider(store), nil, "", "", "", "", nil)
 
 	slug := fmt.Sprintf("test-stream-%d", time.Now().UnixNano())
 	tenant, err := store.CreateTenant(context.Background(), "Stream Tenant", slug)
@@ -678,9 +678,9 @@ func setupWithRedis(t *testing.T) (*testEnv, *redisstore.Client) {
 	t.Cleanup(mockExec.Close)
 
 	exec := remote.New(mockExec.URL, mockExec.URL)
-	sched := scheduler.NewWithQueue(store, exec, rc, testEncKey)
+	sched := scheduler.NewWithQueue(store, exec, rc, testEncKey, nil)
 	log := zap.NewNop()
-	router := api.NewRouter(store, sched, log, testEncKey, auth.NewPasswordProvider(store))
+	router := api.NewRouter(store, sched, log, testEncKey, auth.NewPasswordProvider(store), nil, "", "", "", "", nil)
 
 	slug := fmt.Sprintf("test-async-%d", time.Now().UnixNano())
 	tenant, err := store.CreateTenant(context.Background(), "Async Tenant", slug)

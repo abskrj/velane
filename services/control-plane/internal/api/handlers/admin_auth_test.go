@@ -40,10 +40,11 @@ func (m *mockAuthProvider) InvalidateSession(ctx context.Context, rawToken strin
 // --- mock admin auth store ---
 
 type mockAdminAuthStore struct {
-	getUserByEmailFn      func(ctx context.Context, email string) (*models.User, error)
-	getInviteByTokenHashFn func(ctx context.Context, hash string) (*models.InviteToken, error)
-	acceptInviteFn        func(ctx context.Context, id string) error
-	addMemberFn           func(ctx context.Context, tenantID, userID, role string) (*models.TenantMember, error)
+	getUserByEmailFn           func(ctx context.Context, email string) (*models.User, error)
+	getInviteByTokenHashFn     func(ctx context.Context, hash string) (*models.InviteToken, error)
+	acceptInviteFn             func(ctx context.Context, id string) error
+	addMemberFn                func(ctx context.Context, tenantID, userID, role string) (*models.TenantMember, error)
+	getUserPrimaryTenantSlugFn func(ctx context.Context, userID string) (string, error)
 }
 
 func (m *mockAdminAuthStore) GetUserByEmail(ctx context.Context, email string) (*models.User, error) {
@@ -57,6 +58,12 @@ func (m *mockAdminAuthStore) AcceptInvite(ctx context.Context, id string) error 
 }
 func (m *mockAdminAuthStore) AddMember(ctx context.Context, tenantID, userID, role string) (*models.TenantMember, error) {
 	return m.addMemberFn(ctx, tenantID, userID, role)
+}
+func (m *mockAdminAuthStore) GetUserPrimaryTenantSlug(ctx context.Context, userID string) (string, error) {
+	if m.getUserPrimaryTenantSlugFn != nil {
+		return m.getUserPrimaryTenantSlugFn(ctx, userID)
+	}
+	return "", nil
 }
 
 func newTestUser() *models.User {

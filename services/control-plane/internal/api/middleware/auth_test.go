@@ -14,8 +14,9 @@ import (
 
 // mockAuthStore satisfies middleware.AuthStore without a real database.
 type mockAuthStore struct {
-	validateAPIKey func(ctx context.Context, plain string) (*models.APIKey, error)
-	getTenantByID  func(ctx context.Context, id string) (*models.Tenant, error)
+	validateAPIKey    func(ctx context.Context, plain string) (*models.APIKey, error)
+	getTenantByID     func(ctx context.Context, id string) (*models.Tenant, error)
+	validateEmbedToken func(ctx context.Context, plain string) (*models.EmbedToken, error)
 }
 
 func (m *mockAuthStore) ValidateAPIKey(ctx context.Context, plain string) (*models.APIKey, error) {
@@ -23,6 +24,12 @@ func (m *mockAuthStore) ValidateAPIKey(ctx context.Context, plain string) (*mode
 }
 func (m *mockAuthStore) GetTenantByID(ctx context.Context, id string) (*models.Tenant, error) {
 	return m.getTenantByID(ctx, id)
+}
+func (m *mockAuthStore) ValidateEmbedToken(ctx context.Context, plain string) (*models.EmbedToken, error) {
+	if m.validateEmbedToken != nil {
+		return m.validateEmbedToken(ctx, plain)
+	}
+	return nil, errors.New("not an embed token")
 }
 
 var nopLog = zap.NewNop()

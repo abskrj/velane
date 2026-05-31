@@ -47,6 +47,7 @@ func TestGetBranding(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/tenants/acme/branding", nil)
 	req = withChiParam(req, "tenantSlug", "acme")
+	req = withAuthTenant(req, fakeTenant())
 	rr := httptest.NewRecorder()
 
 	h.GetBranding(rr, req)
@@ -79,6 +80,7 @@ func TestUpdateBranding_AdminOnly(t *testing.T) {
 	body, _ := json.Marshal(branding)
 	req := httptest.NewRequest(http.MethodPut, "/v1/tenants/acme/branding", bytes.NewReader(body))
 	req = withChiParam(req, "tenantSlug", "acme")
+	req = withAuthTenant(req, fakeTenant())
 	req.Header.Set("Content-Type", "application/json")
 	rr := httptest.NewRecorder()
 

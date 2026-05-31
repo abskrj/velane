@@ -76,7 +76,7 @@ func TestCreateSecret(t *testing.T) {
 		t.Fatalf("create tenant: %v", err)
 	}
 
-	sec, err := store.CreateSecret(ctx, tenant.ID, nil, "API_KEY", "super-secret", []string{"prod"}, testEncKey)
+	sec, err := store.CreateSecret(ctx, tenant.ID, nil, "API_KEY", "super-secret", false, []string{"prod"}, testEncKey)
 	if err != nil {
 		t.Fatalf("CreateSecret: %v", err)
 	}
@@ -86,11 +86,6 @@ func TestCreateSecret(t *testing.T) {
 	}
 	if sec.Name != "API_KEY" {
 		t.Errorf("name = %q; want %q", sec.Name, "API_KEY")
-	}
-	// The encrypted value must NOT be in the returned model's ValueEncrypted field
-	// (the scan helper doesn't select it, so it's empty).
-	if sec.ValueEncrypted != "" {
-		t.Error("ValueEncrypted should be empty in returned model (never returned from DB scan)")
 	}
 }
 
@@ -103,30 +98,22 @@ func TestListSecrets(t *testing.T) {
 		t.Fatalf("create tenant: %v", err)
 	}
 
-	// Create two secrets.
-	_, err = store.CreateSecret(ctx, tenant.ID, nil, "SECRET_A", "value-a", []string{}, testEncKey)
+	_, err = store.CreateSecret(ctx, tenant.ID, nil, "SECRET_A", "value-a", false, []string{}, testEncKey)
 	if err != nil {
 		t.Fatalf("create secret A: %v", err)
 	}
-	_, err = store.CreateSecret(ctx, tenant.ID, nil, "SECRET_B", "value-b", []string{"prod"}, testEncKey)
+	_, err = store.CreateSecret(ctx, tenant.ID, nil, "SECRET_B", "value-b", false, []string{"prod"}, testEncKey)
 	if err != nil {
 		t.Fatalf("create secret B: %v", err)
 	}
 
-	secrets, err := store.ListSecrets(ctx, tenant.ID)
+	secrets, err := store.ListSecrets(ctx, tenant.ID, testEncKey)
 	if err != nil {
 		t.Fatalf("ListSecrets: %v", err)
 	}
 
 	if len(secrets) < 2 {
 		t.Fatalf("expected at least 2 secrets, got %d", len(secrets))
-	}
-
-	// Values must never be returned.
-	for _, s := range secrets {
-		if s.ValueEncrypted != "" {
-			t.Errorf("secret %q: ValueEncrypted must be empty in list response", s.Name)
-		}
 	}
 }
 
@@ -139,7 +126,7 @@ func TestDeleteSecret(t *testing.T) {
 		t.Fatalf("create tenant: %v", err)
 	}
 
-	sec, err := store.CreateSecret(ctx, tenant.ID, nil, "TO_DELETE", "value", []string{}, testEncKey)
+	sec, err := store.CreateSecret(ctx, tenant.ID, nil, "TO_DELETE", "value", false, []string{}, testEncKey)
 	if err != nil {
 		t.Fatalf("CreateSecret: %v", err)
 	}
@@ -148,8 +135,7 @@ func TestDeleteSecret(t *testing.T) {
 		t.Fatalf("DeleteSecret: %v", err)
 	}
 
-	// Verify it's gone.
-	secrets, err := store.ListSecrets(ctx, tenant.ID)
+	secrets, err := store.ListSecrets(ctx, tenant.ID, testEncKey)
 	if err != nil {
 		t.Fatalf("ListSecrets after delete: %v", err)
 	}
@@ -174,14 +160,12 @@ func TestGetSecretsForInvocation_SnippetSpecific(t *testing.T) {
 		t.Fatalf("create snippet: %v", err)
 	}
 
-	// Tenant-wide secret.
-	_, err = store.CreateSecret(ctx, tenant.ID, nil, "DB_PASS", "tenant-level-pass", []string{}, testEncKey)
+	_, err = store.CreateSecret(ctx, tenant.ID, nil, "DB_PASS", "tenant-level-pass", false, []string{}, testEncKey)
 	if err != nil {
 		t.Fatalf("create tenant secret: %v", err)
 	}
 
-	// Snippet-specific secret with the same name — should override.
-	_, err = store.CreateSecret(ctx, tenant.ID, &snippet.ID, "DB_PASS", "snippet-level-pass", []string{}, testEncKey)
+	_, err = store.CreateSecret(ctx, tenant.ID, &snippet.ID, "DB_PASS", "snippet-level-pass", false, []string{}, testEncKey)
 	if err != nil {
 		t.Fatalf("create snippet secret: %v", err)
 	}
@@ -214,8 +198,7 @@ func TestGetSecretsForInvocation_TenantWide(t *testing.T) {
 		t.Fatalf("create snippet: %v", err)
 	}
 
-	// Only tenant-wide secret.
-	_, err = store.CreateSecret(ctx, tenant.ID, nil, "GLOBAL_TOKEN", "global-value", []string{}, testEncKey)
+	_, err = store.CreateSecret(ctx, tenant.ID, nil, "GLOBAL_TOKEN", "global-value", false, []string{}, testEncKey)
 	if err != nil {
 		t.Fatalf("create secret: %v", err)
 	}
@@ -248,13 +231,11 @@ func TestGetSecretsForInvocation_EnvironmentFilter(t *testing.T) {
 		t.Fatalf("create snippet: %v", err)
 	}
 
-	// Prod-only secret.
-	_, err = store.CreateSecret(ctx, tenant.ID, nil, "PROD_ONLY", "prod-value", []string{"prod"}, testEncKey)
+	_, err = store.CreateSecret(ctx, tenant.ID, nil, "PROD_ONLY", "prod-value", false, []string{"prod"}, testEncKey)
 	if err != nil {
 		t.Fatalf("create prod secret: %v", err)
 	}
 
-	// Fetch for dev environment — should NOT return the prod-only secret.
 	secrets, err := store.GetSecretsForInvocation(ctx, tenant.ID, snippet.ID, "dev", testEncKey)
 	if err != nil {
 		t.Fatalf("GetSecretsForInvocation: %v", err)
@@ -264,7 +245,6 @@ func TestGetSecretsForInvocation_EnvironmentFilter(t *testing.T) {
 		t.Error("PROD_ONLY should not be returned when invoking in dev environment")
 	}
 
-	// Fetch for prod — should return it.
 	secretsProd, err := store.GetSecretsForInvocation(ctx, tenant.ID, snippet.ID, "prod", testEncKey)
 	if err != nil {
 		t.Fatalf("GetSecretsForInvocation (prod): %v", err)

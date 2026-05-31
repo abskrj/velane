@@ -34,6 +34,16 @@ type Config struct {
 	BootstrapPassword string // BOOTSTRAP_PASSWORD: password for the initial admin user
 	BootstrapTenant   string // BOOTSTRAP_TENANT: slug for the initial tenant (default: "default")
 
+	// Nango (integration OAuth proxy)
+	NangoInternalURL  string // http://nango:3003 — internal only, never exposed
+	NangoPublicURL    string // browser-accessible Nango URL, used to rewrite logo image URLs
+	NangoConnectURL   string // browser-accessible Connect UI URL (NANGO_PUBLIC_CONNECT_URL), passed to @nangohq/frontend as baseURL
+	NangoApiURL       string // browser-accessible Nango API URL, passed to @nangohq/frontend as apiURL
+	NangoSecretKey      string // NANGO_SECRET_KEY
+	NangoPublicKey      string // NANGO_PUBLIC_KEY — returned to frontend for Connect UI
+	NangoWebhookSecret  string // NANGO_WEBHOOK_SECRET — HMAC-SHA256 signing secret for webhook verification
+	InternalProxyURL    string // URL executors use to reach the control plane proxy, e.g. http://control-plane:8080
+
 	// Executor selection (Phase 9)
 	ExecutorType              string // "process" (default) | "firecracker"
 	FirecrackerBinary         string // path to firecracker binary, default "/usr/local/bin/firecracker"
@@ -68,6 +78,14 @@ func Load() Config {
 		BootstrapPassword:       os.Getenv("BOOTSTRAP_PASSWORD"),
 		BootstrapTenant:         getEnv("BOOTSTRAP_TENANT", "default"),
 		JWTPrivateKeyPEM:        os.Getenv("JWT_PRIVATE_KEY"),
+		NangoInternalURL:        getEnv("NANGO_INTERNAL_URL", "http://nango:3003"),
+		NangoPublicURL:          getEnv("NANGO_PUBLIC_URL", "http://localhost:3003"),
+		NangoConnectURL:         getEnv("NANGO_CONNECT_URL", "http://localhost:3009"),
+		NangoApiURL:             getEnv("NANGO_API_URL", "http://localhost:3003"),
+		NangoSecretKey:          os.Getenv("NANGO_SECRET_KEY"),
+		NangoPublicKey:          os.Getenv("NANGO_PUBLIC_KEY"),
+		NangoWebhookSecret:      os.Getenv("NANGO_WEBHOOK_SECRET"),
+		InternalProxyURL:        getEnv("INTERNAL_PROXY_URL", "http://control-plane:8080"),
 		ExecutorType:            getEnv("EXECUTOR_TYPE", "process"),
 		FirecrackerBinary:       getEnv("FIRECRACKER_BINARY", "/usr/local/bin/firecracker"),
 		FirecrackerJailerBinary: getEnv("FIRECRACKER_JAILER_BINARY", "/usr/local/bin/jailer"),

@@ -12,6 +12,72 @@ import (
 
 func (r *Registry) addDefaults() {
 	r.add(Tool{
+		Name: "list_connections",
+		Description: `List OAuth integrations connected for this tenant.
+
+IMPORTANT — how to use integrations in snippet code:
+
+Bun/TypeScript:
+  import { integration } from '@velane/integrations'
+  const client = integration('github')                           // provider slug
+  const user   = await client.get('/user')                      // GET
+  const issue  = await client.post('/repos/org/repo/issues',    // POST
+                   { title: 'Bug', body: 'Details' })
+  await client.patch('/repos/org/repo/issues/1', { state: 'closed' })
+  await client.delete('/repos/org/repo/labels/old')
+
+Python:
+  from velane.integrations import integration
+  client = integration("salesforce")
+  cases  = client.get("/services/data/v60.0/sobjects/Case/describe")
+  result = client.post("/services/data/v60.0/sobjects/Case",
+             {"Subject": "Login issue", "Status": "New"})
+
+Methods: .get(path)  .post(path, body)  .patch(path, body)  .put(path, body)  .delete(path)
+All methods return parsed JSON. Paths are the provider's native API paths.
+@velane/integrations is always available — no install, no credentials needed in code.
+Call get_integration_docs(provider) to look up endpoints for any provider.`,
+		InputSchema: map[string]any{"type": "object", "properties": map[string]any{}},
+		Handle: func(ctx context.Context, authHeader string, _ map[string]any) (any, error) {
+			var out []map[string]any
+			if err := r.client.Get(ctx, authHeader, "/v1/connections", &out); err != nil {
+				return nil, err
+			}
+			if out == nil {
+				return []map[string]any{}, nil
+			}
+			return out, nil
+		},
+	})
+
+	r.add(Tool{
+		Name:        "get_integration_docs",
+		Description: "Get API endpoints, base URL, and a working code example for a specific integration provider. Call this before writing snippet code that uses an integration.",
+		InputSchema: map[string]any{
+			"type":     "object",
+			"required": []string{"provider"},
+			"properties": map[string]any{
+				"provider": map[string]any{
+					"type":        "string",
+					"description": "Provider slug, e.g. github, salesforce, slack, hubspot, notion, linear, stripe, zendesk, airtable",
+				},
+			},
+		},
+		Handle: func(ctx context.Context, authHeader string, args map[string]any) (any, error) {
+			provider, err := toString(args, "provider", true)
+			if err != nil {
+				return nil, err
+			}
+			var out map[string]any
+			path := "/v1/integrations/" + url.PathEscape(provider) + "/docs"
+			if err := r.client.Get(ctx, authHeader, path, &out); err != nil {
+				return nil, err
+			}
+			return out, nil
+		},
+	})
+
+	r.add(Tool{
 		Name:        "list_snippets",
 		Description: "List snippets available to the authenticated tenant.",
 		InputSchema: map[string]any{"type": "object", "properties": map[string]any{}},
@@ -84,8 +150,15 @@ func (r *Registry) addDefaults() {
 	})
 
 	r.add(Tool{
-		Name:        "update_draft",
-		Description: "Create a new snippet version from source code.",
+		Name: "update_draft",
+		Description: `Create a new snippet version from source code.
+
+Built-in import always available in snippet code (no install needed):
+  Bun:    import { integration } from '@velane/integrations'
+  Python: from velane.integrations import integration
+
+Call list_connections to see which OAuth providers are connected for this tenant.
+Call get_integration_docs(provider) for endpoint reference and working code examples.`,
 		InputSchema: map[string]any{
 			"type":     "object",
 			"required": []string{"snippet_id", "code"},

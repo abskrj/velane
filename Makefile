@@ -1,4 +1,4 @@
-.PHONY: up down build logs seed tidy copy-platform-libs help
+.PHONY: up down build logs seed tidy copy-platform-libs test-platform-libs help
 
 ## tidy: run go mod tidy to generate/update go.sum (required before first build)
 tidy:
@@ -9,8 +9,12 @@ tidy:
 up:
 	docker compose up --build -d
 
-## down: stop and remove all containers and volumes
+## down: stop and remove containers, keeping volumes (data survives)
 down:
+	docker compose down
+
+## down-clean: stop containers AND wipe all volumes (full reset — re-runs Nango setup)
+down-clean:
 	docker compose down -v
 
 ## logs: stream control-plane logs
@@ -27,6 +31,20 @@ copy-platform-libs:
 ## build: compile the control-plane binary locally (requires Go 1.22+ and copy-platform-libs)
 build: copy-platform-libs
 	cd services/control-plane && go build ./...
+
+## test-platform-libs: run unit tests for all platform libraries (no Salesforce credentials needed)
+##   Requires: bun (https://bun.sh) and python3 with pytest (pip install pytest)
+test-platform-libs:
+	@echo "--- Bun tests ---"
+	cd platform-libraries/bun && bun test
+	@echo "--- Python tests ---"
+	cd platform-libraries/python && python3 -m pytest -v
+
+## setup-nango: one-time Nango account setup. Run once after make up on a fresh stack.
+##              Prints NANGO_SECRET_KEY and NANGO_PUBLIC_KEY — store in your secrets manager.
+##              Idempotent: safe to re-run, returns existing keys if account already exists.
+setup-nango:
+	@bash scripts/setup-nango.sh
 
 ## seed: create a demo tenant (no auth required — bootstrap endpoint)
 ##

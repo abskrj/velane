@@ -1,0 +1,5 @@
+{
+  "name": "Integrations",
+  "integration": "Velane",
+  "description": "Built-in proxy client for OAuth-connected integrations. Call integration('provider').get('/endpoint') in any snippet — auth is handled automatically."
+}

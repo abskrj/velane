@@ -12,9 +12,9 @@ import type {
   InvocationResult,
   EmbedToken,
   Secret,
-  Library,
-  LibraryVersion,
-  PlatformLibrary,
+  Connection,
+  NangoProvider,
+  IntegrationConfig,
 } from '../types'
 
 const BASE = '/api'
@@ -199,30 +199,95 @@ export const api = {
     return request('POST', `/v1/snippets/${snippetId}/versions/${versionNum}/publish?env=${env}`, undefined, 'apikey')
   },
 
-  // Libraries
-  async listLibraries(language?: string): Promise<{ platform: PlatformLibrary[]; tenant: Library[] }> {
-    const qs = language ? `?language=${language}` : ''
-    return request('GET', `/v1/libraries${qs}`, undefined, 'apikey')
+  // Returns a cleanup function. Calls onVersion whenever a new draft is created for snippetId.
+  watchSnippet(snippetId: string, onVersion: (v: SnippetVersion) => void): () => void {
+    const token = localStorage.getItem('sessionToken') ?? ''
+    const slug = getSlug()
+    const headers: Record<string, string> = {}
+    if (token) headers['Authorization'] = `Bearer ${token}`
+    if (slug) headers['X-Tenant'] = slug
+
+    const controller = new AbortController()
+
+    async function connect() {
+      try {
+        const res = await fetch(`${BASE}/v1/snippets/${snippetId}/watch`, {
+          headers,
+          signal: controller.signal,
+        })
+        if (!res.ok || !res.body) return
+
+        const reader = res.body.getReader()
+        const decoder = new TextDecoder()
+        let buffer = ''
+        let eventType = ''
+        let data = ''
+
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          buffer += decoder.decode(value, { stream: true })
+          const lines = buffer.split('\n')
+          buffer = lines.pop() ?? ''
+          for (const line of lines) {
+            if (line.startsWith('event: ')) {
+              eventType = line.slice(7).trim()
+            } else if (line.startsWith('data: ')) {
+              data = line.slice(6).trim()
+            } else if (line === '') {
+              if (eventType === 'version' && data) {
+                try { onVersion(JSON.parse(data)) } catch { /* ignore */ }
+              }
+              eventType = ''
+              data = ''
+            }
+          }
+        }
+      } catch {
+        // aborted on cleanup — expected
+      }
+    }
+
+    connect()
+    return () => controller.abort()
   },
 
-  async createLibrary(data: { name: string; slug: string; language: string; description?: string }): Promise<Library> {
-    return request('POST', '/v1/libraries', data, 'apikey')
+  // Integrations (Nango-backed OAuth connections)
+  async listProviders(): Promise<NangoProvider[]> {
+    return request('GET', '/v1/integrations', undefined, 'none')
   },
 
-  async deleteLibrary(id: string): Promise<void> {
-    return request('DELETE', `/v1/libraries/${id}`, undefined, 'apikey')
+  async listConfigured(): Promise<IntegrationConfig[]> {
+    return request('GET', '/v1/integrations/configured', undefined, 'apikey')
   },
 
-  async listLibraryVersions(libraryId: string): Promise<LibraryVersion[]> {
-    return request('GET', `/v1/libraries/${libraryId}/versions`, undefined, 'apikey')
+  async configureIntegration(data: {
+    provider: string
+    oauth_client_id?: string
+    oauth_client_secret?: string
+    oauth_scopes?: string
+  }): Promise<void> {
+    return request('POST', '/v1/integrations/configured', data, 'apikey')
   },
 
-  async createLibraryVersion(libraryId: string, code: string): Promise<LibraryVersion> {
-    return request('POST', `/v1/libraries/${libraryId}/versions`, { code }, 'apikey')
+  async deleteIntegrationConfig(providerConfigKey: string): Promise<void> {
+    return request('DELETE', `/v1/integrations/configured/${providerConfigKey}`, undefined, 'apikey')
   },
 
-  async publishLibraryVersion(libraryId: string, versionNumber: number): Promise<LibraryVersion> {
-    return request('POST', `/v1/libraries/${libraryId}/versions/${versionNumber}/publish`, undefined, 'apikey')
+  async listConnections(): Promise<Connection[]> {
+    return request('GET', `/v1/tenants/${getSlug()}/connections`, undefined, 'apikey')
+  },
+
+  async createConnectionSession(provider: string): Promise<{ session_token: string }> {
+    return request('POST', `/v1/tenants/${getSlug()}/connections/session`, { provider }, 'apikey')
+  },
+
+  async recordConnection(provider: string, displayName = ''): Promise<Connection> {
+    return request('POST', `/v1/tenants/${getSlug()}/connections`, { provider, display_name: displayName }, 'apikey')
+  },
+
+  async disconnectProvider(provider: string): Promise<void> {
+    return request('DELETE', `/v1/tenants/${getSlug()}/connections/${provider}`, undefined, 'apikey')
   },
 
   // Variables & Credentials (secrets)

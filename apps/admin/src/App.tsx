@@ -13,8 +13,7 @@ import SnippetEditorPage from './pages/SnippetEditorPage'
 import EmbedPage from './pages/EmbedPage'
 import EmbedEntryPage from './pages/EmbedEntryPage'
 import VariablesPage from './pages/VariablesPage'
-import LibrariesPage from './pages/LibrariesPage'
-import LibraryEditorPage from './pages/LibraryEditorPage'
+import IntegrationsPage from './pages/IntegrationsPage'
 import ProtectedRoute from './components/ProtectedRoute'
 
 function RootRedirect() {
@@ -49,8 +48,7 @@ export default function App() {
           <Route path="egress" element={<EgressPage />} />
           <Route path="snippets" element={<SnippetsPage />} />
           <Route path="snippets/:id" element={<SnippetEditorPage />} />
-          <Route path="libraries" element={<LibrariesPage />} />
-          <Route path="libraries/:id" element={<LibraryEditorPage />} />
+          <Route path="integrations" element={<IntegrationsPage />} />
           <Route path="variables" element={<VariablesPage />} />
           <Route path="embed" element={<EmbedPage />} />
         </Route>

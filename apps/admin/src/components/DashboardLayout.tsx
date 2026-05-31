@@ -10,7 +10,7 @@ import {
   MonitorSmartphone,
   LogOut,
   Lock,
-  BookOpen,
+  Plug,
   Layers,
 } from 'lucide-react'
 import clsx from 'clsx'
@@ -20,7 +20,7 @@ import { useEmbedMode } from '../hooks/useEmbedMode'
 const allNavItems = [
   { to: '/dashboard/overview', label: 'Overview', icon: LayoutDashboard, embedHidden: false },
   { to: '/dashboard/snippets', label: 'Snippets', icon: Code, embedHidden: false },
-  { to: '/dashboard/libraries', label: 'Libraries', icon: BookOpen, embedHidden: false },
+  { to: '/dashboard/integrations', label: 'Integrations', icon: Plug, embedHidden: false },
   { to: '/dashboard/variables', label: 'Variables', icon: Lock, embedHidden: false },
   { to: '/dashboard/api-keys', label: 'API Keys', icon: Key, embedHidden: true },
   { to: '/dashboard/team', label: 'Team', icon: Users, embedHidden: true },
@@ -34,7 +34,7 @@ export default function DashboardLayout() {
   const navigate = useNavigate()
   const location = useLocation()
   const isEmbedMode = useEmbedMode()
-  const isEditorRoute = /^\/dashboard\/(snippets|libraries)\/.+/.test(location.pathname)
+  const isEditorRoute = /^\/dashboard\/snippets\/.+/.test(location.pathname)
 
   const navItems = allNavItems.filter(item => !isEmbedMode || !item.embedHidden)
 

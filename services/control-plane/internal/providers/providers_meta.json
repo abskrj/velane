@@ -1,0 +1,225 @@
+{
+  "github": {
+    "name": "GitHub",
+    "base_url": "https://api.github.com",
+    "docs_url": "https://docs.github.com/en/rest",
+    "auth_mode": "OAUTH2",
+    "common_endpoints": [
+      { "method": "GET",  "path": "/user",                                  "description": "Authenticated user profile" },
+      { "method": "GET",  "path": "/user/repos",                             "description": "List repos for authenticated user" },
+      { "method": "POST", "path": "/repos/{owner}/{repo}/issues",             "description": "Create issue", "body": { "title": "string (required)", "body": "string", "labels": ["string"] } },
+      { "method": "GET",  "path": "/repos/{owner}/{repo}/issues",             "description": "List issues" },
+      { "method": "PATCH","path": "/repos/{owner}/{repo}/issues/{issue_number}", "description": "Update issue", "body": { "state": "open|closed", "title": "string" } },
+      { "method": "POST", "path": "/repos/{owner}/{repo}/pulls",              "description": "Create pull request", "body": { "title": "string", "head": "string", "base": "string" } },
+      { "method": "GET",  "path": "/repos/{owner}/{repo}/pulls",              "description": "List pull requests" }
+    ],
+    "bun_example": "import { integration } from '@velane/integrations'\nconst gh = integration('github')\nconst user = await gh.get('/user')\nconst issue = await gh.post('/repos/owner/repo/issues', { title: 'Bug', body: 'Details' })",
+    "python_example": "from velane.integrations import integration\ngh = integration('github')\nuser = gh.get('/user')\nissue = gh.post('/repos/owner/repo/issues', {'title': 'Bug'})"
+  },
+  "gitlab": {
+    "name": "GitLab",
+    "base_url": "https://gitlab.com/api/v4",
+    "docs_url": "https://docs.gitlab.com/ee/api/",
+    "auth_mode": "OAUTH2",
+    "common_endpoints": [
+      { "method": "GET",  "path": "/projects",                     "description": "List projects" },
+      { "method": "POST", "path": "/projects/{id}/issues",          "description": "Create issue", "body": { "title": "string (required)", "description": "string" } },
+      { "method": "GET",  "path": "/projects/{id}/merge_requests",  "description": "List merge requests" }
+    ],
+    "bun_example": "import { integration } from '@velane/integrations'\nconst gl = integration('gitlab')\nconst projects = await gl.get('/projects')",
+    "python_example": "from velane.integrations import integration\ngl = integration('gitlab')\nprojects = gl.get('/projects')"
+  },
+  "slack": {
+    "name": "Slack",
+    "base_url": "https://slack.com/api",
+    "docs_url": "https://api.slack.com/methods",
+    "auth_mode": "OAUTH2",
+    "common_endpoints": [
+      { "method": "POST", "path": "/chat.postMessage",    "description": "Send a message", "body": { "channel": "string (required)", "text": "string" } },
+      { "method": "GET",  "path": "/conversations.list",  "description": "List channels" },
+      { "method": "GET",  "path": "/conversations.history","description": "Get channel messages", "query": { "channel": "string (required)" } },
+      { "method": "POST", "path": "/reactions.add",       "description": "Add emoji reaction", "body": { "channel": "string", "timestamp": "string", "name": "string" } }
+    ],
+    "bun_example": "import { integration } from '@velane/integrations'\nconst slack = integration('slack')\nawait slack.post('/chat.postMessage', { channel: '#general', text: 'Hello from Velane!' })",
+    "python_example": "from velane.integrations import integration\nslack = integration('slack')\nslack.post('/chat.postMessage', {'channel': '#general', 'text': 'Hello!'})"
+  },
+  "salesforce": {
+    "name": "Salesforce",
+    "base_url": "https://{instance}.salesforce.com",
+    "docs_url": "https://developer.salesforce.com/docs/atlas.en-us.api_rest.meta/api_rest/",
+    "auth_mode": "OAUTH2",
+    "common_endpoints": [
+      { "method": "GET",  "path": "/services/data/v60.0/sobjects/Case/describe",         "description": "Describe Case object fields" },
+      { "method": "GET",  "path": "/services/data/v60.0/sobjects/Case/{id}",              "description": "Get case by ID" },
+      { "method": "POST", "path": "/services/data/v60.0/sobjects/Case",                   "description": "Create case", "body": { "Subject": "string (required)", "Status": "New|Working|Escalated|Closed", "Priority": "High|Medium|Low" } },
+      { "method": "PATCH","path": "/services/data/v60.0/sobjects/Case/{id}",              "description": "Update case" },
+      { "method": "GET",  "path": "/services/data/v60.0/sobjects/Contact/{id}",           "description": "Get contact by ID" },
+      { "method": "POST", "path": "/services/data/v60.0/sobjects/Contact",                "description": "Create contact", "body": { "FirstName": "string", "LastName": "string (required)", "Email": "string" } },
+      { "method": "GET",  "path": "/services/data/v60.0/query?q=SELECT+Id,Name+FROM+Account", "description": "SOQL query" }
+    ],
+    "bun_example": "import { integration } from '@velane/integrations'\nconst sf = integration('salesforce')\nconst c = await sf.post('/services/data/v60.0/sobjects/Case', { Subject: 'Login issue', Status: 'New' })\nconst found = await sf.get(`/services/data/v60.0/sobjects/Case/${c.id}`)",
+    "python_example": "from velane.integrations import integration\nsf = integration('salesforce')\ncase = sf.post('/services/data/v60.0/sobjects/Case', {'Subject': 'Issue', 'Status': 'New'})"
+  },
+  "hubspot": {
+    "name": "HubSpot",
+    "base_url": "https://api.hubapi.com",
+    "docs_url": "https://developers.hubspot.com/docs/api/overview",
+    "auth_mode": "OAUTH2",
+    "common_endpoints": [
+      { "method": "GET",  "path": "/crm/v3/objects/contacts",               "description": "List contacts" },
+      { "method": "POST", "path": "/crm/v3/objects/contacts",               "description": "Create contact", "body": { "properties": { "email": "string", "firstname": "string", "lastname": "string" } } },
+      { "method": "GET",  "path": "/crm/v3/objects/deals",                  "description": "List deals" },
+      { "method": "POST", "path": "/crm/v3/objects/deals",                  "description": "Create deal", "body": { "properties": { "dealname": "string", "amount": "string", "dealstage": "string" } } },
+      { "method": "POST", "path": "/crm/v3/objects/contacts/search",        "description": "Search contacts", "body": { "filterGroups": [] } }
+    ],
+    "bun_example": "import { integration } from '@velane/integrations'\nconst hs = integration('hubspot')\nconst contacts = await hs.get('/crm/v3/objects/contacts')\nconst deal = await hs.post('/crm/v3/objects/deals', { properties: { dealname: 'New Deal', amount: '5000' } })",
+    "python_example": "from velane.integrations import integration\nhs = integration('hubspot')\ncontacts = hs.get('/crm/v3/objects/contacts')"
+  },
+  "notion": {
+    "name": "Notion",
+    "base_url": "https://api.notion.com/v1",
+    "docs_url": "https://developers.notion.com/reference",
+    "auth_mode": "OAUTH2",
+    "common_endpoints": [
+      { "method": "POST", "path": "/search",                                    "description": "Search pages and databases", "body": { "query": "string" } },
+      { "method": "GET",  "path": "/databases/{database_id}/query",              "description": "Query a database" },
+      { "method": "POST", "path": "/pages",                                      "description": "Create page", "body": { "parent": { "database_id": "string" }, "properties": {} } },
+      { "method": "PATCH","path": "/pages/{page_id}",                            "description": "Update page properties" }
+    ],
+    "bun_example": "import { integration } from '@velane/integrations'\nconst notion = integration('notion')\nconst results = await notion.post('/search', { query: 'meeting notes' })",
+    "python_example": "from velane.integrations import integration\nnotion = integration('notion')\nresults = notion.post('/search', {'query': 'meeting notes'})"
+  },
+  "linear": {
+    "name": "Linear",
+    "base_url": "https://api.linear.app",
+    "docs_url": "https://developers.linear.app/docs/graphql/working-with-the-graphql-api",
+    "auth_mode": "OAUTH2",
+    "common_endpoints": [
+      { "method": "POST", "path": "/graphql", "description": "GraphQL endpoint — all Linear operations use GraphQL", "body": { "query": "string", "variables": {} } }
+    ],
+    "bun_example": "import { integration } from '@velane/integrations'\nconst linear = integration('linear')\nconst data = await linear.post('/graphql', {\n  query: `mutation { issueCreate(input: { title: \"Bug\", teamId: \"TEAM_ID\" }) { success issue { id title } } }`\n})",
+    "python_example": "from velane.integrations import integration\nlinear = integration('linear')\ndata = linear.post('/graphql', {'query': 'mutation { issueCreate(input: {title: \"Bug\", teamId: \"TEAM_ID\"}) { success } }'})"
+  },
+  "jira": {
+    "name": "Jira",
+    "base_url": "https://{domain}.atlassian.net/rest/api/3",
+    "docs_url": "https://developer.atlassian.com/cloud/jira/platform/rest/v3/",
+    "auth_mode": "OAUTH2",
+    "common_endpoints": [
+      { "method": "GET",  "path": "/issue/{issueIdOrKey}",              "description": "Get issue" },
+      { "method": "POST", "path": "/issue",                             "description": "Create issue", "body": { "fields": { "project": { "key": "string" }, "summary": "string", "issuetype": { "name": "Bug|Task|Story" } } } },
+      { "method": "PUT",  "path": "/issue/{issueIdOrKey}",              "description": "Update issue" },
+      { "method": "GET",  "path": "/search?jql=project=MY-PROJECT",     "description": "Search issues with JQL" }
+    ],
+    "bun_example": "import { integration } from '@velane/integrations'\nconst jira = integration('jira')\nconst issue = await jira.post('/issue', { fields: { project: { key: 'PROJ' }, summary: 'Bug report', issuetype: { name: 'Bug' } } })",
+    "python_example": "from velane.integrations import integration\njira = integration('jira')\nissue = jira.post('/issue', {'fields': {'project': {'key': 'PROJ'}, 'summary': 'Bug', 'issuetype': {'name': 'Bug'}}})"
+  },
+  "google-calendar": {
+    "name": "Google Calendar",
+    "base_url": "https://www.googleapis.com/calendar/v3",
+    "docs_url": "https://developers.google.com/calendar/api/v3/reference",
+    "auth_mode": "OAUTH2",
+    "common_endpoints": [
+      { "method": "GET",  "path": "/calendars/primary/events",            "description": "List events from primary calendar" },
+      { "method": "POST", "path": "/calendars/primary/events",            "description": "Create event", "body": { "summary": "string", "start": { "dateTime": "ISO8601" }, "end": { "dateTime": "ISO8601" } } },
+      { "method": "PATCH","path": "/calendars/primary/events/{eventId}",  "description": "Update event" }
+    ],
+    "bun_example": "import { integration } from '@velane/integrations'\nconst cal = integration('google-calendar')\nconst event = await cal.post('/calendars/primary/events', {\n  summary: 'Team sync',\n  start: { dateTime: '2025-01-15T10:00:00Z' },\n  end: { dateTime: '2025-01-15T11:00:00Z' }\n})",
+    "python_example": "from velane.integrations import integration\ncal = integration('google-calendar')\nevents = cal.get('/calendars/primary/events')"
+  },
+  "google-sheets": {
+    "name": "Google Sheets",
+    "base_url": "https://sheets.googleapis.com/v4",
+    "docs_url": "https://developers.google.com/sheets/api/reference/rest",
+    "auth_mode": "OAUTH2",
+    "common_endpoints": [
+      { "method": "GET",  "path": "/spreadsheets/{spreadsheetId}/values/{range}",        "description": "Read cell range, e.g. Sheet1!A1:D10" },
+      { "method": "PUT",  "path": "/spreadsheets/{spreadsheetId}/values/{range}",        "description": "Write cell range", "body": { "range": "string", "majorDimension": "ROWS", "values": [[]] }, "query": { "valueInputOption": "USER_ENTERED" } },
+      { "method": "POST", "path": "/spreadsheets/{spreadsheetId}/values/{range}:append", "description": "Append rows", "body": { "values": [[]] }, "query": { "valueInputOption": "USER_ENTERED" } }
+    ],
+    "bun_example": "import { integration } from '@velane/integrations'\nconst sheets = integration('google-sheets')\nconst data = await sheets.get('/spreadsheets/SHEET_ID/values/Sheet1!A1:D10')\nawait sheets.post('/spreadsheets/SHEET_ID/values/Sheet1!A:A:append?valueInputOption=USER_ENTERED', { values: [['new row']] })",
+    "python_example": "from velane.integrations import integration\nsheets = integration('google-sheets')\ndata = sheets.get('/spreadsheets/SHEET_ID/values/Sheet1!A1:D10')"
+  },
+  "gmail": {
+    "name": "Gmail",
+    "base_url": "https://gmail.googleapis.com/gmail/v1",
+    "docs_url": "https://developers.google.com/gmail/api/reference/rest",
+    "auth_mode": "OAUTH2",
+    "common_endpoints": [
+      { "method": "GET",  "path": "/users/me/messages",          "description": "List messages", "query": { "q": "search query e.g. is:unread" } },
+      { "method": "GET",  "path": "/users/me/messages/{id}",     "description": "Get message" },
+      { "method": "POST", "path": "/users/me/messages/send",     "description": "Send email", "body": { "raw": "base64url encoded RFC 2822 message" } }
+    ],
+    "bun_example": "import { integration } from '@velane/integrations'\nconst gmail = integration('gmail')\nconst messages = await gmail.get('/users/me/messages?q=is:unread')",
+    "python_example": "from velane.integrations import integration\ngmail = integration('gmail')\nmessages = gmail.get('/users/me/messages?q=is:unread')"
+  },
+  "stripe": {
+    "name": "Stripe",
+    "base_url": "https://api.stripe.com/v1",
+    "docs_url": "https://stripe.com/docs/api",
+    "auth_mode": "API_KEY",
+    "common_endpoints": [
+      { "method": "GET",  "path": "/customers",                    "description": "List customers" },
+      { "method": "POST", "path": "/customers",                    "description": "Create customer", "body": { "email": "string", "name": "string" } },
+      { "method": "GET",  "path": "/charges",                      "description": "List charges" },
+      { "method": "GET",  "path": "/subscriptions",                "description": "List subscriptions" },
+      { "method": "POST", "path": "/payment_intents",              "description": "Create payment intent", "body": { "amount": "integer (cents)", "currency": "usd", "automatic_payment_methods": { "enabled": true } } }
+    ],
+    "bun_example": "import { integration } from '@velane/integrations'\nconst stripe = integration('stripe')\nconst customers = await stripe.get('/customers')\nconst customer = await stripe.post('/customers', { email: 'user@example.com', name: 'Jane Doe' })",
+    "python_example": "from velane.integrations import integration\nstripe = integration('stripe')\ncustomers = stripe.get('/customers')"
+  },
+  "zendesk": {
+    "name": "Zendesk",
+    "base_url": "https://{subdomain}.zendesk.com/api/v2",
+    "docs_url": "https://developer.zendesk.com/api-reference/ticketing/introduction/",
+    "auth_mode": "OAUTH2",
+    "common_endpoints": [
+      { "method": "GET",  "path": "/tickets",                "description": "List tickets" },
+      { "method": "POST", "path": "/tickets",                "description": "Create ticket", "body": { "ticket": { "subject": "string", "comment": { "body": "string" } } } },
+      { "method": "PUT",  "path": "/tickets/{id}",           "description": "Update ticket" },
+      { "method": "GET",  "path": "/users",                  "description": "List users" }
+    ],
+    "bun_example": "import { integration } from '@velane/integrations'\nconst zd = integration('zendesk')\nconst ticket = await zd.post('/tickets', { ticket: { subject: 'Login issue', comment: { body: 'Cannot log in' } } })",
+    "python_example": "from velane.integrations import integration\nzd = integration('zendesk')\ntickets = zd.get('/tickets')"
+  },
+  "intercom": {
+    "name": "Intercom",
+    "base_url": "https://api.intercom.io",
+    "docs_url": "https://developers.intercom.com/docs/references/rest-api/",
+    "auth_mode": "OAUTH2",
+    "common_endpoints": [
+      { "method": "GET",  "path": "/contacts",               "description": "List contacts" },
+      { "method": "POST", "path": "/contacts",               "description": "Create contact", "body": { "role": "user|lead", "email": "string" } },
+      { "method": "POST", "path": "/conversations",          "description": "Create conversation", "body": { "from": { "type": "user", "id": "string" }, "body": "string" } }
+    ],
+    "bun_example": "import { integration } from '@velane/integrations'\nconst ic = integration('intercom')\nconst contacts = await ic.get('/contacts')",
+    "python_example": "from velane.integrations import integration\nic = integration('intercom')\ncontacts = ic.get('/contacts')"
+  },
+  "airtable": {
+    "name": "Airtable",
+    "base_url": "https://api.airtable.com/v0",
+    "docs_url": "https://airtable.com/developers/web/api/introduction",
+    "auth_mode": "OAUTH2",
+    "common_endpoints": [
+      { "method": "GET",  "path": "/{baseId}/{tableNameOrId}",          "description": "List records" },
+      { "method": "POST", "path": "/{baseId}/{tableNameOrId}",          "description": "Create record", "body": { "fields": {} } },
+      { "method": "PATCH","path": "/{baseId}/{tableNameOrId}/{recordId}","description": "Update record", "body": { "fields": {} } }
+    ],
+    "bun_example": "import { integration } from '@velane/integrations'\nconst at = integration('airtable')\nconst records = await at.get('/BASE_ID/TableName')\nawait at.post('/BASE_ID/TableName', { fields: { Name: 'New Row', Status: 'Active' } })",
+    "python_example": "from velane.integrations import integration\nat = integration('airtable')\nrecords = at.get('/BASE_ID/TableName')"
+  },
+  "pipedrive": {
+    "name": "Pipedrive",
+    "base_url": "https://api.pipedrive.com/v1",
+    "docs_url": "https://developers.pipedrive.com/docs/api/v1",
+    "auth_mode": "OAUTH2",
+    "common_endpoints": [
+      { "method": "GET",  "path": "/persons",         "description": "List persons (contacts)" },
+      { "method": "POST", "path": "/persons",         "description": "Create person", "body": { "name": "string (required)", "email": [{ "value": "string" }] } },
+      { "method": "GET",  "path": "/deals",           "description": "List deals" },
+      { "method": "POST", "path": "/deals",           "description": "Create deal", "body": { "title": "string (required)", "status": "open" } }
+    ],
+    "bun_example": "import { integration } from '@velane/integrations'\nconst pd = integration('pipedrive')\nconst deal = await pd.post('/deals', { title: 'Enterprise deal', status: 'open' })",
+    "python_example": "from velane.integrations import integration\npd = integration('pipedrive')\ndeals = pd.get('/deals')"
+  }
+}

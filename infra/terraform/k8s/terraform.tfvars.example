@@ -1,0 +1,108 @@
+# Cluster access
+kubeconfig_path    = "~/.kube/config"
+kubeconfig_context = "your-cluster-context"
+
+# Namespace
+namespace        = "velane"
+create_namespace = true
+
+# Container images
+control_plane_image  = "ghcr.io/abskrj/velane-control-plane:latest"
+bun_executor_image   = "ghcr.io/abskrj/velane-bun-executor:latest"
+python_executor_image = "ghcr.io/abskrj/velane-python-executor:latest"
+admin_image          = "ghcr.io/abskrj/velane-admin:latest"
+mcp_server_image     = "ghcr.io/abskrj/velane-mcp-server:latest"
+
+# Exposed services (no TLS/domain by default)
+admin_service_type         = "LoadBalancer"
+control_plane_service_type = "LoadBalancer"
+mcp_server_service_type    = "LoadBalancer"
+
+# Core dependencies (managed outside this stack)
+database_url   = "postgres://user:pass@your-postgres-host:5432/velane?sslmode=require"
+redis_url      = "your-redis-host:6379"
+encryption_key = "replace-with-64-char-hex-key"
+
+# JWT key (PEM block)
+jwt_private_key_pem = <<EOT
+-----BEGIN PRIVATE KEY-----
+REPLACE_ME
+-----END PRIVATE KEY-----
+EOT
+
+# Optional bootstrap user (first deploy only)
+bootstrap_email    = ""
+bootstrap_password = ""
+bootstrap_tenant   = "default"
+
+# Optional Nango values (needed for integration features)
+nango_internal_url   = "http://nango:3003"
+nango_connect_url    = ""
+nango_api_url        = ""
+nango_secret_key     = ""
+nango_public_key     = ""
+nango_webhook_secret = ""
+
+# Optional observability values
+clickhouse_dsn = ""
+logs_bucket    = ""
+replay_bucket  = ""
+
+# =============================================================================
+# INGRESS (subdomain-based routing)
+# =============================================================================
+
+enable_ingress = true
+
+# Use "alb" on EKS (requires aws-load-balancer-controller installed in the cluster)
+# Use "nginx" if you have nginx-ingress-controller
+# Other clouds have their own classes (e.g. "gce" on GKE, "azure/application-gateway" on AKS, etc.)
+ingress_class_name = "alb"
+
+# Base domain for your application
+base_domain = "example.com"
+
+# Subdomains (will be prefixed to the base_domain above)
+admin_subdomain         = "admin"
+api_subdomain           = "api"
+mcp_subdomain           = "mcp"
+nango_connect_subdomain = "connect"
+nango_api_subdomain     = "nango"
+
+# Extra annotations (especially useful for ALB)
+ingress_annotations = {
+  # "alb.ingress.kubernetes.io/scheme"      = "internet-facing"
+  # "alb.ingress.kubernetes.io/target-type" = "ip"
+}
+
+# =============================================================================
+# NANGO (in-cluster)
+# =============================================================================
+
+deploy_nango = true
+nango_image  = "nangohq/nango-server:hosted"
+
+# Nango database:
+# - Leave nango_database_url empty → we will create/use a separate "nango" database
+#   on the same Postgres server defined by database_url (one-time Job does CREATE DATABASE)
+# - Provide a full DSN here if you want Nango on a completely different Postgres instance
+# nango_database_url = "postgres://user:pass@your-postgres-host:5432/nango?sslmode=require"
+
+# Nango keys (generate real ones for production)
+# nango_secret_key     = "your-real-secret"
+# nango_public_key     = "your-real-public"
+# nango_webhook_secret = "your-webhook-secret"
+
+# =============================================================================
+# IMPORTANT NOTES FOR ALB + SUBDOMAINS
+# =============================================================================
+# 1. Install the AWS Load Balancer Controller on your EKS cluster first:
+#    https://docs.aws.amazon.com/eks/latest/userguide/aws-load-balancer-controller.html
+#
+# 2. After apply, get the ALB DNS name:
+#    kubectl get ingress -n velane velane -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
+#
+# 3. Point your DNS records (A or CNAME) for the subdomains to the ALB DNS name.
+#
+# 4. The control-plane and admin pods will automatically use the correct internal URLs.
+#    The public Nango URLs are automatically derived from the subdomains and base_domain.

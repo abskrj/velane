@@ -4,18 +4,24 @@
 tidy:
 	cd services/control-plane && go mod tidy
 
-## up: build images and start all services in detached mode
+## up: start all services using pre-built GHCR images
 ##     Run "make tidy" first to ensure go.sum is up to date.
 up:
-	docker compose up --build -d
+	docker compose up -d
+
+## dev: build images and start all services in detached mode for local development
+dev:
+	docker compose -f docker-compose.dev.yml up --build -d
 
 ## down: stop and remove containers, keeping volumes (data survives)
 down:
 	docker compose down
+	docker compose -f docker-compose.dev.yml down
 
 ## down-clean: stop containers AND wipe all volumes (full reset — re-runs Nango setup)
 down-clean:
 	docker compose down -v
+	docker compose -f docker-compose.dev.yml down -v
 
 ## logs: stream control-plane logs
 logs:

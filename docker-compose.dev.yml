@@ -78,7 +78,8 @@ services:
     restart: unless-stopped
 
   bun-executor:
-    image: ghcr.io/abskrj/velane-bun-executor:latest
+    build:
+      context: ./services/executor-runtime/bun
     ports:
       - "8081:8080"
     restart: unless-stopped
@@ -86,7 +87,8 @@ services:
       - seccomp:./services/executor-runtime/seccomp-executor.json
 
   python-executor:
-    image: ghcr.io/abskrj/velane-python-executor:latest
+    build:
+      context: ./services/executor-runtime/python
     ports:
       - "8082:8080"
     restart: unless-stopped
@@ -94,7 +96,9 @@ services:
       - seccomp:./services/executor-runtime/seccomp-executor.json
 
   control-plane:
-    image: ghcr.io/abskrj/velane-control-plane:latest
+    build:
+      context: .
+      dockerfile: services/control-plane/Dockerfile
     ports:
       - "8080:8080"
     environment:
@@ -172,7 +176,8 @@ services:
     restart: unless-stopped
 
   mcp-server:
-    image: ghcr.io/abskrj/velane-mcp-server:latest
+    build:
+      context: ./services/mcp-server
     ports:
       - "8090:8090"
     environment:
@@ -184,7 +189,8 @@ services:
     restart: unless-stopped
 
   admin:
-    image: ghcr.io/abskrj/velane-admin:latest
+    build:
+      context: ./apps/admin
     ports:
       - "8092:80"
       - "3009:3009"

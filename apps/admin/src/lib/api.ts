@@ -1,5 +1,6 @@
 import type {
   User,
+  OrgMembership,
   Branding,
   TenantMember,
   InviteToken,
@@ -19,12 +20,20 @@ import type {
 
 const BASE = '/api'
 
-function getToken(): string {
-  return localStorage.getItem('sessionToken') ?? ''
+function getStoredAPIKey(): string {
+  return localStorage.getItem('apiKey') ?? ''
 }
 
 function getSlug(): string {
   return localStorage.getItem('tenantSlug') ?? ''
+}
+
+function setSlug(slug: string) {
+  localStorage.setItem('tenantSlug', slug)
+}
+
+function clearSlug() {
+  localStorage.removeItem('tenantSlug')
 }
 
 async function request<T>(
@@ -36,13 +45,8 @@ async function request<T>(
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   }
-  if (authType === 'session') {
-    const token = getToken()
-    if (token) headers['Authorization'] = `Bearer ${token}`
-  } else if (authType === 'apikey') {
-    // Fall back to session token if no dedicated API key is stored — the backend
-    // accepts JWT session tokens on all scoped endpoints when X-Tenant is provided.
-    const key = localStorage.getItem('apiKey') ?? getToken()
+  if (authType === 'apikey') {
+    const key = getStoredAPIKey()
     if (key) headers['Authorization'] = `Bearer ${key}`
   }
   // Always send X-Tenant so the backend can resolve session user's membership role.
@@ -53,16 +57,12 @@ async function request<T>(
     method,
     headers,
     body: body !== undefined ? JSON.stringify(body) : undefined,
+    credentials: 'include',
   })
 
   if (!res.ok) {
-    if (res.status === 401) {
-      const credential =
-        authType === 'apikey'
-          ? (localStorage.getItem('apiKey') ?? getToken())
-          : authType === 'session'
-            ? getToken()
-            : ''
+    if (res.status === 401 && authType !== 'none') {
+      const credential = authType === 'apikey' ? getStoredAPIKey() : ''
 
       if (credential.startsWith('vl_')) {
         throw new Error('Invalid API key')
@@ -70,9 +70,8 @@ async function request<T>(
       if (credential.startsWith('et_')) {
         throw new Error('Unauthenticated')
       }
-      // Session JWT expired or invalid — clear session and redirect to login.
-      localStorage.removeItem('sessionToken')
-      localStorage.removeItem('tenantSlug')
+      // Session cookie expired or invalid — clear org selection and redirect to login.
+      clearSlug()
       window.location.href = '/login'
       throw new Error('Unauthenticated')
     }
@@ -86,6 +85,18 @@ async function request<T>(
 }
 
 export const api = {
+  getActiveTenantSlug(): string {
+    return getSlug()
+  },
+
+  setActiveTenantSlug(slug: string) {
+    setSlug(slug)
+  },
+
+  clearActiveTenantSlug() {
+    clearSlug()
+  },
+
   // Auth
   async login(email: string, password: string): Promise<{ session_token: string; expires_at: string; tenant_slug: string }> {
     return request('POST', '/v1/admin/auth/login', { email, password }, 'none')
@@ -105,6 +116,14 @@ export const api = {
 
   async me(): Promise<User> {
     return request('GET', '/v1/admin/auth/me', undefined, 'session')
+  },
+
+  async listMyOrgs(): Promise<OrgMembership[]> {
+    return request('GET', '/v1/admin/auth/orgs', undefined, 'session')
+  },
+
+  async createOrg(name: string, slug: string): Promise<OrgMembership> {
+    return request('POST', '/v1/admin/auth/orgs', { name, slug }, 'session')
   },
 
   // Branding
@@ -201,10 +220,10 @@ export const api = {
 
   // Returns a cleanup function. Calls onVersion whenever a new draft is created for snippetId.
   watchSnippet(snippetId: string, onVersion: (v: SnippetVersion) => void): () => void {
-    const token = localStorage.getItem('sessionToken') ?? ''
+    const apiKey = getStoredAPIKey()
     const slug = getSlug()
     const headers: Record<string, string> = {}
-    if (token) headers['Authorization'] = `Bearer ${token}`
+    if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`
     if (slug) headers['X-Tenant'] = slug
 
     const controller = new AbortController()
@@ -214,6 +233,7 @@ export const api = {
         const res = await fetch(`${BASE}/v1/snippets/${snippetId}/watch`, {
           headers,
           signal: controller.signal,
+          credentials: 'include',
         })
         if (!res.ok || !res.body) return
 

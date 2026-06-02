@@ -25,7 +25,7 @@ This document tracks the phased implementation plan for Velane. Each phase deliv
 
 ### Stack
 
-- Control plane: Go 1.22, chi, pgx/v5, zap
+- Control plane: Go 1.26, chi, pgx/v5, zap
 - Runtimes: Bun 1.1, Python 3.12 + FastAPI
 - Storage: Postgres 16
 - Infrastructure: Docker Compose (local), Kubernetes + Terraform (production path)

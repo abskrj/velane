@@ -34,7 +34,7 @@ copy-platform-libs:
 	cp -r platform-libraries/bun  services/control-plane/internal/platformlibs/files/
 	cp -r platform-libraries/python services/control-plane/internal/platformlibs/files/
 
-## build: compile the control-plane binary locally (requires Go 1.22+ and copy-platform-libs)
+## build: compile the control-plane binary locally (requires Go 1.26+ and copy-platform-libs)
 build: copy-platform-libs
 	cd services/control-plane && go build ./...
 

@@ -10,6 +10,13 @@ export interface Session {
   expires_at: string
 }
 
+export interface OrgMembership {
+  tenant_id: string
+  slug: string
+  name: string
+  role: string
+}
+
 export interface Branding {
   logo_url?: string
   accent_color?: string

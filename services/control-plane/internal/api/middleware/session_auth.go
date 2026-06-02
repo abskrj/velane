@@ -13,8 +13,9 @@ import (
 type sessionContextKey string
 
 const (
-	sessionUserKey sessionContextKey = "session_user"
-	sessionRoleKey sessionContextKey = "session_role"
+	sessionUserKey    sessionContextKey = "session_user"
+	sessionRoleKey    sessionContextKey = "session_role"
+	SessionCookieName                   = "velane_session"
 )
 
 // SessionStore is the subset of the store needed by SessionAuth to resolve tenant membership.
@@ -30,12 +31,11 @@ type SessionStore interface {
 func SessionAuth(provider auth.Provider, store SessionStore, log *zap.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			header := r.Header.Get("Authorization")
-			if !strings.HasPrefix(header, "Bearer ") {
+			raw, ok := sessionTokenFromRequest(r)
+			if !ok {
 				next.ServeHTTP(w, r)
 				return
 			}
-			raw := strings.TrimPrefix(header, "Bearer ")
 			user, err := provider.ValidateSession(r.Context(), raw)
 			if err != nil {
 				next.ServeHTTP(w, r)
@@ -57,6 +57,22 @@ func SessionAuth(provider auth.Provider, store SessionStore, log *zap.Logger) fu
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
+}
+
+func sessionTokenFromRequest(r *http.Request) (string, bool) {
+	header := r.Header.Get("Authorization")
+	if strings.HasPrefix(header, "Bearer ") {
+		raw := strings.TrimSpace(strings.TrimPrefix(header, "Bearer "))
+		if raw != "" {
+			return raw, true
+		}
+	}
+
+	cookie, err := r.Cookie(SessionCookieName)
+	if err != nil || strings.TrimSpace(cookie.Value) == "" {
+		return "", false
+	}
+	return strings.TrimSpace(cookie.Value), true
 }
 
 // SessionUserFromContext retrieves the authenticated session user from the request context.

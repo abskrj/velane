@@ -4,8 +4,6 @@ import (
 	"crypto/rsa"
 	"net/http"
 
-	"github.com/go-chi/chi/v5"
-	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/abskrj/velane/services/control-plane/internal/api/handlers"
 	"github.com/abskrj/velane/services/control-plane/internal/api/middleware"
 	"github.com/abskrj/velane/services/control-plane/internal/audit"
@@ -15,6 +13,8 @@ import (
 	"github.com/abskrj/velane/services/control-plane/internal/platformlibs"
 	"github.com/abskrj/velane/services/control-plane/internal/scheduler"
 	"github.com/abskrj/velane/services/control-plane/internal/store/postgres"
+	"github.com/go-chi/chi/v5"
+	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"go.uber.org/zap"
 )
 
@@ -47,15 +47,15 @@ func newRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logge
 	invocationsH := handlers.NewInvocationsHandler(store, sched, log).WithAuthProvider(authProvider)
 	secretsH := handlers.NewSecretsHandler(store, log, encKey).WithAuditor(auditor)
 	gitIntH := handlers.NewGitIntegrationHandler(store, log)
-	webhookH      := handlers.NewWebhookHandler(store, sched, log)
+	webhookH := handlers.NewWebhookHandler(store, sched, log)
 	nangoWebhookH := handlers.NewNangoWebhookHandler(store, nangoClient, nangoWebhookSecret, log)
 	logsH := handlers.NewLogsHandler(store, log)
 	metricsH := handlers.NewMetricsHandler(store, log)
 	replayH := handlers.NewReplayHandler(store, sched, log)
 	embedH := handlers.NewEmbedHandler(store, log)
-	connectionsH    := handlers.NewConnectionsHandler(store, nangoClient, log, nangoConnectURL, nangoApiURL).WithAuditor(auditor)
-	integrationsH   := handlers.NewIntegrationsHandler(nangoClient, log, nangoInternalURL, nangoApiURL)
-	configureIntH   := handlers.NewConfigureIntegrationsHandler(nangoClient, log)
+	connectionsH := handlers.NewConnectionsHandler(store, nangoClient, log, nangoConnectURL, nangoApiURL).WithAuditor(auditor)
+	integrationsH := handlers.NewIntegrationsHandler(nangoClient, log, nangoInternalURL, nangoApiURL)
+	configureIntH := handlers.NewConfigureIntegrationsHandler(nangoClient, log)
 	adminAuthH := handlers.NewAdminAuthHandler(authProvider, store, log)
 	if pubKey != nil {
 		adminAuthH = adminAuthH.WithPublicKey(pubKey)
@@ -84,8 +84,12 @@ func newRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logge
 	r.Post("/v1/admin/auth/login", adminAuthH.Login)
 	r.Post("/v1/admin/auth/logout", adminAuthH.Logout)
 	r.Post("/v1/admin/auth/refresh", adminAuthH.RefreshToken)
-	r.With(middleware.SessionAuth(authProvider, store, log)).
-		Get("/v1/admin/auth/me", adminAuthH.Me)
+	r.Group(func(r chi.Router) {
+		r.Use(middleware.SessionAuth(authProvider, store, log))
+		r.Get("/v1/admin/auth/me", adminAuthH.Me)
+		r.Get("/v1/admin/auth/orgs", adminAuthH.ListMyTenants)
+		r.Post("/v1/admin/auth/orgs", adminAuthH.CreateMyTenant)
+	})
 
 	// Provider catalog and connect info — public, no auth.
 	r.Get("/v1/integrations", integrationsH.ListProviders)

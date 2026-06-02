@@ -17,8 +17,12 @@ export default function RegisterPage() {
     setLoading(true)
     try {
       const res = await api.register(email, password, inviteToken || undefined)
-      localStorage.setItem('sessionToken', res.session_token)
-      if (res.tenant_slug) localStorage.setItem('tenantSlug', res.tenant_slug)
+      localStorage.removeItem('apiKey')
+      if (res.tenant_slug) {
+        api.setActiveTenantSlug(res.tenant_slug)
+      } else {
+        api.clearActiveTenantSlug()
+      }
       navigate('/dashboard/overview')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Registration failed')

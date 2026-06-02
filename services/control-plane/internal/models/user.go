@@ -37,6 +37,13 @@ type TenantMember struct {
 	InvitedAt time.Time `json:"invited_at"`
 }
 
+type UserTenantMembership struct {
+	TenantID string `json:"tenant_id"`
+	Slug     string `json:"slug"`
+	Name     string `json:"name"`
+	Role     string `json:"role"`
+}
+
 type InviteToken struct {
 	ID         string     `json:"id"`
 	TenantID   string     `json:"tenant_id"`

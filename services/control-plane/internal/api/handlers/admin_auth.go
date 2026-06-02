@@ -26,6 +26,8 @@ type AdminAuthStore interface {
 	AcceptInvite(ctx context.Context, id string) error
 	AddMember(ctx context.Context, tenantID, userID, role string) (*models.TenantMember, error)
 	GetUserPrimaryTenantSlug(ctx context.Context, userID string) (string, error)
+	CreateTenant(ctx context.Context, name, slug string) (*models.Tenant, error)
+	ListUserTenantMemberships(ctx context.Context, userID string) ([]*models.UserTenantMembership, error)
 }
 
 // AdminAuthHandler handles email/password auth for the admin portal.
@@ -115,6 +117,7 @@ func (h *AdminAuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	}
 
 	tenantSlug, _ := h.store.GetUserPrimaryTenantSlug(r.Context(), sess.UserID)
+	writeSessionCookie(w, r, sess)
 
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"user":          user,
@@ -143,6 +146,7 @@ func (h *AdminAuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	tenantSlug, _ := h.store.GetUserPrimaryTenantSlug(r.Context(), sess.UserID)
+	writeSessionCookie(w, r, sess)
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"session_token": sess.Token,
@@ -153,17 +157,12 @@ func (h *AdminAuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 // Logout handles POST /v1/admin/auth/logout.
 func (h *AdminAuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
-	header := r.Header.Get("Authorization")
-	if !strings.HasPrefix(header, "Bearer ") {
-		writeError(w, http.StatusBadRequest, "missing Authorization header")
-		return
+	if raw, ok := sessionTokenFromRequest(r); ok {
+		if err := h.provider.InvalidateSession(r.Context(), raw); err != nil {
+			h.log.Debug("invalidate session failed", zap.Error(err))
+		}
 	}
-	raw := strings.TrimPrefix(header, "Bearer ")
-
-	if err := h.provider.InvalidateSession(r.Context(), raw); err != nil {
-		h.log.Debug("invalidate session failed", zap.Error(err))
-	}
-
+	clearSessionCookie(w, r)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -175,6 +174,66 @@ func (h *AdminAuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, user)
+}
+
+// ListMyTenants handles GET /v1/admin/auth/orgs.
+func (h *AdminAuthHandler) ListMyTenants(w http.ResponseWriter, r *http.Request) {
+	user := middleware.SessionUserFromContext(r.Context())
+	if user == nil {
+		writeError(w, http.StatusUnauthorized, "unauthenticated")
+		return
+	}
+
+	memberships, err := h.store.ListUserTenantMemberships(r.Context(), user.ID)
+	if err != nil {
+		h.log.Error("list user tenants failed", zap.String("user_id", user.ID), zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "failed to list orgs")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, memberships)
+}
+
+// CreateMyTenant handles POST /v1/admin/auth/orgs.
+func (h *AdminAuthHandler) CreateMyTenant(w http.ResponseWriter, r *http.Request) {
+	user := middleware.SessionUserFromContext(r.Context())
+	if user == nil {
+		writeError(w, http.StatusUnauthorized, "unauthenticated")
+		return
+	}
+
+	var req createTenantRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.Name == "" || req.Slug == "" {
+		writeError(w, http.StatusBadRequest, "name and slug are required")
+		return
+	}
+	if !slugRe.MatchString(req.Slug) {
+		writeError(w, http.StatusBadRequest, "slug must be 3-63 lowercase alphanumeric characters or hyphens, and cannot start or end with a hyphen")
+		return
+	}
+
+	tenant, err := h.store.CreateTenant(r.Context(), req.Name, req.Slug)
+	if err != nil {
+		h.log.Error("create tenant for session user failed", zap.String("user_id", user.ID), zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "failed to create org")
+		return
+	}
+	if _, err := h.store.AddMember(r.Context(), tenant.ID, user.ID, "admin"); err != nil {
+		h.log.Error("attach creator to tenant failed", zap.String("tenant_id", tenant.ID), zap.String("user_id", user.ID), zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "failed to attach org membership")
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, &models.UserTenantMembership{
+		TenantID: tenant.ID,
+		Slug:     tenant.Slug,
+		Name:     tenant.Name,
+		Role:     "admin",
+	})
 }
 
 // JWKS handles GET /.well-known/jwks.json.
@@ -253,6 +312,59 @@ func (h *AdminAuthHandler) RefreshToken(w http.ResponseWriter, r *http.Request) 
 func hashInviteToken(raw string) string {
 	h := sha256.Sum256([]byte(raw))
 	return hex.EncodeToString(h[:])
+}
+
+func writeSessionCookie(w http.ResponseWriter, r *http.Request, sess *models.Session) {
+	maxAge := int(time.Until(sess.ExpiresAt).Seconds())
+	if maxAge < 0 {
+		maxAge = 0
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     middleware.SessionCookieName,
+		Value:    sess.Token,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   isHTTPSRequest(r),
+		Expires:  sess.ExpiresAt,
+		MaxAge:   maxAge,
+	})
+}
+
+func clearSessionCookie(w http.ResponseWriter, r *http.Request) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     middleware.SessionCookieName,
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   isHTTPSRequest(r),
+		MaxAge:   -1,
+		Expires:  time.Unix(0, 0),
+	})
+}
+
+func sessionTokenFromRequest(r *http.Request) (string, bool) {
+	header := r.Header.Get("Authorization")
+	if strings.HasPrefix(header, "Bearer ") {
+		raw := strings.TrimSpace(strings.TrimPrefix(header, "Bearer "))
+		if raw != "" {
+			return raw, true
+		}
+	}
+
+	cookie, err := r.Cookie(middleware.SessionCookieName)
+	if err != nil || strings.TrimSpace(cookie.Value) == "" {
+		return "", false
+	}
+	return strings.TrimSpace(cookie.Value), true
+}
+
+func isHTTPSRequest(r *http.Request) bool {
+	if r.TLS != nil {
+		return true
+	}
+	return strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
 }
 
 // Ensure big.Int is imported via the RSA key operations (used indirectly via N.Bytes()).

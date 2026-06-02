@@ -96,3 +96,32 @@ func (s *Store) GetUserPrimaryTenantSlug(ctx context.Context, userID string) (st
 	}
 	return slug, nil
 }
+
+// ListUserTenantMemberships returns all org memberships for a user ordered by join time.
+func (s *Store) ListUserTenantMemberships(ctx context.Context, userID string) ([]*models.UserTenantMembership, error) {
+	rows, err := s.pool.Query(ctx,
+		`SELECT t.id, t.slug, t.name, tm.role
+		 FROM tenant_members tm
+		 JOIN tenants t ON t.id = tm.tenant_id
+		 WHERE tm.user_id = $1
+		 ORDER BY tm.invited_at ASC`,
+		userID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("ListUserTenantMemberships query: %w", err)
+	}
+	defer rows.Close()
+
+	var memberships []*models.UserTenantMembership
+	for rows.Next() {
+		var membership models.UserTenantMembership
+		if err := rows.Scan(&membership.TenantID, &membership.Slug, &membership.Name, &membership.Role); err != nil {
+			return nil, fmt.Errorf("ListUserTenantMemberships scan: %w", err)
+		}
+		memberships = append(memberships, &membership)
+	}
+	if memberships == nil {
+		memberships = []*models.UserTenantMembership{}
+	}
+	return memberships, nil
+}

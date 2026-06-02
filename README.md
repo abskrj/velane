@@ -106,8 +106,8 @@ Supported categories include CRM, ticketing, project management, communication, 
 ### Prerequisites
 
 - [Docker](https://docs.docker.com/get-docker/) + Docker Compose
-- Node.js 18+ and npm (frontend dev only)
-- Go 1.22+ (CLI or control plane dev only)
+- Node.js 24 LTS (24.16.0 recommended) and npm (frontend dev only)
+- Go 1.26.3+ (CLI or control plane dev only)
 
 ### 1. Clone and configure
 

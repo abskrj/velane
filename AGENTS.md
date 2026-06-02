@@ -9,7 +9,7 @@ Before writing any code, always discuss the problem first. Ask clarifying questi
 ```
 velane/
 ├── services/
-│   ├── control-plane/      # Go 1.22 API server (chi, pgx/v5, zap)
+│   ├── control-plane/      # Go 1.26 API server (chi, pgx/v5, zap)
 │   ├── executor-runtime/   # Bun + Python sandboxed HTTP runners
 │   ├── mcp-server/         # MCP protocol server for Cursor / Claude Code
 │   └── cli/                # Cobra CLI (velane login / push / invoke)

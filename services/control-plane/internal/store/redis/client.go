@@ -3,6 +3,7 @@ package redisstore
 
 import (
 	"context"
+	"strings"
 
 	"github.com/redis/go-redis/v9"
 )
@@ -12,9 +13,21 @@ type Client struct {
 	rdb *redis.Client
 }
 
+func optionsFor(addr string) (*redis.Options, error) {
+	if strings.Contains(addr, "://") {
+		return redis.ParseURL(addr)
+	}
+	return &redis.Options{Addr: addr}, nil
+}
+
 // New creates a Redis client, pings the server, and returns a ready Client.
 func New(addr string) (*Client, error) {
-	rdb := redis.NewClient(&redis.Options{Addr: addr})
+	opts, err := optionsFor(addr)
+	if err != nil {
+		return nil, err
+	}
+
+	rdb := redis.NewClient(opts)
 	if err := rdb.Ping(context.Background()).Err(); err != nil {
 		return nil, err
 	}

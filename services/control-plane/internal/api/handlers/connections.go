@@ -65,18 +65,28 @@ func (h *ConnectionsHandler) CreateSession(w http.ResponseWriter, r *http.Reques
 	}
 
 	var req struct {
-		Provider string `json:"provider"`
-		Alias    string `json:"alias"`
+		Provider          string `json:"provider"`
+		Alias             string `json:"alias"`
+		OAuthClientID     string `json:"oauth_client_id"`
+		OAuthClientSecret string `json:"oauth_client_secret"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Provider == "" {
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.Provider == "" {
 		writeError(w, http.StatusBadRequest, "provider is required")
+		return
+	}
+	if req.OAuthClientID == "" || req.OAuthClientSecret == "" {
+		writeError(w, http.StatusBadRequest, "oauth_client_id and oauth_client_secret are required")
 		return
 	}
 	if req.Alias == "" {
 		req.Alias = "default"
 	}
 
-	token, err := h.nango.CreateConnectSession(r.Context(), tenant.ID, tenant.Name, req.Provider, req.Alias)
+	token, err := h.nango.CreateConnectSession(r.Context(), tenant.ID, tenant.Name, req.Provider, req.Alias, req.OAuthClientID, req.OAuthClientSecret)
 	if err != nil {
 		h.log.Error("create nango connect session", zap.String("provider", req.Provider), zap.Error(err))
 		writeError(w, http.StatusBadGateway, "failed to create connect session")

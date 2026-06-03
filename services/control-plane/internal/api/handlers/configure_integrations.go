@@ -37,16 +37,14 @@ func (h *ConfigureIntegrationsHandler) ListConfigured(w http.ResponseWriter, r *
 }
 
 // Configure handles POST /v1/integrations/configured.
-// Creates or updates a provider config in Nango.
-// For OAUTH2: requires oauth_client_id and oauth_client_secret.
-// For API_KEY/BASIC: provider and provider_config_key are sufficient.
+// Registers a provider "slot" in Nango so tenants can connect to it.
+// OAuth credentials are intentionally NOT stored here — every tenant supplies
+// their own oauth_client_id and oauth_client_secret at connect-session time.
+// Only provider and provider_config_key are required.
 func (h *ConfigureIntegrationsHandler) Configure(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		ProviderConfigKey string `json:"provider_config_key"`
 		Provider          string `json:"provider"`
-		OAuthClientID     string `json:"oauth_client_id"`
-		OAuthClientSecret string `json:"oauth_client_secret"`
-		OAuthScopes       string `json:"oauth_scopes"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -61,13 +59,12 @@ func (h *ConfigureIntegrationsHandler) Configure(w http.ResponseWriter, r *http.
 		req.ProviderConfigKey = req.Provider
 	}
 
+	// Pass empty credentials — tenants bring their own per connect session.
 	if err := h.nango.CreateIntegrationConfig(
 		r.Context(),
 		req.ProviderConfigKey,
 		req.Provider,
-		req.OAuthClientID,
-		req.OAuthClientSecret,
-		req.OAuthScopes,
+		"", "", "",
 	); err != nil {
 		h.log.Error("configure integration", zap.String("provider", req.Provider), zap.Error(err))
 		writeError(w, http.StatusBadGateway, "failed to configure integration: "+err.Error())

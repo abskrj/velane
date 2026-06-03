@@ -34,19 +34,34 @@ func New(baseURL, secretKey string) *Client {
 }
 
 // CreateConnectSession asks Nango for a short-lived Connect session token.
-// alias is not passed to Nango (this version of the self-hosted server rejects
-// unknown fields); the alias is stored when the frontend calls RecordConnection.
-func (c *Client) CreateConnectSession(ctx context.Context, tenantID, tenantName, provider, alias string) (string, error) {
+// oauthClientID and oauthClientSecret are the tenant's own OAuth app credentials
+// and are required — this platform never stores shared OAuth app credentials.
+// Each tenant must register their own OAuth app with the provider and supply those
+// credentials here; they are passed to Nango as per-session overrides.
+// alias is not passed to Nango; it is stored locally when the frontend calls RecordConnection.
+func (c *Client) CreateConnectSession(ctx context.Context, tenantID, tenantName, provider, alias, oauthClientID, oauthClientSecret string) (string, error) {
 	if alias == "" {
 		alias = "default"
 	}
 	body := map[string]any{
-		"end_user": map[string]any{
-			"id":           tenantID,
-			"display_name": tenantName,
+		// tags replaces the deprecated end_user field.
+		"tags": map[string]string{
+			"end_user_id":     tenantID,
+			"organization_id": tenantID,
+			"display_name":    tenantName,
 		},
 		"allowed_integrations": []string{provider},
+		// Always inject the tenant's own OAuth credentials — no shared platform app.
+		"integrations_config_defaults": map[string]any{
+			provider: map[string]any{
+				"connection_config": map[string]any{
+					"oauth_client_id_override":     oauthClientID,
+					"oauth_client_secret_override": oauthClientSecret,
+				},
+			},
+		},
 	}
+
 	b, _ := json.Marshal(body)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/connect/sessions", bytes.NewReader(b))

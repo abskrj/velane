@@ -21,3 +21,13 @@ Thumbs.db
 *.swp
 
 node_modules/
+
+terraform.tfvars
+
+# Terraform
+**/.terraform/
+**/terraform.tfstate
+**/terraform.tfstate.backup
+**/terraform.tfvars
+**/*.tfplan
+infra/terraform/aws-eks/alb-controller-policy.json

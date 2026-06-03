@@ -2,17 +2,30 @@ locals {
   namespace = var.create_namespace ? kubernetes_namespace_v1.velane[0].metadata[0].name : var.namespace
 
   default_labels = {
-    "app.kubernetes.io/part-of" = "velane"
+    "app.kubernetes.io/part-of"    = "velane"
     "app.kubernetes.io/managed-by" = "terraform"
   }
+
+  # When ingress is enabled the services don't need their own load balancers.
+  # Fall back to the explicit variable only when ingress is off.
+  effective_admin_service_type         = var.enable_ingress ? "ClusterIP" : var.admin_service_type
+  effective_control_plane_service_type = var.enable_ingress ? "ClusterIP" : var.control_plane_service_type
+  effective_mcp_server_service_type    = var.enable_ingress ? "ClusterIP" : var.mcp_server_service_type
+
+  # With a certificate the ALB listens on 443 and redirects 80→443.
+  # Without one it listens on plain 80.
+  tls_enabled = var.acm_certificate_arn != ""
+
+  alb_listen_ports     = local.tls_enabled ? "[{\"HTTP\":80},{\"HTTPS\":443}]" : "[{\"HTTP\":80}]"
+  public_scheme        = local.tls_enabled ? "https" : "http"
 
   # Nango URLs
   # When we deploy Nango ourselves, we point everything internally at the in-cluster service.
   # Public URLs (for browser / Connect UI) come from var or default to the ingress host + paths.
   effective_nango_internal_url = var.deploy_nango ? "http://nango:3003" : var.nango_internal_url
 
-  effective_nango_connect_url = var.nango_connect_url != "" ? var.nango_connect_url : "http://${var.nango_connect_subdomain}.${var.base_domain}"
-  effective_nango_api_url = var.nango_api_url != "" ? var.nango_api_url : "http://${var.nango_api_subdomain}.${var.base_domain}"
+  effective_nango_connect_url = var.nango_connect_url != "" ? var.nango_connect_url : "${local.public_scheme}://${var.nango_connect_subdomain}.${var.base_domain}"
+  effective_nango_api_url     = var.nango_api_url != "" ? var.nango_api_url : "${local.public_scheme}://${var.nango_api_subdomain}.${var.base_domain}"
 
   # Derive a separate Nango database URL from the main Postgres DSN when the user
   # doesn't provide one. Terraform's replace() is plain string replacement, so we
@@ -39,7 +52,7 @@ resource "kubernetes_namespace_v1" "velane" {
   count = var.create_namespace ? 1 : 0
 
   metadata {
-    name = var.namespace
+    name   = var.namespace
     labels = local.default_labels
   }
 }
@@ -53,7 +66,7 @@ resource "kubernetes_secret_v1" "control_plane" {
 
   type = "Opaque"
 
-  string_data = {
+  data = {
     DATABASE_URL         = var.database_url
     REDIS_URL            = var.redis_url
     ENCRYPTION_KEY       = var.encryption_key
@@ -408,7 +421,7 @@ resource "kubernetes_service_v1" "control_plane" {
       target_port = 8080
     }
 
-    type = var.control_plane_service_type
+    type = local.effective_control_plane_service_type
   }
 }
 
@@ -480,7 +493,7 @@ resource "kubernetes_service_v1" "mcp_server" {
       target_port = 8090
     }
 
-    type = var.mcp_server_service_type
+    type = local.effective_mcp_server_service_type
   }
 }
 
@@ -562,7 +575,7 @@ resource "kubernetes_service_v1" "admin" {
       target_port = 3009
     }
 
-    type = var.admin_service_type
+    type = local.effective_admin_service_type
   }
 }
 
@@ -581,7 +594,7 @@ resource "kubernetes_secret_v1" "nango" {
 
   type = "Opaque"
 
-  string_data = {
+  data = {
     NANGO_DATABASE_URL   = local.effective_nango_database_url
     NANGO_ENCRYPTION_KEY = var.nango_encryption_key
     NANGO_SECRET_KEY_DEV = var.nango_secret_key != "" ? var.nango_secret_key : "d4aff6fd-3031-4dc5-8027-c067a50c6c5a"
@@ -718,6 +731,11 @@ resource "kubernetes_deployment_v1" "nango" {
           }
 
           env {
+            name  = "NANGO_PORT"
+            value = "3003"
+          }
+
+          env {
             name  = "NANGO_SERVER_URL"
             value = local.effective_nango_api_url
           }
@@ -795,11 +813,17 @@ resource "kubernetes_ingress_v1" "velane" {
       {
         "kubernetes.io/ingress.class" = var.ingress_class_name
       },
-      var.ingress_class_name == "alb" ? {
-        "alb.ingress.kubernetes.io/scheme"       = "internet-facing"
-        "alb.ingress.kubernetes.io/target-type"  = "ip"
-        "alb.ingress.kubernetes.io/listen-ports" = "[{\"HTTP\": 80}]"
-      } : {},
+      var.ingress_class_name == "alb" ? merge(
+        {
+          "alb.ingress.kubernetes.io/scheme"       = "internet-facing"
+          "alb.ingress.kubernetes.io/target-type"  = "ip"
+          "alb.ingress.kubernetes.io/listen-ports" = local.alb_listen_ports
+        },
+        local.tls_enabled ? {
+          "alb.ingress.kubernetes.io/certificate-arn" = var.acm_certificate_arn
+          "alb.ingress.kubernetes.io/ssl-redirect"    = "443"
+        } : {}
+      ) : {},
       var.ingress_annotations
     )
   }

@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/abskrj/velane/services/control-plane/internal/api/middleware"
 	"github.com/abskrj/velane/services/control-plane/internal/auth"
+	"github.com/abskrj/velane/services/control-plane/internal/models"
 	"github.com/abskrj/velane/services/control-plane/internal/scheduler"
 	"github.com/abskrj/velane/services/control-plane/internal/store/postgres"
 	"go.uber.org/zap"
@@ -62,18 +63,24 @@ func (h *InvocationsHandler) Invoke(w http.ResponseWriter, r *http.Request) {
 	tenantSlug := chi.URLParam(r, "tenantSlug")
 	snippetSlug := chi.URLParam(r, "snippetSlug")
 
-	// --- Inline auth: session JWT first, then API key ---
-	authHdr := r.Header.Get("Authorization")
-	if authHdr == "" {
-		writeError(w, http.StatusUnauthorized, "missing Authorization header")
+	// --- Inline auth: session JWT first (Bearer header or session cookie), then API key ---
+	// The admin portal sends session cookies (no Authorization header) because it relies on
+	// the browser session established at login. External callers use a Bearer API key.
+	var token string
+	if authHdr := r.Header.Get("Authorization"); authHdr != "" {
+		parts := strings.SplitN(authHdr, " ", 2)
+		if len(parts) != 2 || !strings.EqualFold(parts[0], "bearer") {
+			writeError(w, http.StatusUnauthorized, "malformed Authorization header")
+			return
+		}
+		token = strings.TrimSpace(parts[1])
+	} else if cookie, err := r.Cookie(middleware.SessionCookieName); err == nil {
+		token = strings.TrimSpace(cookie.Value)
+	}
+	if token == "" {
+		writeError(w, http.StatusUnauthorized, "missing Authorization header or session cookie")
 		return
 	}
-	parts := strings.SplitN(authHdr, " ", 2)
-	if len(parts) != 2 || !strings.EqualFold(parts[0], "bearer") {
-		writeError(w, http.StatusUnauthorized, "malformed Authorization header")
-		return
-	}
-	token := strings.TrimSpace(parts[1])
 
 	// Resolve the tenant from the URL path (shared by both auth paths).
 	tenant, err := h.store.GetTenantBySlug(r.Context(), tenantSlug)
@@ -159,6 +166,156 @@ authOK:
 	var pinnedVersion int
 	if vStr := r.URL.Query().Get("version"); vStr != "" {
 		// Accept "v3" or "3".
+		vStr = strings.TrimPrefix(vStr, "v")
+		n, err := strconv.Atoi(vStr)
+		if err != nil || n <= 0 {
+			writeError(w, http.StatusBadRequest, "version must be a positive integer, e.g. ?version=3 or ?version=v3")
+			return
+		}
+		pinnedVersion = n
+	}
+
+	invokeReq := scheduler.InvokeRequest{
+		TenantID:      tenant.ID,
+		SnippetSlug:   snippetSlug,
+		Env:           env,
+		Input:         inputPayload,
+		PinnedVersion: pinnedVersion,
+	}
+
+	// --- Invoke mode ---
+	mode := strings.ToLower(r.Header.Get("X-Invoke-Mode"))
+	if mode == "" {
+		mode = "sync"
+	}
+
+	switch mode {
+	case "sync":
+		h.invokeSyncMode(w, r, invokeReq)
+	case "async":
+		h.invokeAsyncMode(w, r, invokeReq, ib.CallbackURL)
+	case "stream":
+		h.invokeStreamMode(w, r, invokeReq)
+	default:
+		writeError(w, http.StatusBadRequest, "X-Invoke-Mode must be 'sync', 'async', or 'stream'")
+	}
+}
+
+// InvokeByToken handles POST /v1/invoke/{snippetSlug} (tenant-slug-free variant).
+//
+// The tenant is resolved from the authenticated credential rather than the URL:
+//   - API key (vl_…): tenant comes from the key's TenantID.
+//   - Session JWT: tenant is identified via the X-Tenant header (slug).
+//
+// All other behaviour (invoke modes, query params, body) is identical to Invoke.
+func (h *InvocationsHandler) InvokeByToken(w http.ResponseWriter, r *http.Request) {
+	snippetSlug := chi.URLParam(r, "snippetSlug")
+
+	// --- Inline auth: session JWT first, then API key ---
+	var token string
+	if authHdr := r.Header.Get("Authorization"); authHdr != "" {
+		parts := strings.SplitN(authHdr, " ", 2)
+		if len(parts) != 2 || !strings.EqualFold(parts[0], "bearer") {
+			writeError(w, http.StatusUnauthorized, "malformed Authorization header")
+			return
+		}
+		token = strings.TrimSpace(parts[1])
+	} else if cookie, err := r.Cookie(middleware.SessionCookieName); err == nil {
+		token = strings.TrimSpace(cookie.Value)
+	}
+	if token == "" {
+		writeError(w, http.StatusUnauthorized, "missing Authorization header or session cookie")
+		return
+	}
+
+	var tenant *models.Tenant
+
+	// Try session JWT auth when an auth provider is configured.
+	if h.provider != nil {
+		if user, err := h.provider.ValidateSession(r.Context(), token); err == nil {
+			// Session JWT does not encode a tenant; require X-Tenant header.
+			slug := r.Header.Get("X-Tenant")
+			if slug == "" {
+				writeError(w, http.StatusBadRequest, "session auth requires X-Tenant header when tenant_slug is omitted from URL")
+				return
+			}
+			t, err := h.store.GetTenantBySlug(r.Context(), slug)
+			if err != nil {
+				writeError(w, http.StatusNotFound, "tenant not found")
+				return
+			}
+			role, err := h.store.GetMemberRole(r.Context(), t.ID, user.ID)
+			if err != nil {
+				writeError(w, http.StatusForbidden, "not a member of this tenant")
+				return
+			}
+			if role != "invoke" && role != "manage" && role != "admin" {
+				writeError(w, http.StatusForbidden, "insufficient role for invoke")
+				return
+			}
+			tenant = t
+			goto authOKByToken
+		}
+	}
+
+	// Fall back to API key auth — tenant is resolved from key.TenantID.
+	{
+		key, err := h.store.ValidateAPIKey(r.Context(), token)
+		if err != nil {
+			h.log.Debug("invoke: invalid api key", zap.Error(err))
+			writeError(w, http.StatusUnauthorized, "invalid api key")
+			return
+		}
+		if !key.HasScope("invoke") {
+			writeError(w, http.StatusForbidden, "api key missing 'invoke' scope")
+			return
+		}
+		t, err := h.store.GetTenantByID(r.Context(), key.TenantID)
+		if err != nil {
+			h.log.Error("invoke: tenant lookup failed", zap.String("tenant_id", key.TenantID), zap.Error(err))
+			writeError(w, http.StatusInternalServerError, "tenant not found")
+			return
+		}
+		tenant = t
+	}
+
+authOKByToken:
+
+	// --- Read the input payload ---
+	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "failed to read request body")
+		return
+	}
+
+	var ib invokeBody
+	if len(body) > 0 {
+		_ = json.Unmarshal(body, &ib)
+	}
+
+	inputPayload := string(body)
+	if inputPayload == "" {
+		inputPayload = "{}"
+	}
+
+	if !json.Valid([]byte(inputPayload)) {
+		writeError(w, http.StatusBadRequest, "request body must be valid JSON")
+		return
+	}
+
+	// --- Resolve env from query param, default to prod ---
+	env := r.URL.Query().Get("env")
+	if env == "" {
+		env = "prod"
+	}
+	if env != "dev" && env != "staging" && env != "prod" {
+		writeError(w, http.StatusBadRequest, "env must be 'dev', 'staging', or 'prod'")
+		return
+	}
+
+	// --- Resolve pinned version from query param ---
+	var pinnedVersion int
+	if vStr := r.URL.Query().Get("version"); vStr != "" {
 		vStr = strings.TrimPrefix(vStr, "v")
 		n, err := strconv.Atoi(vStr)
 		if err != nil || n <= 0 {

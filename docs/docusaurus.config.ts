@@ -1,11 +1,16 @@
 import {themes as prismThemes} from 'prism-react-renderer'
 import type {Config} from '@docusaurus/types'
 
+const algoliaAppId = process.env.ALGOLIA_APP_ID
+const algoliaApiKey = process.env.ALGOLIA_API_KEY
+const algoliaIndexName = process.env.ALGOLIA_INDEX_NAME
+const useAlgolia = Boolean(algoliaAppId && algoliaApiKey && algoliaIndexName)
+
 const config: Config = {
   title: 'Velane Docs',
   tagline: 'Feature-first docs for Velane',
 
-  url: 'https://velane.dev',
+  url: 'https://docs.velane.sh',
   baseUrl: '/',
 
   onBrokenLinks: 'throw',
@@ -38,20 +43,7 @@ const config: Config = {
       }
     ]
   ],
-  plugins: [
-    [
-      '@easyops-cn/docusaurus-search-local',
-      {
-        hashed: true,
-        docsDir: '.',
-        docsRouteBasePath: '/',
-        indexDocs: true,
-        indexBlog: false,
-        indexPages: false,
-        explicitSearchResultPath: false
-      }
-    ]
-  ],
+  plugins: [],
 
   themeConfig: {
     navbar: {
@@ -73,7 +65,17 @@ const config: Config = {
     prism: {
       theme: prismThemes.github,
       darkTheme: prismThemes.dracula
-    }
+    },
+    ...(useAlgolia
+      ? {
+          algolia: {
+            appId: algoliaAppId!,
+            apiKey: algoliaApiKey!,
+            indexName: algoliaIndexName!,
+            contextualSearch: true
+          }
+        }
+      : {})
   }
 }
 

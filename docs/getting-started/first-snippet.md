@@ -47,5 +47,5 @@ Each publish creates an immutable version, so rollback is straightforward.
 
 ## What to do next
 
-- Read `../invoke/invocation-modes.md` for sync/async/stream behavior
-- Read `../integrations/overview.md` to call third-party APIs from snippets
+- Read [Invocation Modes](../invoke/invocation-modes.md) for sync/async/stream behavior
+- Read [Integrations Overview](../integrations/overview.md) to call third-party APIs from snippets

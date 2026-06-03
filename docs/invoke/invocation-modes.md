@@ -78,4 +78,3 @@ Best for:
 
 - [Request Lifecycle](./request-lifecycle.md)
 - [Auth and Request Flow](../auth-tenancy/auth-and-request-flow.md)
-- [Generated References Plan](../reference-plan.md)

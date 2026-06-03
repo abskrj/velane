@@ -60,4 +60,3 @@ X-Tenant: myorg
 
 - [Auth and Request Flow](./auth-and-request-flow.md)
 - [Security Non-Negotiables](../security/non-negotiables.md)
-- [Generated References Plan](../reference-plan.md)

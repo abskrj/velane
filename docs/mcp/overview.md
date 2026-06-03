@@ -70,4 +70,3 @@ Use an API key with the minimum scope needed for your workflow.
 
 - [Integrations Overview](../integrations/overview.md)
 - [Invocation Modes](../invoke/invocation-modes.md)
-- [Generated References Plan](../reference-plan.md)

@@ -57,5 +57,5 @@ Expected: a healthy response payload.
 
 ## What to do next
 
-- Continue to `first-snippet.md`
-- If you want integrations immediately, go to `../integrations/overview.md`
+- Continue to [Your First Snippet](./first-snippet.md)
+- If you want integrations immediately, go to [Integrations Overview](../integrations/overview.md)

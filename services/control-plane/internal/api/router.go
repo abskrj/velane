@@ -234,7 +234,10 @@ func newRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logge
 			Delete("/v1/embed/tokens/{tokenID}", embedH.RevokeToken)
 	})
 
-	// The invoke endpoint performs its own auth inline.
+	// Invoke endpoints perform their own auth inline.
+	// Slug-free variant: tenant is resolved from the authenticated API key.
+	r.Post("/v1/invoke/{snippetSlug}", invocationsH.InvokeByToken)
+	// Legacy variant with explicit tenant slug — kept for backwards compatibility.
 	r.Post("/v1/invoke/{tenantSlug}/{snippetSlug}", invocationsH.Invoke)
 
 	// Git webhook endpoint — HMAC signature verified inline.

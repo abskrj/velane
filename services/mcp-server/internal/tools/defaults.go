@@ -255,12 +255,12 @@ Call get_integration_docs(provider) for endpoint reference and working code exam
 
 	r.add(Tool{
 		Name:        "invoke_snippet",
-		Description: "Invoke a snippet synchronously, asynchronously, or as a stream.",
+		Description: "Invoke a snippet synchronously, asynchronously, or as a stream. tenant_slug is optional; when omitted the tenant is inferred from the API key.",
 		InputSchema: map[string]any{
 			"type":     "object",
-			"required": []string{"tenant_slug", "snippet_slug"},
+			"required": []string{"snippet_slug"},
 			"properties": map[string]any{
-				"tenant_slug":  map[string]any{"type": "string"},
+				"tenant_slug":  map[string]any{"type": "string", "description": "Tenant slug. Optional — inferred from the API key when omitted."},
 				"snippet_slug": map[string]any{"type": "string"},
 				"env":          map[string]any{"type": "string"},
 				"version":      map[string]any{"type": "string"},
@@ -270,10 +270,7 @@ Call get_integration_docs(provider) for endpoint reference and working code exam
 			},
 		},
 		Handle: func(ctx context.Context, authHeader string, args map[string]any) (any, error) {
-			tenantSlug, err := toString(args, "tenant_slug", true)
-			if err != nil {
-				return nil, err
-			}
+			tenantSlug, _ := toString(args, "tenant_slug", false)
 			snippetSlug, err := toString(args, "snippet_slug", true)
 			if err != nil {
 				return nil, err
@@ -288,7 +285,14 @@ Call get_integration_docs(provider) for endpoint reference and working code exam
 				return nil, err
 			}
 
-			path := fmt.Sprintf("/v1/invoke/%s/%s", url.PathEscape(tenantSlug), url.PathEscape(snippetSlug))
+			// Use the slug-free route when tenant_slug is not provided; the control
+			// plane resolves the tenant from the authenticated API key.
+			var path string
+			if tenantSlug != "" {
+				path = fmt.Sprintf("/v1/invoke/%s/%s", url.PathEscape(tenantSlug), url.PathEscape(snippetSlug))
+			} else {
+				path = fmt.Sprintf("/v1/invoke/%s", url.PathEscape(snippetSlug))
+			}
 			query := url.Values{}
 			if env != "" {
 				query.Set("env", env)

@@ -1,108 +1,127 @@
-# Cluster access
-kubeconfig_path    = "~/.kube/config"
-kubeconfig_context = "your-cluster-context"
+# =============================================================================
+# Velane — Kubernetes stack configuration example
+#
+# Copy this file to terraform.tfvars and fill in your values.
+# Lines starting with # are comments / optional overrides.
+# =============================================================================
 
-# Namespace
+# =============================================================================
+# CLUSTER ACCESS
+# =============================================================================
+
+kubeconfig_path    = "~/.kube/config"
+kubeconfig_context = "your-cluster-context"  # e.g. "velane-us-east-1"
+
 namespace        = "velane"
 create_namespace = true
 
-# Container images
-control_plane_image  = "ghcr.io/abskrj/velane-control-plane:latest"
-bun_executor_image   = "ghcr.io/abskrj/velane-bun-executor:latest"
+# =============================================================================
+# CONTAINER IMAGES
+# =============================================================================
+
+control_plane_image   = "ghcr.io/abskrj/velane-control-plane:latest"
+bun_executor_image    = "ghcr.io/abskrj/velane-bun-executor:latest"
 python_executor_image = "ghcr.io/abskrj/velane-python-executor:latest"
-admin_image          = "ghcr.io/abskrj/velane-admin:latest"
-mcp_server_image     = "ghcr.io/abskrj/velane-mcp-server:latest"
+admin_image           = "ghcr.io/abskrj/velane-admin:latest"
+mcp_server_image      = "ghcr.io/abskrj/velane-mcp-server:latest"
 
-# Exposed services (no TLS/domain by default)
-admin_service_type         = "LoadBalancer"
-control_plane_service_type = "LoadBalancer"
-mcp_server_service_type    = "LoadBalancer"
+# =============================================================================
+# CORE DEPENDENCIES  (bring your own — not provisioned by this stack)
+# =============================================================================
 
-# Core dependencies (managed outside this stack)
-database_url   = "postgres://user:pass@your-postgres-host:5432/velane?sslmode=require"
-redis_url      = "your-redis-host:6379"
-encryption_key = "replace-with-64-char-hex-key"
+# Postgres: Supabase, Neon, RDS, or any standard postgres DSN
+database_url = "postgresql://postgres:PASSWORD@HOST:5432/postgres"
 
-# JWT key (PEM block)
+# Redis / Valkey: Aiven, Upstash, ElastiCache, etc.
+redis_url = "rediss://default:PASSWORD@HOST:PORT"
+
+# 64-char hex AES-256 key — generate with: openssl rand -hex 32
+encryption_key = "REPLACE_WITH_64_HEX_CHARS"
+
+# RS256 private key for session JWTs — generate with: openssl genrsa 2048 | openssl pkcs8 -topk8 -nocrypt
 jwt_private_key_pem = <<EOT
 -----BEGIN PRIVATE KEY-----
 REPLACE_ME
 -----END PRIVATE KEY-----
 EOT
 
-# Optional bootstrap user (first deploy only)
-bootstrap_email    = ""
-bootstrap_password = ""
+# =============================================================================
+# BOOTSTRAP  (first deploy only — remove after first successful boot)
+# =============================================================================
+
+bootstrap_email    = "admin@example.com"
+bootstrap_password = "change-me-immediately"
 bootstrap_tenant   = "default"
 
-# Optional Nango values (needed for integration features)
-nango_internal_url   = "http://nango:3003"
-nango_connect_url    = ""
-nango_api_url        = ""
-nango_secret_key     = ""
-nango_public_key     = ""
-nango_webhook_secret = ""
-
-# Optional observability values
-clickhouse_dsn = ""
-logs_bucket    = ""
-replay_bucket  = ""
-
 # =============================================================================
-# INGRESS (subdomain-based routing)
+# DOMAIN + TLS  (ALB Ingress with ACM — recommended for production)
 # =============================================================================
 
-enable_ingress = true
+enable_ingress     = true
+ingress_class_name = "alb"   # "alb" on EKS | "nginx" | "gce" on GKE | "azure/application-gateway" on AKS
 
-# Use "alb" on EKS (requires aws-load-balancer-controller installed in the cluster)
-# Use "nginx" if you have nginx-ingress-controller
-# Other clouds have their own classes (e.g. "gce" on GKE, "azure/application-gateway" on AKS, etc.)
-ingress_class_name = "alb"
+# Your root domain. Subdomains are created under this.
+base_domain = "yourdomain.com"
 
-# Base domain for your application
-base_domain = "example.com"
+# Subdomain layout (defaults work for most deployments):
+admin_subdomain         = "admin"    # admin.yourdomain.com
+api_subdomain           = "api"      # api.yourdomain.com
+mcp_subdomain           = "mcp"      # mcp.yourdomain.com
+nango_connect_subdomain = "connect"  # connect.yourdomain.com
+nango_api_subdomain     = "nango"    # nango.yourdomain.com
 
-# Subdomains (will be prefixed to the base_domain above)
-admin_subdomain         = "admin"
-api_subdomain           = "api"
-mcp_subdomain           = "mcp"
-nango_connect_subdomain = "connect"
-nango_api_subdomain     = "nango"
+# ACM certificate ARN (HTTPS on port 443 — free, strongly recommended).
+# Get from: terraform -chdir=infra/terraform/aws-eks output -raw acm_certificate_arn
+# Leave empty for HTTP-only (not recommended for production).
+acm_certificate_arn = "arn:aws:acm:us-east-1:ACCOUNT_ID:certificate/CERTIFICATE_ID"
 
-# Extra annotations (especially useful for ALB)
-ingress_annotations = {
-  # "alb.ingress.kubernetes.io/scheme"      = "internet-facing"
-  # "alb.ingress.kubernetes.io/target-type" = "ip"
-}
+# Extra ingress annotations. The ALB scheme and target-type are added automatically.
+# You can override or add more here.
+ingress_annotations = {}
 
 # =============================================================================
-# NANGO (in-cluster)
+# SERVICE TYPES  (only matter when enable_ingress = false)
+# When enable_ingress = true, services switch to ClusterIP automatically.
+# =============================================================================
+
+admin_service_type         = "LoadBalancer"
+control_plane_service_type = "LoadBalancer"
+mcp_server_service_type    = "LoadBalancer"
+
+# =============================================================================
+# NANGO  (in-cluster OAuth + API proxy)
 # =============================================================================
 
 deploy_nango = true
 nango_image  = "nangohq/nango-server:hosted"
 
 # Nango database:
-# - Leave nango_database_url empty → we will create/use a separate "nango" database
-#   on the same Postgres server defined by database_url (one-time Job does CREATE DATABASE)
-# - Provide a full DSN here if you want Nango on a completely different Postgres instance
-# nango_database_url = "postgres://user:pass@your-postgres-host:5432/nango?sslmode=require"
+# - Leave empty → a separate "nango" database is auto-created on your main Postgres server
+# - Set to a full DSN to use a completely separate Postgres instance
+# nango_database_url = "postgresql://user:pass@HOST:5432/nango"
 
-# Nango keys (generate real ones for production)
-# nango_secret_key     = "your-real-secret"
-# nango_public_key     = "your-real-public"
-# nango_webhook_secret = "your-webhook-secret"
+# Nango auth keys — generate two separate UUIDs:
+#   python -c "import uuid; print(uuid.uuid4())"
+nango_secret_key     = "REPLACE_WITH_UUID"
+nango_public_key     = "REPLACE_WITH_DIFFERENT_UUID"
+nango_webhook_secret = ""
+
+# Nango encryption key (32-byte base64):
+#   openssl rand -base64 32
+# nango_encryption_key = "REPLACE_WITH_BASE64_KEY"
+
+# Internal URL stays as-is when Nango is deployed in-cluster.
+nango_internal_url = "http://nango:3003"
+
+# Public Nango URLs are auto-derived from nango_*_subdomain + base_domain.
+# Override only if you need a non-standard URL.
+nango_connect_url = ""
+nango_api_url     = ""
 
 # =============================================================================
-# IMPORTANT NOTES FOR ALB + SUBDOMAINS
+# OBSERVABILITY  (optional)
 # =============================================================================
-# 1. Install the AWS Load Balancer Controller on your EKS cluster first:
-#    https://docs.aws.amazon.com/eks/latest/userguide/aws-load-balancer-controller.html
-#
-# 2. After apply, get the ALB DNS name:
-#    kubectl get ingress -n velane velane -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
-#
-# 3. Point your DNS records (A or CNAME) for the subdomains to the ALB DNS name.
-#
-# 4. The control-plane and admin pods will automatically use the correct internal URLs.
-#    The public Nango URLs are automatically derived from the subdomains and base_domain.
+
+# clickhouse_dsn = "clickhouse://user:pass@HOST:9000/velane"
+# logs_bucket    = "my-velane-logs"
+# replay_bucket  = "my-velane-replays"

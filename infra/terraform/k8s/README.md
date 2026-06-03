@@ -1,94 +1,253 @@
-# Velane Kubernetes Terraform
+# Velane — Production Deployment Guide (EKS + ALB + HTTPS)
 
-This stack deploys the **core Velane workloads + optional Nango + subdomain-based Ingress** to an existing Kubernetes cluster (EKS, GKE, AKS, or self-managed).
+This guide walks you through deploying Velane on AWS EKS with a custom domain, free HTTPS via ACM, and a single Application Load Balancer for all services.
 
-## What this stack deploys
+## Prerequisites
 
-### Always
-- `control-plane`
-- `bun-executor`
-- `python-executor`
-- `admin`
-- `mcp-server`
-- Namespace (optional)
-- Secrets for sensitive values
+| Tool | Version | Install |
+|------|---------|---------|
+| Terraform | ≥ 1.5 | [terraform.io](https://developer.hashicorp.com/terraform/install) |
+| AWS CLI | v2 | [aws.amazon.com/cli](https://aws.amazon.com/cli/) |
+| kubectl | any | [kubernetes.io](https://kubernetes.io/docs/tasks/tools/) |
+| helm | ≥ 3 | [helm.sh](https://helm.sh/docs/intro/install/) |
 
-### When `deploy_nango = true` (default)
-- Full Nango server Deployment (`nango`) with its own Service
-- One-time Job that creates a **separate `nango` database** on your existing Postgres (unless you provide `nango_database_url`)
-- Control-plane is automatically wired to talk to the in-cluster Nango
+You also need:
+- An AWS account with IAM permissions for EKS, EC2, IAM, ACM, and ELB
+- A domain managed in Cloudflare (or any DNS provider)
+- A managed Postgres database (Supabase, Neon, RDS, etc.)
+- A managed Redis / Valkey instance (Aiven, Upstash, ElastiCache, etc.)
 
-### When `enable_ingress = true` (default)
-- Single `Ingress` resource with **subdomain-based routing** (works with ALB, nginx-ingress, etc.)
+---
 
-Default subdomain layout (assuming `base_domain = "example.com"`):
-| Subdomain               | Backend             | Port |
-|-------------------------|---------------------|------|
-| `admin.example.com`     | admin               | 80   |
-| `api.example.com`       | control-plane       | 8080 |
-| `mcp.example.com`       | mcp-server          | 8090 |
-| `connect.example.com`   | Nango Connect UI    | 3009 |
-| `nango.example.com`     | Nango API           | 3003 |
+## Step 1 — Provision the EKS cluster
 
-## Cloud-agnostic Ingress (ALB and friends)
+```bash
+cd infra/terraform/aws-eks
+cp terraform.tfvars.example terraform.tfvars   # if you haven't already
+# Edit terraform.tfvars:
+#   - Set region and cluster_name
+#   - Set domain = "yourdomain.com"  ← creates ACM cert + ALB controller IAM role
+terraform init
+terraform apply
+```
 
-Set `ingress_class_name`:
+After apply, note the outputs you'll need in later steps:
 
-- **AWS EKS** → `"alb"` (requires aws-load-balancer-controller installed)
-- **nginx-ingress** → `"nginx"`
-- **GKE** → `"gce"` or `"nginx"`
-- **AKS** → `"azure/application-gateway"` or nginx, etc.
+```bash
+terraform output update_kubeconfig_command   # run this to configure kubectl
+terraform output acm_certificate_arn         # paste into k8s/terraform.tfvars
+terraform output acm_dns_validation_records  # add these to your DNS
+terraform output setup_alb_controller_command
+```
 
-Recommended ALB annotations are automatically added when you choose `ingress_class_name = "alb"`. You can add more via `ingress_annotations`.
+---
 
-No domain/TLS is configured by this stack (you can terminate at the ALB or add cert-manager later).
+## Step 2 — Validate the ACM certificate
 
-## Nango Database Strategy (exactly what you asked for)
+ACM uses DNS validation. Terraform output gives you the CNAME record(s) to add:
 
-- You point the stack at your main Velane Postgres via `database_url`
-- If you leave `nango_database_url` empty (the common case):
-  - The stack creates a **dedicated `nango` database** on the **same Postgres server**
-  - A Kubernetes Job runs `CREATE DATABASE nango` (idempotent) the first time
-- If you provide a full `nango_database_url`, the stack uses it as-is and skips DB creation
+```bash
+terraform output acm_dns_validation_records
+# Example output:
+# [{ name = "_abc123.yourdomain.com.", type = "CNAME", value = "_def456.acm-validations.aws." }]
+```
 
-This gives you separate databases while still using one managed Postgres instance.
+**In Cloudflare (or your DNS provider):**
+1. Add a CNAME record with the `name` and `value` from the output
+2. Set proxy status to **DNS only (grey cloud)** — ACM validation requires a direct CNAME
+3. Wait ~2 minutes for the certificate status to change to `ISSUED`
 
-## Quick Start
+Check certificate status:
+```bash
+terraform output acm_certificate_status
+# or
+aws acm describe-certificate --certificate-arn $(terraform output -raw acm_certificate_arn) \
+  --query 'Certificate.Status' --output text
+```
+
+---
+
+## Step 3 — Install the AWS Load Balancer Controller
+
+The ALB controller is a Kubernetes controller that creates an Application Load Balancer from your Ingress resources. Run the script produced by step 1:
+
+```bash
+# Refresh kubeconfig first
+$(terraform output -raw update_kubeconfig_command)
+
+# Then run the install script (copy the exact command from terraform output)
+bash infra/scripts/setup-alb-controller.sh \
+  --cluster YOUR_CLUSTER_NAME \
+  --region  us-east-1 \
+  --role-arn $(terraform output -raw alb_controller_role_arn)
+```
+
+Verify it's running:
+```bash
+kubectl get deployment aws-load-balancer-controller -n kube-system
+```
+
+---
+
+## Step 4 — Deploy Velane workloads
 
 ```bash
 cd infra/terraform/k8s
 cp terraform.tfvars.example terraform.tfvars
-# edit the file — at minimum set images + database_url + redis_url + keys
+```
+
+Edit `terraform.tfvars` — required values:
+
+| Variable | Where to get it |
+|----------|----------------|
+| `kubeconfig_context` | From `aws eks update-kubeconfig` alias |
+| `database_url` | Your Postgres DSN |
+| `redis_url` | Your Redis DSN |
+| `encryption_key` | `openssl rand -hex 32` |
+| `jwt_private_key_pem` | `openssl genrsa 2048 \| openssl pkcs8 -topk8 -nocrypt` |
+| `base_domain` | Your root domain, e.g. `yourdomain.com` |
+| `acm_certificate_arn` | From Step 1: `terraform -chdir=../aws-eks output -raw acm_certificate_arn` |
+| `nango_secret_key` | `python -c "import uuid; print(uuid.uuid4())"` |
+| `nango_public_key` | Same command, different value |
+
+Then apply:
+
+```bash
 terraform init
-terraform plan
 terraform apply
 ```
 
-After apply on EKS with ALB:
+---
+
+## Step 5 — Point your domain to the ALB
+
+Once Terraform creates the Ingress, get the ALB hostname:
 
 ```bash
-kubectl get ingress -n velane velane
-# copy the hostname from status.loadBalancer.ingress[0].hostname
+kubectl get ingress -n velane velane -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
+# Example: k8s-velane-velane-abc123.us-east-1.elb.amazonaws.com
 ```
 
-Then point your DNS records for the subdomains to the ALB DNS name. The Nango URLs are automatically derived from your `base_domain` and subdomains, so no extra configuration is needed.
+**In Cloudflare**, add a wildcard CNAME:
 
-## Prerequisites
+| Type | Name | Target | Proxy |
+|------|------|--------|-------|
+| CNAME | `*` | `<ALB hostname from above>` | Proxied (orange cloud) ✓ |
 
-- Terraform ≥ 1.5
-- Existing Kubernetes cluster with `kubectl` access
-- (For ALB) aws-load-balancer-controller installed on the EKS cluster
-- Container images available to the cluster
+Or add individual subdomains if you prefer not to use a wildcard:
 
-## EKS ALB Checklist
+| CNAME | `admin` | `<ALB hostname>` | Proxied |
+| CNAME | `api` | `<ALB hostname>` | Proxied |
+| CNAME | `mcp` | `<ALB hostname>` | Proxied |
+| CNAME | `connect` | `<ALB hostname>` | Proxied |
+| CNAME | `nango` | `<ALB hostname>` | Proxied |
 
-1. Install the AWS Load Balancer Controller (official docs).
-2. Use `ingress_class_name = "alb"`.
-3. After the ALB is created, point your DNS records (A/CNAME) for all subdomains (`admin`, `api`, `mcp`, `connect`, `nango`) to the ALB's DNS name.
-4. The control-plane configures itself to use these subdomains automatically based on your `base_domain` variable.
+With Cloudflare proxy enabled (orange cloud), Cloudflare provides an extra layer of DDoS protection and the traffic Cloudflare→ALB is HTTPS (your ACM cert handles that leg).
 
-## What this stack still does NOT do
+---
 
-- Does not create the Kubernetes cluster itself
-- Does not provision Postgres / Redis / ClickHouse (you bring them)
-- Does not set up DNS or TLS certificates (you can add cert-manager or ALB ACM later)
+## Step 6 — Set up Nango admin account
+
+After first deploy, create the Nango admin account:
+
+```bash
+NANGO_POD=$(kubectl get pod -n velane -l app=nango -o jsonpath='{.items[0].metadata.name}')
+
+# Create admin account
+kubectl exec -n velane "$NANGO_POD" -- node -e "
+const { createAdminUser } = require('./packages/shared/lib/utils/admin.js');
+createAdminUser({ email: 'admin@yourdomain.com', password: 'your-secure-password' })
+  .then(() => { console.log('done'); process.exit(0); })
+  .catch(e => { console.error(e); process.exit(1); });
+"
+```
+
+Then verify the email directly in your Postgres database (Nango uses Supabase Auth internally):
+```sql
+UPDATE auth.users SET email_confirmed_at = now() WHERE email = 'admin@yourdomain.com';
+```
+
+---
+
+## Architecture overview
+
+```
+Internet
+   │
+   ▼
+Cloudflare (HTTPS 443, DDoS protection)
+   │
+   ▼
+AWS ALB (single load balancer, ACM cert)
+   │  ├── admin.yourdomain.com   → admin pod (port 80)
+   │  ├── api.yourdomain.com     → control-plane pod (port 8080)
+   │  ├── mcp.yourdomain.com     → mcp-server pod (port 8090)
+   │  ├── connect.yourdomain.com → nango pod (port 3009, Connect UI)
+   │  └── nango.yourdomain.com   → nango pod (port 3003, OAuth callbacks)
+   │
+   └── All traffic stays within the VPC after the ALB
+```
+
+---
+
+## Subdomain reference
+
+| URL | Service | Purpose |
+|-----|---------|---------|
+| `admin.yourdomain.com` | admin | Web UI for managing snippets, integrations, API keys |
+| `api.yourdomain.com` | control-plane | REST API (`vl_` API keys, session tokens) |
+| `mcp.yourdomain.com` | mcp-server | MCP protocol endpoint for Cursor / Claude |
+| `connect.yourdomain.com` | nango | OAuth popup UI (opened in browser during connection flow) |
+| `nango.yourdomain.com` | nango | OAuth callback URL (set this in your OAuth app registrations) |
+
+---
+
+## Updating a deployment
+
+To deploy a new image tag:
+
+```bash
+# Option 1: update the variable and re-apply
+# In terraform.tfvars:
+#   control_plane_image = "ghcr.io/abskrj/velane-control-plane:sha-abc123"
+terraform apply
+
+# Option 2: quick rollout without Terraform
+kubectl set image deployment/control-plane control-plane=ghcr.io/abskrj/velane-control-plane:sha-abc123 -n velane
+```
+
+---
+
+## Without a custom domain (quick start)
+
+If you just want running endpoints without a domain:
+
+1. Keep `enable_ingress = false`
+2. Set service types to `LoadBalancer`
+3. Apply — three separate Classic ELBs are created
+4. Get their hostnames:
+   ```bash
+   kubectl get svc -n velane
+   ```
+
+You can add a custom domain later by enabling ingress and following this guide from Step 3.
+
+---
+
+## What this stack provisions
+
+| Resource | Count | Notes |
+|----------|-------|-------|
+| Kubernetes Namespace | 1 | `velane` |
+| Kubernetes Secrets | 2 | control-plane + nango secrets |
+| Deployments | 6 | control-plane, bun-executor, python-executor, admin, mcp-server, nango |
+| Services | 6 | ClusterIP when ingress on, LoadBalancer when ingress off |
+| Ingress | 1 | ALB with ACM cert (when `enable_ingress = true`) |
+| Kubernetes Job | 1 | One-time Nango database creation |
+
+## What this stack does NOT provision
+
+- The Kubernetes cluster itself → use `infra/terraform/aws-eks`
+- Postgres, Redis, ClickHouse → bring your own managed instances
+- DNS records → add them manually in Cloudflare / Route53 / etc.
+- The AWS Load Balancer Controller → run `infra/scripts/setup-alb-controller.sh`

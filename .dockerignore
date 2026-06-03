@@ -5,3 +5,5 @@ services/mcp-server/
 node_modules/
 **/*.log
 **/.DS_Store
+
+terraform/

@@ -1,0 +1,19 @@
+# Deploy the cost-optimized Velane EKS baseline in us-east-1.
+region       = "us-east-1"
+cluster_name = "velane-us-east-1"
+
+# Leave the defaults if you just want a minimal first pass.
+cluster_version      = "1.35"
+availability_zone_count = 2
+vpc_cidr             = "10.42.0.0/16"
+
+# The initial Velane deployment uses one on-demand node group in public subnets
+# to avoid NAT gateway cost. Increase desired_size if you need more headroom.
+node_instance_types = ["t3.large"]
+node_desired_size   = 2
+node_min_size       = 1
+node_max_size       = 3
+
+tags = {
+  Project = "velane"
+}

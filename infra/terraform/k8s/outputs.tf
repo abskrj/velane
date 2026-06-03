@@ -23,14 +23,29 @@ output "admin_service_type" {
   value       = kubernetes_service_v1.admin.spec[0].type
 }
 
+output "admin_load_balancer_hostname" {
+  description = "External hostname for the admin LoadBalancer service, when assigned."
+  value       = try(kubernetes_service_v1.admin.status[0].load_balancer[0].ingress[0].hostname, null)
+}
+
 output "control_plane_service_type" {
   description = "Service type used for control-plane."
   value       = kubernetes_service_v1.control_plane.spec[0].type
 }
 
+output "control_plane_load_balancer_hostname" {
+  description = "External hostname for the control-plane LoadBalancer service, when assigned."
+  value       = try(kubernetes_service_v1.control_plane.status[0].load_balancer[0].ingress[0].hostname, null)
+}
+
 output "mcp_server_service_type" {
   description = "Service type used for mcp-server."
   value       = kubernetes_service_v1.mcp_server.spec[0].type
+}
+
+output "mcp_server_load_balancer_hostname" {
+  description = "External hostname for the MCP server LoadBalancer service, when assigned."
+  value       = try(kubernetes_service_v1.mcp_server.status[0].load_balancer[0].ingress[0].hostname, null)
 }
 
 output "ingress_name" {

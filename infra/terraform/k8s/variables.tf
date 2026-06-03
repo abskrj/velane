@@ -268,6 +268,12 @@ variable "ingress_annotations" {
   default     = {}
 }
 
+variable "acm_certificate_arn" {
+  description = "ARN of an ACM certificate to attach to the ALB (enables HTTPS on port 443). Leave empty for HTTP-only. Get this from: terraform -chdir=infra/terraform/aws-eks output -raw acm_certificate_arn"
+  type        = string
+  default     = ""
+}
+
 # ==================== Nango (in-cluster) ====================
 
 variable "deploy_nango" {
@@ -292,27 +298,6 @@ variable "nango_encryption_key" {
   description = "Encryption key for Nango (32 bytes base64). If empty, a default dev key is used (not for production)."
   type        = string
   default     = "6ProXeOGZC0HLT+Kd+2TfneHJmyqcMviCkH8aqwdF4I="
-  sensitive   = true
-}
-
-variable "nango_secret_key" {
-  description = "NANGO_SECRET_KEY for this environment."
-  type        = string
-  default     = ""
-  sensitive   = true
-}
-
-variable "nango_public_key" {
-  description = "NANGO_PUBLIC_KEY (usually same as secret for self-hosted)."
-  type        = string
-  default     = ""
-  sensitive   = true
-}
-
-variable "nango_webhook_secret" {
-  description = "Signing secret for Nango webhooks."
-  type        = string
-  default     = ""
   sensitive   = true
 }
 

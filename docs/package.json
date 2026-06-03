@@ -1,0 +1,20 @@
+{
+  "name": "velane-docs",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "start": "sh -c 'ulimit -n 65536 || ulimit -n 8192; CHOKIDAR_USEPOLLING=1 CHOKIDAR_INTERVAL=1000 WATCHPACK_POLLING=true docusaurus start'",
+    "start:stable": "npm run build && npm run serve",
+    "build": "docusaurus build",
+    "serve": "docusaurus serve",
+    "clear": "docusaurus clear"
+  },
+  "dependencies": {
+    "@docusaurus/core": "^3.10.1",
+    "@docusaurus/preset-classic": "^3.10.1",
+    "@easyops-cn/docusaurus-search-local": "^0.55.2",
+    "prism-react-renderer": "^2.4.1",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
+  }
+}

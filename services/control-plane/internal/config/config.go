@@ -8,6 +8,7 @@ import (
 	"encoding/pem"
 	"os"
 	"strconv"
+	"strings"
 
 	"go.uber.org/zap"
 )
@@ -35,22 +36,23 @@ type Config struct {
 	BootstrapTenant   string // BOOTSTRAP_TENANT: slug for the initial tenant (default: "default")
 
 	// Nango (integration OAuth proxy)
-	NangoInternalURL  string // http://nango:3003 — internal only, never exposed
-	NangoPublicURL    string // browser-accessible Nango URL, used to rewrite logo image URLs
-	NangoConnectURL   string // browser-accessible Connect UI URL (NANGO_PUBLIC_CONNECT_URL), passed to @nangohq/frontend as baseURL
-	NangoApiURL       string // browser-accessible Nango API URL, passed to @nangohq/frontend as apiURL
-	NangoSecretKey      string // NANGO_SECRET_KEY
-	NangoPublicKey      string // NANGO_PUBLIC_KEY — returned to frontend for Connect UI
-	NangoWebhookSecret  string // NANGO_WEBHOOK_SECRET — HMAC-SHA256 signing secret for webhook verification
-	InternalProxyURL    string // URL executors use to reach the control plane proxy, e.g. http://control-plane:8080
+	NangoInternalURL   string // http://nango:3003 — internal only, never exposed
+	NangoPublicURL     string // browser-accessible Nango URL, used to rewrite logo image URLs
+	NangoConnectURL    string // browser-accessible Connect UI URL (NANGO_PUBLIC_CONNECT_URL), passed to @nangohq/frontend as baseURL
+	NangoApiURL        string // browser-accessible Nango API URL, passed to @nangohq/frontend as apiURL
+	NangoSecretKey     string // NANGO_SECRET_KEY
+	NangoPublicKey     string // NANGO_PUBLIC_KEY — returned to frontend for Connect UI
+	NangoWebhookSecret string // NANGO_WEBHOOK_SECRET — HMAC-SHA256 signing secret for webhook verification
+	MCPPublicURL       string // MCP_PUBLIC_URL — public URL used by IDE clients (e.g. https://mcp.example.com/mcp)
+	InternalProxyURL   string // URL executors use to reach the control plane proxy, e.g. http://control-plane:8080
 
 	// Executor selection (Phase 9)
-	ExecutorType              string // "process" (default) | "firecracker"
-	FirecrackerBinary         string // path to firecracker binary, default "/usr/local/bin/firecracker"
-	FirecrackerJailerBinary   string // path to jailer binary, default "/usr/local/bin/jailer"
-	FirecrackerBunRootfs      string // path to Bun rootfs image
-	FirecrackerPythonRootfs   string // path to Python rootfs image
-	FirecrackerKernelImage    string // path to Linux kernel image
+	ExecutorType            string // "process" (default) | "firecracker"
+	FirecrackerBinary       string // path to firecracker binary, default "/usr/local/bin/firecracker"
+	FirecrackerJailerBinary string // path to jailer binary, default "/usr/local/bin/jailer"
+	FirecrackerBunRootfs    string // path to Bun rootfs image
+	FirecrackerPythonRootfs string // path to Python rootfs image
+	FirecrackerKernelImage  string // path to Linux kernel image
 }
 
 // Load reads configuration from environment variables, falling back to sensible
@@ -85,6 +87,7 @@ func Load() Config {
 		NangoSecretKey:          os.Getenv("NANGO_SECRET_KEY"),
 		NangoPublicKey:          os.Getenv("NANGO_PUBLIC_KEY"),
 		NangoWebhookSecret:      os.Getenv("NANGO_WEBHOOK_SECRET"),
+		MCPPublicURL:            strings.TrimSpace(os.Getenv("MCP_PUBLIC_URL")),
 		InternalProxyURL:        getEnv("INTERNAL_PROXY_URL", "http://control-plane:8080"),
 		ExecutorType:            getEnv("EXECUTOR_TYPE", "process"),
 		FirecrackerBinary:       getEnv("FIRECRACKER_BINARY", "/usr/local/bin/firecracker"),

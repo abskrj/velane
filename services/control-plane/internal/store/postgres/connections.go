@@ -11,20 +11,22 @@ import (
 // UpsertConnection creates or updates a connection record for (tenant, provider, alias).
 // It owns the display_name field only — it never overwrites nango_connection_id so that
 // a concurrent webhook delivery is not clobbered.
-func (s *Store) UpsertConnection(ctx context.Context, tenantID, provider, alias, displayName string) (*models.Connection, error) {
+func (s *Store) UpsertConnection(ctx context.Context, tenantID, provider, alias, providerConfigKey string, credentialProfileID *string, displayName string) (*models.Connection, error) {
 	now := time.Now()
 	row := s.pool.QueryRow(ctx,
-		`INSERT INTO connections (tenant_id, provider, alias, nango_connection_id, display_name, created_at, updated_at)
-		 VALUES ($1, $2, $3, NULL, $4, $5, $5)
+		`INSERT INTO connections (tenant_id, provider, alias, provider_config_key, credential_profile_id, nango_connection_id, display_name, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, NULL, $6, $7, $7)
 		 ON CONFLICT (tenant_id, provider, alias) DO UPDATE
 		   SET display_name = EXCLUDED.display_name,
+		       provider_config_key = EXCLUDED.provider_config_key,
+		       credential_profile_id = EXCLUDED.credential_profile_id,
 		       updated_at   = EXCLUDED.updated_at
-		 RETURNING id, tenant_id, provider, alias,
+		 RETURNING id, tenant_id, provider, alias, provider_config_key, credential_profile_id,
 		           COALESCE(nango_connection_id, ''), display_name, created_at, updated_at`,
-		tenantID, provider, alias, displayName, now,
+		tenantID, provider, alias, providerConfigKey, credentialProfileID, displayName, now,
 	)
 	var c models.Connection
-	if err := row.Scan(&c.ID, &c.TenantID, &c.Provider, &c.Alias,
+	if err := row.Scan(&c.ID, &c.TenantID, &c.Provider, &c.Alias, &c.ProviderConfigKey, &c.CredentialProfileID,
 		&c.NangoConnectionID, &c.DisplayName, &c.CreatedAt, &c.UpdatedAt); err != nil {
 		return nil, fmt.Errorf("UpsertConnection: %w", err)
 	}
@@ -41,14 +43,33 @@ func (s *Store) UpdateNangoConnectionID(ctx context.Context, tenantID, provider,
 		 SET nango_connection_id = $4,
 		     updated_at          = $5
 		 WHERE tenant_id = $1 AND provider = $2 AND alias = $3
-		 RETURNING id, tenant_id, provider, alias,
+		 RETURNING id, tenant_id, provider, alias, provider_config_key, credential_profile_id,
 		           nango_connection_id, display_name, created_at, updated_at`,
 		tenantID, provider, alias, nangoConnectionID, now,
 	)
 	var c models.Connection
-	if err := row.Scan(&c.ID, &c.TenantID, &c.Provider, &c.Alias,
+	if err := row.Scan(&c.ID, &c.TenantID, &c.Provider, &c.Alias, &c.ProviderConfigKey, &c.CredentialProfileID,
 		&c.NangoConnectionID, &c.DisplayName, &c.CreatedAt, &c.UpdatedAt); err != nil {
 		return nil, fmt.Errorf("UpdateNangoConnectionID: %w", err)
+	}
+	return &c, nil
+}
+
+func (s *Store) UpdateNangoConnectionIDByProviderConfigKey(ctx context.Context, tenantID, providerConfigKey, nangoConnectionID string) (*models.Connection, error) {
+	now := time.Now()
+	row := s.pool.QueryRow(ctx,
+		`UPDATE connections
+		 SET nango_connection_id = $3,
+		     updated_at          = $4
+		 WHERE tenant_id = $1 AND provider_config_key = $2
+		 RETURNING id, tenant_id, provider, alias, provider_config_key, credential_profile_id,
+		           nango_connection_id, display_name, created_at, updated_at`,
+		tenantID, providerConfigKey, nangoConnectionID, now,
+	)
+	var c models.Connection
+	if err := row.Scan(&c.ID, &c.TenantID, &c.Provider, &c.Alias, &c.ProviderConfigKey, &c.CredentialProfileID,
+		&c.NangoConnectionID, &c.DisplayName, &c.CreatedAt, &c.UpdatedAt); err != nil {
+		return nil, fmt.Errorf("UpdateNangoConnectionIDByProviderConfigKey: %w", err)
 	}
 	return &c, nil
 }
@@ -56,7 +77,7 @@ func (s *Store) UpdateNangoConnectionID(ctx context.Context, tenantID, provider,
 // ListConnections returns all connections for a tenant ordered by provider and alias.
 func (s *Store) ListConnections(ctx context.Context, tenantID string) ([]*models.Connection, error) {
 	rows, err := s.pool.Query(ctx,
-		`SELECT id, tenant_id, provider, alias,
+		`SELECT id, tenant_id, provider, alias, provider_config_key, credential_profile_id,
 		        COALESCE(nango_connection_id, ''), display_name, created_at, updated_at
 		 FROM connections WHERE tenant_id = $1 ORDER BY provider ASC, alias ASC`,
 		tenantID,
@@ -69,7 +90,7 @@ func (s *Store) ListConnections(ctx context.Context, tenantID string) ([]*models
 	var conns []*models.Connection
 	for rows.Next() {
 		var c models.Connection
-		if err := rows.Scan(&c.ID, &c.TenantID, &c.Provider, &c.Alias,
+		if err := rows.Scan(&c.ID, &c.TenantID, &c.Provider, &c.Alias, &c.ProviderConfigKey, &c.CredentialProfileID,
 			&c.NangoConnectionID, &c.DisplayName, &c.CreatedAt, &c.UpdatedAt); err != nil {
 			return nil, err
 		}
@@ -87,13 +108,13 @@ func (s *Store) GetConnection(ctx context.Context, tenantID, provider string) (*
 // GetConnectionByAlias returns a specific connection by (tenant, provider, alias).
 func (s *Store) GetConnectionByAlias(ctx context.Context, tenantID, provider, alias string) (*models.Connection, error) {
 	row := s.pool.QueryRow(ctx,
-		`SELECT id, tenant_id, provider, alias,
+		`SELECT id, tenant_id, provider, alias, provider_config_key, credential_profile_id,
 		        COALESCE(nango_connection_id, ''), display_name, created_at, updated_at
 		 FROM connections WHERE tenant_id = $1 AND provider = $2 AND alias = $3`,
 		tenantID, provider, alias,
 	)
 	var c models.Connection
-	if err := row.Scan(&c.ID, &c.TenantID, &c.Provider, &c.Alias,
+	if err := row.Scan(&c.ID, &c.TenantID, &c.Provider, &c.Alias, &c.ProviderConfigKey, &c.CredentialProfileID,
 		&c.NangoConnectionID, &c.DisplayName, &c.CreatedAt, &c.UpdatedAt); err != nil {
 		return nil, fmt.Errorf("GetConnectionByAlias: %w", err)
 	}

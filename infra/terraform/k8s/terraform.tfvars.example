@@ -67,6 +67,7 @@ base_domain = "yourdomain.com"
 admin_subdomain         = "admin"    # admin.yourdomain.com
 api_subdomain           = "api"      # api.yourdomain.com
 mcp_subdomain           = "mcp"      # mcp.yourdomain.com
+mcp_public_url          = ""         # optional override; defaults to https://mcp.yourdomain.com/mcp when ingress is enabled
 nango_connect_subdomain = "connect"  # connect.yourdomain.com
 nango_api_subdomain     = "nango"    # nango.yourdomain.com
 

@@ -11,24 +11,24 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/abskrj/velane/services/control-plane/internal/api/handlers"
 	"github.com/abskrj/velane/services/control-plane/internal/models"
+	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 )
 
 // --- Mock store ---
 
 type mockWebhookStore struct {
-	gitIntegration *models.GitIntegration
-	gitErr         error
-	snippet        *models.Snippet
-	snippetErr     error
-	createdVersion *models.SnippetVersion
-	createErr      error
+	gitIntegration   *models.GitIntegration
+	gitErr           error
+	snippet          *models.Snippet
+	snippetErr       error
+	createdVersion   *models.SnippetVersion
+	createErr        error
 	publishedVersion *models.SnippetVersion
-	publishErr     error
-	publishedEnv   string
+	publishErr       error
+	publishedEnv     string
 }
 
 func (m *mockWebhookStore) GetGitIntegrationBySnippetID(_ context.Context, _ string) (*models.GitIntegration, error) {

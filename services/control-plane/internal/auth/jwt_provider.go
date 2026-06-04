@@ -9,8 +9,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/abskrj/velane/services/control-plane/internal/models"
+	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -32,8 +32,8 @@ type JWTStore interface {
 type AuthTokenPair struct {
 	AccessToken  string    `json:"access_token"`
 	RefreshToken string    `json:"refresh_token"`
-	ExpiresAt    time.Time `json:"expires_at"`  // access token expiry
-	TokenType    string    `json:"token_type"`  // "Bearer"
+	ExpiresAt    time.Time `json:"expires_at"` // access token expiry
+	TokenType    string    `json:"token_type"` // "Bearer"
 }
 
 // JWTProvider implements Provider using RS256 JWTs (access tokens) + Postgres refresh tokens.

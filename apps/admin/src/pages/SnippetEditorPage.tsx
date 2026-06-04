@@ -41,6 +41,8 @@ export default function SnippetEditorPage() {
   const [showMenu, setShowMenu] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
   const [activeTab, setActiveTab] = useState<ActiveTab>('test')
+  const [mcpURL, setMCPURL] = useState('')
+  const [mcpError, setMCPError] = useState('')
   const [testInput, setTestInput] = useState('{}')
   const [testEnv, setTestEnv] = useState<'dev' | 'staging' | 'prod'>('dev')
   const [invokeResult, setInvokeResult] = useState<InvocationResult | null>(null)
@@ -72,6 +74,22 @@ export default function SnippetEditorPage() {
     }
     load()
   }, [id])
+
+  useEffect(() => {
+    async function loadMCPInfo() {
+      try {
+        const info = await api.getMCPInfo()
+        if (!info.mcp_url?.trim()) {
+          setMCPError('MCP URL not configured')
+          return
+        }
+        setMCPURL(info.mcp_url)
+      } catch (err) {
+        setMCPError(err instanceof Error ? err.message : 'MCP URL not configured')
+      }
+    }
+    loadMCPInfo()
+  }, [])
 
   async function reloadVersions() {
     if (!id) return
@@ -196,7 +214,15 @@ export default function SnippetEditorPage() {
   const claudeConfig = JSON.stringify({
     mcpServers: {
       velane: {
-        url: `${window.location.origin.replace(/:\d+$/, ':8090')}/mcp`,
+        url: mcpURL || 'MCP_URL_NOT_CONFIGURED',
+        headers: { Authorization: 'Bearer vl_YOUR_API_KEY' },
+      },
+    },
+  }, null, 2)
+  const codexConfig = JSON.stringify({
+    mcpServers: {
+      velane: {
+        url: mcpURL || 'MCP_URL_NOT_CONFIGURED',
         headers: { Authorization: 'Bearer vl_YOUR_API_KEY' },
       },
     },
@@ -461,6 +487,11 @@ export default function SnippetEditorPage() {
                   <p className="text-xs text-gray-600">
                     Add to your MCP config to connect Claude Code, Cursor, or Codex to Velane.
                   </p>
+                  {mcpError && (
+                    <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                      {mcpError}
+                    </div>
+                  )}
                   <div className="relative rounded-md bg-gray-900 px-4 py-3">
                     <pre className="overflow-x-auto text-xs leading-relaxed text-gray-100">{claudeConfig}</pre>
                     <button
@@ -478,6 +509,10 @@ export default function SnippetEditorPage() {
                     Replace <code className="rounded bg-gray-100 px-1">vl_YOUR_API_KEY</code> with an API key from{' '}
                     <strong>Settings → API Keys</strong>.
                   </p>
+                  <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2">
+                    <p className="mb-1 text-xs font-medium text-gray-700">Codex config</p>
+                    <pre className="overflow-x-auto text-xs leading-relaxed text-gray-700">{codexConfig}</pre>
+                  </div>
                 </div>
               )}
             </div>

@@ -19,16 +19,16 @@ import (
 )
 
 // NewRouter builds and returns the fully configured chi router.
-func NewRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logger, encKey []byte, authProvider auth.Provider, nangoClient *nango.Client, nangoInternalURL, nangoConnectURL, nangoApiURL, nangoWebhookSecret string, platLibs []platformlibs.PlatformLib) http.Handler {
-	return newRouter(store, sched, log, encKey, authProvider, nil, nangoClient, nangoInternalURL, nangoConnectURL, nangoApiURL, nangoWebhookSecret, platLibs)
+func NewRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logger, encKey []byte, authProvider auth.Provider, nangoClient *nango.Client, nangoInternalURL, nangoConnectURL, nangoApiURL, nangoWebhookSecret, mcpPublicURL string, platLibs []platformlibs.PlatformLib) http.Handler {
+	return newRouter(store, sched, log, encKey, authProvider, nil, nangoClient, nangoInternalURL, nangoConnectURL, nangoApiURL, nangoWebhookSecret, mcpPublicURL, platLibs)
 }
 
 // NewRouterWithJWT builds the router and wires the RSA public key for the JWKS endpoint.
-func NewRouterWithJWT(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logger, encKey []byte, authProvider auth.Provider, pubKey *rsa.PublicKey, nangoClient *nango.Client, nangoInternalURL, nangoConnectURL, nangoApiURL, nangoWebhookSecret string, platLibs []platformlibs.PlatformLib) http.Handler {
-	return newRouter(store, sched, log, encKey, authProvider, pubKey, nangoClient, nangoInternalURL, nangoConnectURL, nangoApiURL, nangoWebhookSecret, platLibs)
+func NewRouterWithJWT(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logger, encKey []byte, authProvider auth.Provider, pubKey *rsa.PublicKey, nangoClient *nango.Client, nangoInternalURL, nangoConnectURL, nangoApiURL, nangoWebhookSecret, mcpPublicURL string, platLibs []platformlibs.PlatformLib) http.Handler {
+	return newRouter(store, sched, log, encKey, authProvider, pubKey, nangoClient, nangoInternalURL, nangoConnectURL, nangoApiURL, nangoWebhookSecret, mcpPublicURL, platLibs)
 }
 
-func newRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logger, encKey []byte, authProvider auth.Provider, pubKey *rsa.PublicKey, nangoClient *nango.Client, nangoInternalURL, nangoConnectURL, nangoApiURL, nangoWebhookSecret string, platLibs []platformlibs.PlatformLib) http.Handler {
+func newRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logger, encKey []byte, authProvider auth.Provider, pubKey *rsa.PublicKey, nangoClient *nango.Client, nangoInternalURL, nangoConnectURL, nangoApiURL, nangoWebhookSecret, mcpPublicURL string, platLibs []platformlibs.PlatformLib) http.Handler {
 	r := chi.NewRouter()
 
 	// Global middleware.
@@ -54,8 +54,8 @@ func newRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logge
 	replayH := handlers.NewReplayHandler(store, sched, log)
 	embedH := handlers.NewEmbedHandler(store, log)
 	connectionsH := handlers.NewConnectionsHandler(store, nangoClient, log, nangoConnectURL, nangoApiURL).WithAuditor(auditor)
-	integrationsH := handlers.NewIntegrationsHandler(nangoClient, log, nangoInternalURL, nangoApiURL)
-	configureIntH := handlers.NewConfigureIntegrationsHandler(nangoClient, log)
+	integrationsH := handlers.NewIntegrationsHandler(nangoClient, log, nangoInternalURL, nangoApiURL, mcpPublicURL)
+	configureIntH := handlers.NewConfigureIntegrationsHandler(store, nangoClient, log, encKey)
 	adminAuthH := handlers.NewAdminAuthHandler(authProvider, store, log)
 	if pubKey != nil {
 		adminAuthH = adminAuthH.WithPublicKey(pubKey)
@@ -94,6 +94,7 @@ func newRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logge
 	// Provider catalog and connect info — public, no auth.
 	r.Get("/v1/integrations", integrationsH.ListProviders)
 	r.Get("/v1/connect/info", integrationsH.ConnectInfo)
+	r.Get("/v1/mcp/info", integrationsH.MCPInfo)
 
 	// Nango asset proxy — serves Nango's logo images through the control plane.
 	// Nango is never exposed directly to the browser; all static assets go through here.
@@ -161,12 +162,12 @@ func newRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logge
 		r.With(middleware.RequireScope("invoke", log)).
 			Get("/v1/integrations/{provider}/docs", integrationsH.GetProviderDocs)
 
-		// Integration config management (operator-level, admin scope).
+		// Integration credential profile management (tenant-scoped).
 		r.With(middleware.RequireScope("invoke", log)).
 			Get("/v1/integrations/configured", configureIntH.ListConfigured)
-		r.With(middleware.RequireScope("admin", log)).
+		r.With(middleware.RequireScope("manage", log)).
 			Post("/v1/integrations/configured", configureIntH.Configure)
-		r.With(middleware.RequireScope("admin", log)).
+		r.With(middleware.RequireScope("manage", log)).
 			Delete("/v1/integrations/configured/{providerConfigKey}", configureIntH.DeleteConfigured)
 
 		// Connection shortcuts — slug-free paths used by the MCP server

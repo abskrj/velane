@@ -4,23 +4,26 @@ import "time"
 
 // Connection represents an OAuth integration a tenant has connected via Nango.
 type Connection struct {
-	ID                string    `json:"id"`
-	TenantID          string    `json:"tenant_id"`
-	Provider          string    `json:"provider"`
-	Alias             string    `json:"alias"`
-	NangoConnectionID string    `json:"nango_connection_id"`
-	DisplayName       string    `json:"display_name,omitempty"`
-	CreatedAt         time.Time `json:"created_at"`
-	UpdatedAt         time.Time `json:"updated_at"`
+	ID                  string    `json:"id"`
+	TenantID            string    `json:"tenant_id"`
+	Provider            string    `json:"provider"`
+	Alias               string    `json:"alias"`
+	ProviderConfigKey   string    `json:"provider_config_key"`
+	CredentialProfileID *string   `json:"credential_profile_id,omitempty"`
+	NangoConnectionID   string    `json:"nango_connection_id"`
+	DisplayName         string    `json:"display_name,omitempty"`
+	CreatedAt           time.Time `json:"created_at"`
+	UpdatedAt           time.Time `json:"updated_at"`
 }
 
 // NangoProvider is metadata about a single provider returned by Nango's /providers endpoint.
 // Nango's field naming: `name` is the slug/unique key, `display_name` is human-readable.
 type NangoProvider struct {
-	UniqueKey        string                     `json:"name"`          // slug e.g. "github"
-	Name             string                     `json:"display_name"`  // e.g. "GitHub"
+	UniqueKey        string                     `json:"name"`         // slug e.g. "github"
+	Name             string                     `json:"display_name"` // e.g. "GitHub"
 	AuthMode         string                     `json:"auth_mode"`
 	Categories       []string                   `json:"categories"`
+	DefaultScopes    []string                   `json:"default_scopes,omitempty"`
 	DocsURL          string                     `json:"docs,omitempty"`
 	LogoURL          string                     `json:"logo_url,omitempty"`
 	ConnectionConfig map[string]ConnectionField `json:"connection_config,omitempty"`

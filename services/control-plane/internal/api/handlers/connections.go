@@ -6,21 +6,22 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/abskrj/velane/services/control-plane/internal/api/middleware"
 	"github.com/abskrj/velane/services/control-plane/internal/audit"
 	"github.com/abskrj/velane/services/control-plane/internal/models"
 	"github.com/abskrj/velane/services/control-plane/internal/nango"
 	"github.com/abskrj/velane/services/control-plane/internal/store/postgres"
+	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 )
 
 // ConnectionStore is the subset of postgres.Store needed by ConnectionsHandler.
 type ConnectionStore interface {
 	GetTenantBySlug(ctx context.Context, slug string) (*models.Tenant, error)
-	UpsertConnection(ctx context.Context, tenantID, provider, alias, displayName string) (*models.Connection, error)
+	UpsertConnection(ctx context.Context, tenantID, provider, alias, providerConfigKey string, credentialProfileID *string, displayName string) (*models.Connection, error)
 	ListConnections(ctx context.Context, tenantID string) ([]*models.Connection, error)
 	GetConnection(ctx context.Context, tenantID, provider string) (*models.Connection, error)
+	GetConnectionByAlias(ctx context.Context, tenantID, provider, alias string) (*models.Connection, error)
 	DeleteConnection(ctx context.Context, tenantID, provider string) error
 }
 
@@ -65,10 +66,9 @@ func (h *ConnectionsHandler) CreateSession(w http.ResponseWriter, r *http.Reques
 	}
 
 	var req struct {
-		Provider          string `json:"provider"`
-		Alias             string `json:"alias"`
-		OAuthClientID     string `json:"oauth_client_id"`
-		OAuthClientSecret string `json:"oauth_client_secret"`
+		Provider            string `json:"provider"`
+		Alias               string `json:"alias"`
+		CredentialProfileID string `json:"credential_profile_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -78,15 +78,28 @@ func (h *ConnectionsHandler) CreateSession(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusBadRequest, "provider is required")
 		return
 	}
-	if req.OAuthClientID == "" || req.OAuthClientSecret == "" {
-		writeError(w, http.StatusBadRequest, "oauth_client_id and oauth_client_secret are required")
-		return
-	}
 	if req.Alias == "" {
 		req.Alias = "default"
 	}
 
-	token, err := h.nango.CreateConnectSession(r.Context(), tenant.ID, tenant.Name, req.Provider, req.Alias, req.OAuthClientID, req.OAuthClientSecret)
+	profile, err := h.store.GetDefaultIntegrationCredentialProfile(r.Context(), tenant.ID, req.Provider)
+	if req.CredentialProfileID != "" {
+		profile, err = h.store.GetIntegrationCredentialProfileByID(r.Context(), tenant.ID, req.CredentialProfileID)
+	}
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "integration credentials not configured for provider")
+		return
+	}
+	if profile.Provider != req.Provider {
+		writeError(w, http.StatusBadRequest, "credential profile/provider mismatch")
+		return
+	}
+	alias := req.Alias
+	if alias == "default" && profile.Alias != "" {
+		alias = profile.Alias
+	}
+
+	token, err := h.nango.CreateConnectSession(r.Context(), tenant.ID, tenant.Name, profile.NangoProviderConfigKey, alias)
 	if err != nil {
 		h.log.Error("create nango connect session", zap.String("provider", req.Provider), zap.Error(err))
 		writeError(w, http.StatusBadGateway, "failed to create connect session")
@@ -94,9 +107,11 @@ func (h *ConnectionsHandler) CreateSession(w http.ResponseWriter, r *http.Reques
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{
-		"session_token": token,
-		"connect_url":   h.nangoConnectURL,
-		"api_url":       h.nangoApiURL,
+		"session_token":         token,
+		"connect_url":           h.nangoConnectURL,
+		"api_url":               h.nangoApiURL,
+		"credential_profile_id": profile.ID,
+		"alias":                 alias,
 	})
 }
 
@@ -120,9 +135,10 @@ func (h *ConnectionsHandler) RecordConnection(w http.ResponseWriter, r *http.Req
 	}
 
 	var req struct {
-		Provider    string `json:"provider"`
-		DisplayName string `json:"display_name"`
-		Alias       string `json:"alias"`
+		Provider            string `json:"provider"`
+		DisplayName         string `json:"display_name"`
+		Alias               string `json:"alias"`
+		CredentialProfileID string `json:"credential_profile_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Provider == "" {
 		writeError(w, http.StatusBadRequest, "provider is required")
@@ -132,7 +148,18 @@ func (h *ConnectionsHandler) RecordConnection(w http.ResponseWriter, r *http.Req
 		req.Alias = "default"
 	}
 
-	conn, err := h.store.UpsertConnection(r.Context(), tenant.ID, req.Provider, req.Alias, req.DisplayName)
+	providerConfigKey := req.Provider
+	var credentialProfileID *string
+	if req.CredentialProfileID != "" {
+		profile, err := h.store.GetIntegrationCredentialProfileByID(r.Context(), tenant.ID, req.CredentialProfileID)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid credential_profile_id")
+			return
+		}
+		providerConfigKey = profile.NangoProviderConfigKey
+		credentialProfileID = &profile.ID
+	}
+	conn, err := h.store.UpsertConnection(r.Context(), tenant.ID, req.Provider, req.Alias, providerConfigKey, credentialProfileID, req.DisplayName)
 	if err != nil {
 		h.log.Error("record connection", zap.String("provider", req.Provider), zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "failed to record connection")
@@ -275,14 +302,24 @@ func (h *ConnectionsHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 	}
 
 	provider := chi.URLParam(r, "provider")
+	alias := strings.TrimSpace(r.URL.Query().Get("alias"))
+	if alias == "" {
+		alias = strings.TrimSpace(r.Header.Get("X-Velane-Integration-Alias"))
+	}
+	if alias == "" {
+		alias = "default"
+	}
 	// chi wildcard gives us the path after {provider}/ — re-add leading slash.
 	path := "/" + chi.URLParam(r, "*")
 
-	conn, err := h.store.GetConnection(r.Context(), tenantID, provider)
+	conn, err := h.store.GetConnectionByAlias(r.Context(), tenantID, provider, alias)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "no connection found for provider: "+provider)
+		writeError(w, http.StatusBadRequest, "no connection found for provider: "+provider+" alias: "+alias)
 		return
 	}
-
-	h.nango.Proxy(w, r, conn.NangoConnectionID, provider, path)
+	providerConfigKey := conn.ProviderConfigKey
+	if providerConfigKey == "" {
+		providerConfigKey = provider
+	}
+	h.nango.Proxy(w, r, conn.NangoConnectionID, providerConfigKey, path)
 }

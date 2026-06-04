@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/abskrj/velane/services/mcp-server/internal/protocol"
 	"github.com/abskrj/velane/services/mcp-server/internal/tools"
+	"github.com/go-chi/chi/v5"
 )
 
 type Server struct {

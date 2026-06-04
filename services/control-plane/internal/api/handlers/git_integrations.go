@@ -6,9 +6,9 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/abskrj/velane/services/control-plane/internal/api/middleware"
 	"github.com/abskrj/velane/services/control-plane/internal/store/postgres"
+	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 )
 
@@ -79,13 +79,13 @@ func (h *GitIntegrationHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	// Return the secret once — it is never returned again.
 	writeJSON(w, http.StatusCreated, map[string]any{
-		"id":         gi.ID,
-		"tenant_id":  gi.TenantID,
-		"snippet_id": gi.SnippetID,
-		"provider":   gi.Provider,
-		"repo_url":   gi.RepoURL,
-		"secret":     secret,
-		"created_at": gi.CreatedAt,
+		"id":          gi.ID,
+		"tenant_id":   gi.TenantID,
+		"snippet_id":  gi.SnippetID,
+		"provider":    gi.Provider,
+		"repo_url":    gi.RepoURL,
+		"secret":      secret,
+		"created_at":  gi.CreatedAt,
 		"webhook_url": "/v1/webhooks/git/" + gi.SnippetID,
 	})
 }

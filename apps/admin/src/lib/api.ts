@@ -16,6 +16,7 @@ import type {
   Connection,
   NangoProvider,
   IntegrationConfig,
+  MCPInfo,
 } from '../types'
 
 const BASE = '/api'
@@ -281,15 +282,24 @@ export const api = {
     return request('GET', '/v1/connect/info', undefined, 'none')
   },
 
+  async getMCPInfo(): Promise<MCPInfo> {
+    return request('GET', '/v1/mcp/info', undefined, 'none')
+  },
+
   async listConfigured(): Promise<IntegrationConfig[]> {
     return request('GET', '/v1/integrations/configured', undefined, 'apikey')
   },
 
   async configureIntegration(data: {
     provider: string
+    alias?: string
+    name?: string
+    credentials_type?: string
+    credentials?: Record<string, string>
     oauth_client_id?: string
     oauth_client_secret?: string
     oauth_scopes?: string
+    is_default?: boolean
   }): Promise<void> {
     return request('POST', '/v1/integrations/configured', data, 'apikey')
   },
@@ -302,12 +312,31 @@ export const api = {
     return request('GET', `/v1/tenants/${getSlug()}/connections`, undefined, 'apikey')
   },
 
-  async createConnectionSession(provider: string, alias = 'default'): Promise<{ session_token: string; connect_url: string; api_url: string }> {
-    return request('POST', `/v1/tenants/${getSlug()}/connections/session`, { provider, alias }, 'apikey')
+  async createConnectionSession(
+    provider: string,
+    alias = 'default',
+    credentialProfileID?: string,
+  ): Promise<{ session_token: string; connect_url: string; api_url: string; credential_profile_id: string; alias: string }> {
+    return request(
+      'POST',
+      `/v1/tenants/${getSlug()}/connections/session`,
+      { provider, alias, credential_profile_id: credentialProfileID },
+      'apikey',
+    )
   },
 
-  async recordConnection(provider: string, displayName = '', alias = 'default'): Promise<Connection> {
-    return request('POST', `/v1/tenants/${getSlug()}/connections`, { provider, display_name: displayName, alias }, 'apikey')
+  async recordConnection(
+    provider: string,
+    displayName = '',
+    alias = 'default',
+    credentialProfileID?: string,
+  ): Promise<Connection> {
+    return request(
+      'POST',
+      `/v1/tenants/${getSlug()}/connections`,
+      { provider, display_name: displayName, alias, credential_profile_id: credentialProfileID },
+      'apikey',
+    )
   },
 
   async disconnectProvider(provider: string): Promise<void> {

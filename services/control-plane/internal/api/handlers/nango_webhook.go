@@ -17,6 +17,7 @@ import (
 // NangoWebhookStore is the store subset needed by NangoWebhookHandler.
 type NangoWebhookStore interface {
 	UpdateNangoConnectionID(ctx context.Context, tenantID, provider, alias, nangoConnID string) (*models.Connection, error)
+	UpdateNangoConnectionIDByProviderConfigKey(ctx context.Context, tenantID, providerConfigKey, nangoConnID string) (*models.Connection, error)
 }
 
 // NangoWebhookHandler handles POST /v1/webhooks/nango.
@@ -79,8 +80,8 @@ func (h *NangoWebhookHandler) HandleNangoEvent(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	tenantID    := payload.EndUser.ID
-	provider    := payload.ProviderConfigKey
+	tenantID := payload.EndUser.ID
+	provider := payload.ProviderConfigKey
 	nangoConnID := payload.ConnectionID
 
 	if tenantID == "" || provider == "" || nangoConnID == "" {
@@ -88,9 +89,7 @@ func (h *NangoWebhookHandler) HandleNangoEvent(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	// alias defaults to "default" — the frontend RecordConnection call may have
-	// stored a user-chosen alias already; use whatever is in the DB row.
-	conn, err := h.store.UpdateNangoConnectionID(r.Context(), tenantID, provider, "default", nangoConnID)
+	conn, err := h.store.UpdateNangoConnectionIDByProviderConfigKey(r.Context(), tenantID, provider, nangoConnID)
 	if err != nil {
 		// The row may not exist yet if the webhook beats the frontend's RecordConnection call
 		// (a rare race). Return 200 so Nango does not retry — the frontend will create the row
@@ -107,7 +106,11 @@ func (h *NangoWebhookHandler) HandleNangoEvent(w http.ResponseWriter, r *http.Re
 	// Write the alias back to Nango as connection metadata so it's visible on the
 	// Nango side. Best-effort — a failure here does not affect our own DB state.
 	if h.nango != nil {
-		if err := h.nango.PatchConnectionMetadata(r.Context(), nangoConnID, provider, map[string]any{
+		providerConfigKey := conn.ProviderConfigKey
+		if providerConfigKey == "" {
+			providerConfigKey = provider
+		}
+		if err := h.nango.PatchConnectionMetadata(r.Context(), nangoConnID, providerConfigKey, map[string]any{
 			"velane_alias":     conn.Alias,
 			"velane_tenant_id": tenantID,
 		}); err != nil {

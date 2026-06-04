@@ -22,7 +22,10 @@ const PROXY_URL = process.env.VELANE_PROXY_URL ?? ''
 const TENANT_ID = process.env.VELANE_TENANT_ID ?? ''
 
 export class IntegrationClient {
-  constructor(private readonly provider: string) {}
+  constructor(
+    private readonly provider: string,
+    private readonly opts?: { alias?: string },
+  ) {}
 
   private async req(method: string, endpoint: string, body?: unknown): Promise<unknown> {
     if (!PROXY_URL) throw new Error('@velane/integrations: VELANE_PROXY_URL is not set')
@@ -34,6 +37,7 @@ export class IntegrationClient {
       headers: {
         'Content-Type':    'application/json',
         'X-Velane-Tenant': TENANT_ID,
+        ...(this.opts?.alias ? { 'X-Velane-Integration-Alias': this.opts.alias } : {}),
       },
       body: body !== undefined ? JSON.stringify(body) : undefined,
     })
@@ -79,8 +83,8 @@ export class IntegrationClient {
  * Returns a client for the given connected integration provider.
  * @param provider - Provider slug (e.g. "github", "salesforce", "slack")
  */
-export function integration(provider: string): IntegrationClient {
-  return new IntegrationClient(provider)
+export function integration(provider: string, opts?: { alias?: string }): IntegrationClient {
+  return new IntegrationClient(provider, opts)
 }
 
 export default integration

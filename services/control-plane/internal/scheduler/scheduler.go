@@ -44,12 +44,12 @@ type InvokeRequest struct {
 
 // Scheduler resolves, executes, and records snippet invocations.
 type Scheduler struct {
-	store         Store
-	executor      executor.Executor
-	queue         Queue  // nil in sync-only mode
-	encKey        []byte // for secret decryption
-	observer      observability.InvocationObserver
-	platLibs      []platformlibs.PlatformLib
+	store            Store
+	executor         executor.Executor
+	queue            Queue  // nil in sync-only mode
+	encKey           []byte // for secret decryption
+	observer         observability.InvocationObserver
+	platLibs         []platformlibs.PlatformLib
 	internalProxyURL string // injected as VELANE_PROXY_URL into every invocation
 }
 

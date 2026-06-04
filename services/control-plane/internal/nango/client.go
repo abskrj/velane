@@ -19,27 +19,23 @@ type Client struct {
 	secretKey  string
 	httpClient *http.Client
 
-	providersMu    sync.RWMutex
-	providersCache []models.NangoProvider
+	providersMu       sync.RWMutex
+	providersCache    []models.NangoProvider
 	providersCachedAt time.Time
 }
 
 // New returns a Nango client pointing at baseURL (e.g. "http://nango:3003").
 func New(baseURL, secretKey string) *Client {
 	return &Client{
-		baseURL:   baseURL,
-		secretKey: secretKey,
+		baseURL:    baseURL,
+		secretKey:  secretKey,
 		httpClient: &http.Client{Timeout: 30 * time.Second},
 	}
 }
 
 // CreateConnectSession asks Nango for a short-lived Connect session token.
-// oauthClientID and oauthClientSecret are the tenant's own OAuth app credentials
-// and are required — this platform never stores shared OAuth app credentials.
-// Each tenant must register their own OAuth app with the provider and supply those
-// credentials here; they are passed to Nango as per-session overrides.
-// alias is not passed to Nango; it is stored locally when the frontend calls RecordConnection.
-func (c *Client) CreateConnectSession(ctx context.Context, tenantID, tenantName, provider, alias, oauthClientID, oauthClientSecret string) (string, error) {
+// providerConfigKey identifies a tenant-specific integration config in Nango.
+func (c *Client) CreateConnectSession(ctx context.Context, tenantID, tenantName, providerConfigKey, alias string) (string, error) {
 	if alias == "" {
 		alias = "default"
 	}
@@ -49,17 +45,9 @@ func (c *Client) CreateConnectSession(ctx context.Context, tenantID, tenantName,
 			"end_user_id":     tenantID,
 			"organization_id": tenantID,
 			"display_name":    tenantName,
+			"velane_alias":    alias,
 		},
-		"allowed_integrations": []string{provider},
-		// Always inject the tenant's own OAuth credentials — no shared platform app.
-		"integrations_config_defaults": map[string]any{
-			provider: map[string]any{
-				"connection_config": map[string]any{
-					"oauth_client_id_override":     oauthClientID,
-					"oauth_client_secret_override": oauthClientSecret,
-				},
-			},
-		},
+		"allowed_integrations": []string{providerConfigKey},
 	}
 
 	b, _ := json.Marshal(body)
@@ -205,7 +193,7 @@ func (c *Client) GetProvider(ctx context.Context, providerKey string) (*models.N
 // Proxy forwards an HTTP request to Nango's proxy endpoint, which injects
 // the OAuth token and proxies to the external provider API.
 // path is the provider-relative path, e.g. "/user/repos".
-func (c *Client) Proxy(w http.ResponseWriter, r *http.Request, connectionID, provider, path string) {
+func (c *Client) Proxy(w http.ResponseWriter, r *http.Request, connectionID, providerConfigKey, path string) {
 	// Build the Nango proxy URL: strip leading slash from path then concatenate.
 	nangoURL := c.baseURL + "/proxy" + path
 	if r.URL.RawQuery != "" {
@@ -225,7 +213,7 @@ func (c *Client) Proxy(w http.ResponseWriter, r *http.Request, connectionID, pro
 
 	c.setAuth(proxyReq)
 	proxyReq.Header.Set("Connection-Id", connectionID)
-	proxyReq.Header.Set("Provider-Config-Key", provider)
+	proxyReq.Header.Set("Provider-Config-Key", providerConfigKey)
 
 	resp, err := c.httpClient.Do(proxyReq)
 	if err != nil {
@@ -246,23 +234,13 @@ func (c *Client) Proxy(w http.ResponseWriter, r *http.Request, connectionID, pro
 
 // CreateIntegrationConfig creates or updates a provider config in Nango.
 // Nango API: POST /integrations with unique_key, provider, credentials.
-// For OAUTH2 providers: clientID and clientSecret are required.
-// For API_KEY/BASIC/other providers: pass empty strings — no credentials at config time.
-func (c *Client) CreateIntegrationConfig(ctx context.Context, providerConfigKey, provider, clientID, clientSecret, scopes string) error {
+func (c *Client) CreateIntegrationConfig(ctx context.Context, providerConfigKey, provider string, credentials map[string]any) error {
 	body := map[string]any{
 		"unique_key": providerConfigKey,
 		"provider":   provider,
 	}
-	if clientID != "" || clientSecret != "" {
-		creds := map[string]any{
-			"type":          "OAUTH2",
-			"client_id":     clientID,
-			"client_secret": clientSecret,
-		}
-		if scopes != "" {
-			creds["scopes"] = scopes
-		}
-		body["credentials"] = creds
+	if len(credentials) > 0 {
+		body["credentials"] = credentials
 	}
 
 	b, _ := json.Marshal(body)

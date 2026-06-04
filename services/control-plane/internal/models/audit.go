@@ -10,7 +10,7 @@ type AuditEntry struct {
 	ID         string          `json:"id"`
 	TenantID   string          `json:"tenant_id"`
 	ActorID    string          `json:"actor_id"`
-	ActorType  string          `json:"actor_type"`  // "user" | "api_key"
+	ActorType  string          `json:"actor_type"` // "user" | "api_key"
 	Action     string          `json:"action"`
 	ResourceID string          `json:"resource_id,omitempty"`
 	Metadata   json.RawMessage `json:"metadata,omitempty"`

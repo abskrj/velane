@@ -14,8 +14,8 @@ import (
 
 // mockAuthStore satisfies middleware.AuthStore without a real database.
 type mockAuthStore struct {
-	validateAPIKey    func(ctx context.Context, plain string) (*models.APIKey, error)
-	getTenantByID     func(ctx context.Context, id string) (*models.Tenant, error)
+	validateAPIKey     func(ctx context.Context, plain string) (*models.APIKey, error)
+	getTenantByID      func(ctx context.Context, id string) (*models.Tenant, error)
 	validateEmbedToken func(ctx context.Context, plain string) (*models.EmbedToken, error)
 }
 

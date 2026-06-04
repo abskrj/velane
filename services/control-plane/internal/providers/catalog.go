@@ -4,10 +4,10 @@ package providers
 // listing page — name, slug, auth mode, and category tags.
 // Rich per-provider docs (endpoints, examples) live in providers_meta.json.
 type CatalogEntry struct {
-	UniqueKey   string   `json:"unique_key"`
-	Name        string   `json:"name"`
-	AuthMode    string   `json:"auth_mode"`
-	Categories  []string `json:"categories"`
+	UniqueKey  string   `json:"unique_key"`
+	Name       string   `json:"name"`
+	AuthMode   string   `json:"auth_mode"`
+	Categories []string `json:"categories"`
 }
 
 // Catalog is the full list of available providers returned by GET /v1/integrations.

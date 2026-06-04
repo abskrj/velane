@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Plug, Search, CheckCircle2, Loader2, X, Settings, ChevronDown, ChevronUp } from 'lucide-react'
+import { Plug, Search, CheckCircle2, Loader2, X, Settings, ChevronDown, ChevronUp, Pencil } from 'lucide-react'
 import Nango from '@nangohq/frontend'
 import { api } from '../lib/api'
 import type { Connection, NangoProvider, IntegrationConfig } from '../types'
@@ -9,6 +9,86 @@ const OAUTH_MODES = new Set(['OAUTH2', 'OAUTH2_CC', 'OAUTH1', 'APP', 'MCP_OAUTH2
 
 function isOAuthMode(authMode: string) {
   return OAUTH_MODES.has(authMode)
+}
+
+type ManualField = {
+  key: string
+  field: {
+    title: string
+    description?: string
+    example?: string
+    optional?: boolean
+    prefix?: string
+    secret?: boolean
+  }
+}
+
+const FALLBACK_FIELDS_BY_MODE: Record<string, ManualField[]> = {
+  OAUTH2: [
+    {
+      key: 'client_id',
+      field: {
+        title: 'Client ID',
+        description: 'OAuth app client ID',
+      },
+    },
+    {
+      key: 'client_secret',
+      field: {
+        title: 'Client Secret',
+        description: 'OAuth app client secret',
+        secret: true,
+      },
+    },
+    {
+      key: 'scopes',
+      field: {
+        title: 'Scopes',
+        description: 'Optional — leave blank to use provider defaults',
+        optional: true,
+      },
+    },
+  ],
+  OAUTH2_CC: [
+    {
+      key: 'client_id',
+      field: {
+        title: 'Client ID',
+        description: 'Client credentials app client ID',
+      },
+    },
+    {
+      key: 'client_secret',
+      field: {
+        title: 'Client Secret',
+        description: 'Client credentials app client secret',
+        secret: true,
+      },
+    },
+    {
+      key: 'scopes',
+      field: {
+        title: 'Scopes',
+        description: 'Optional — leave blank to use provider defaults',
+        optional: true,
+      },
+    },
+  ],
+  BASIC: [
+    {
+      key: 'username',
+      field: {
+        title: 'Username',
+      },
+    },
+    {
+      key: 'password',
+      field: {
+        title: 'Password',
+        secret: true,
+      },
+    },
+  ],
 }
 
 // ---- Configure Modal -------------------------------------------------------
@@ -22,27 +102,71 @@ interface ConfigureModalProps {
 }
 
 function ConfigureModal({ provider, existing, callbackUrl, onClose, onSaved }: ConfigureModalProps) {
-  const [clientId, setClientId]     = useState('')
-  const [clientSecret, setClientSecret] = useState('')
-  const [scopes, setScopes]         = useState(existing?.oauth_scopes ?? '')
+  const [alias, setAlias] = useState(existing?.alias ?? 'default')
+  const [profileName, setProfileName] = useState(existing?.name ?? '')
+  const [isEditingName, setIsEditingName] = useState(false)
   const [extraFields, setExtraFields] = useState<Record<string, string>>({})
   const [saving, setSaving]         = useState(false)
   const [error, setError]           = useState<string | null>(null)
 
-  // Non-automated connection_config fields the operator must fill in.
+  // Non-automated credentials fields the operator can provide for this profile.
+  const mode = provider.auth_mode.toUpperCase().trim()
+  const providerCredentialFields = provider.credentials
+    ? Object.entries(provider.credentials)
+    : []
+  const providerConnectionConfigFields = provider.connection_config
+    ? Object.entries(provider.connection_config)
+    : []
+  const shouldUseFallbackFields =
+    providerCredentialFields.length === 0 &&
+    providerConnectionConfigFields.length === 0 &&
+    Boolean(FALLBACK_FIELDS_BY_MODE[mode])
+  const effectiveCredentialFields = shouldUseFallbackFields
+    ? FALLBACK_FIELDS_BY_MODE[mode]
+    : providerCredentialFields.map(([key, field]) => ({ key, field }))
+
   const configFields = useMemo(() => {
-    if (!provider.connection_config) return []
-    return Object.entries(provider.connection_config)
-      .filter(([, f]) => !f.automated && !f.optional)
-      .map(([key, field]) => ({ key, field }))
-  }, [provider])
+    return effectiveCredentialFields
+      .filter((entry) => !entry.field.optional)
+      .map((entry) => ({ key: entry.key, field: entry.field }))
+  }, [effectiveCredentialFields])
 
   const optionalConfigFields = useMemo(() => {
-    if (!provider.connection_config) return []
-    return Object.entries(provider.connection_config)
-      .filter(([, f]) => !f.automated && f.optional)
-      .map(([key, field]) => ({ key, field }))
-  }, [provider])
+    return effectiveCredentialFields
+      .filter((entry) => Boolean(entry.field.optional))
+      .map((entry) => ({ key: entry.key, field: entry.field }))
+  }, [effectiveCredentialFields])
+
+  const credentialsType = useMemo(() => {
+    const mode = provider.auth_mode.toUpperCase().trim()
+    if (!mode) return 'OAUTH2'
+    return mode
+  }, [provider.auth_mode])
+
+  const defaultScopeValue = useMemo(() => {
+    if (existing?.oauth_scopes?.trim()) return existing.oauth_scopes.trim()
+    const scopes = provider.default_scopes ?? []
+    if (scopes.length === 0) return ''
+    return scopes.join(' ')
+  }, [existing?.oauth_scopes, provider.default_scopes])
+
+  useEffect(() => {
+    if (!defaultScopeValue) return
+    const hasScopeField = effectiveCredentialFields.some((entry) => entry.key === 'scopes' || entry.key === 'oauth_scopes')
+    if (!hasScopeField) return
+    setExtraFields((prev) => {
+      if ((prev.scopes ?? '').trim() || (prev.oauth_scopes ?? '').trim()) {
+        return prev
+      }
+      if (prev.scopes !== undefined) {
+        return { ...prev, scopes: defaultScopeValue }
+      }
+      if (prev.oauth_scopes !== undefined) {
+        return { ...prev, oauth_scopes: defaultScopeValue }
+      }
+      return { ...prev, scopes: defaultScopeValue }
+    })
+  }, [defaultScopeValue, effectiveCredentialFields])
 
   async function handleSave() {
     setSaving(true)
@@ -50,9 +174,13 @@ function ConfigureModal({ provider, existing, callbackUrl, onClose, onSaved }: C
     try {
       await api.configureIntegration({
         provider: provider.unique_key,
-        oauth_client_id: clientId || undefined,
-        oauth_client_secret: clientSecret || undefined,
-        oauth_scopes: scopes || undefined,
+        alias: alias || 'default',
+        name: profileName || alias || 'default',
+        credentials_type: credentialsType,
+        credentials: Object.fromEntries(
+          Object.entries(extraFields).filter(([, value]) => value.trim() !== ''),
+        ),
+        is_default: existing?.is_default ?? false,
       })
       onSaved()
     } catch (e: any) {
@@ -65,8 +193,8 @@ function ConfigureModal({ provider, existing, callbackUrl, onClose, onSaved }: C
   return (
     <>
       <div className="fixed inset-0 z-40 bg-black/30" onClick={onClose} />
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-        <div className="w-full max-w-lg rounded-xl bg-white shadow-xl">
+      <div className="fixed inset-0 z-50 flex items-start justify-center p-4 sm:items-center sm:p-6">
+        <div className="flex w-full max-w-lg max-h-[88vh] flex-col overflow-hidden rounded-xl bg-white shadow-xl">
           {/* Header */}
           <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
             <div>
@@ -79,16 +207,53 @@ function ConfigureModal({ provider, existing, callbackUrl, onClose, onSaved }: C
                   : 'Register this integration so users can connect'}
               </p>
             </div>
-            <button onClick={onClose} className="rounded-md p-1 text-gray-400 hover:bg-gray-100">
-              <X size={16} />
-            </button>
+            <div className="flex items-center gap-2">
+              {isEditingName ? (
+                <input
+                  type="text"
+                  value={profileName}
+                  onChange={e => setProfileName(e.target.value)}
+                  onBlur={() => setIsEditingName(false)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' || e.key === 'Escape') {
+                      setIsEditingName(false)
+                    }
+                  }}
+                  placeholder={alias || 'default'}
+                  autoFocus
+                  className="w-44 rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 focus:border-gray-400 focus:outline-none"
+                />
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setIsEditingName(true)}
+                  className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-gray-600 hover:bg-gray-100"
+                  title="Edit profile name"
+                >
+                  <span className="max-w-40 truncate">{profileName || alias || 'default'}</span>
+                  <Pencil size={12} />
+                </button>
+              )}
+              <button onClick={onClose} className="rounded-md p-1 text-gray-400 hover:bg-gray-100">
+                <X size={16} />
+              </button>
+            </div>
           </div>
 
           {/* Form */}
-          <div className="px-6 py-5 space-y-4">
+          <div className="flex-1 space-y-4 overflow-y-auto overflow-x-hidden px-6 py-5">
             {error && (
               <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">{error}</p>
             )}
+
+            <Field
+              label="Credential alias"
+              required
+              value={alias}
+              onChange={setAlias}
+              placeholder="default / sandbox / prod"
+              description="Alias used when connecting and in integration('provider', { alias })"
+            />
 
             {isOAuthMode(provider.auth_mode) && callbackUrl && (
               <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 space-y-1">
@@ -113,33 +278,6 @@ function ConfigureModal({ provider, existing, callbackUrl, onClose, onSaved }: C
               </div>
             )}
 
-            {isOAuthMode(provider.auth_mode) && (
-              <>
-                <Field
-                  label="Client ID"
-                  required
-                  value={clientId}
-                  onChange={setClientId}
-                  placeholder="Paste your OAuth app client ID"
-                />
-                <Field
-                  label="Client Secret"
-                  required
-                  secret
-                  value={clientSecret}
-                  onChange={setClientSecret}
-                  placeholder="Paste your OAuth app client secret"
-                />
-                <Field
-                  label="Scopes"
-                  value={scopes}
-                  onChange={setScopes}
-                  placeholder="e.g. repo user (space or comma separated)"
-                  description="Optional — leave blank to use provider defaults"
-                />
-              </>
-            )}
-
             {configFields.map(({ key, field }) => (
               <Field
                 key={key}
@@ -150,6 +288,7 @@ function ConfigureModal({ provider, existing, callbackUrl, onClose, onSaved }: C
                 placeholder={field.example ? `e.g. ${field.example}` : undefined}
                 description={field.description}
                 prefix={field.prefix}
+                secret={Boolean((field as any).secret)}
               />
             ))}
 
@@ -162,6 +301,7 @@ function ConfigureModal({ provider, existing, callbackUrl, onClose, onSaved }: C
                 placeholder={field.example ? `e.g. ${field.example}` : undefined}
                 description={field.description}
                 prefix={field.prefix}
+                secret={Boolean((field as any).secret)}
               />
             ))}
 
@@ -374,7 +514,7 @@ export default function IntegrationsPage() {
   const [configModal,  setConfigModal]  = useState<NangoProvider | null>(null)
   const [callbackUrl,  setCallbackUrl]  = useState('')
 
-  const configuredSet = useMemo(() => new Set(configs.map(c => c.unique_key)), [configs])
+  const configuredSet = useMemo(() => new Set(configs.map(c => c.provider)), [configs])
   const connectedSet  = useMemo(() => new Set(connections.map(c => c.provider)), [connections])
 
   async function reload() {
@@ -423,31 +563,39 @@ export default function IntegrationsPage() {
       }
 
       if (action === 'connect') {
-        // For non-OAuth providers, auto-create config entry if missing.
-        if (!isOAuthMode(provider.auth_mode) && !configuredSet.has(provider.unique_key)) {
-          await api.configureIntegration({ provider: provider.unique_key })
-          await reload()
+        const providerConfigs = configs
+          .filter(c => c.provider === provider.unique_key)
+          .sort((a, b) => Number(b.is_default) - Number(a.is_default))
+        if (providerConfigs.length === 0) {
+          setConfigModal(provider)
+          return
         }
-        const { session_token, connect_url, api_url } = await api.createConnectionSession(provider.unique_key)
-        const nango = new Nango({ connectSessionToken: session_token })
-        await new Promise<void>((resolve, reject) => {
-          const ui = nango.openConnectUI({
-            sessionToken: session_token,
-            baseURL: connect_url,
-            apiURL: api_url,
-            onEvent: (event) => {
-              if (event.type === 'connect') {
-                api.recordConnection(provider.unique_key)
-                  .then(() => reload())
-                  .then(resolve)
-                  .catch(reject)
-              } else if (event.type === 'close') {
-                resolve()
-              }
-            },
-          })
-          ui.open()
+        const connectedAliases = new Set(
+          connections.filter(c => c.provider === provider.unique_key).map(c => c.alias),
+        )
+        const selectedConfig =
+          providerConfigs.find(c => !connectedAliases.has(c.alias)) ??
+          providerConfigs.find(c => c.is_default) ??
+          providerConfigs[0]
+
+        const { session_token, api_url, credential_profile_id, alias } =
+          await api.createConnectionSession(provider.unique_key, selectedConfig.alias, selectedConfig.id)
+        const nango = new Nango({
+          connectSessionToken: session_token,
+          host: api_url,
         })
+        try {
+          await nango.auth(selectedConfig.nango_provider_config_key, {
+            detectClosedAuthWindow: true,
+          })
+        } catch (err: any) {
+          if (err?.type === 'window_closed' || err?.message?.toLowerCase().includes('window')) {
+            throw new Error('cancelled')
+          }
+          throw err
+        }
+        await api.recordConnection(provider.unique_key, '', alias, credential_profile_id)
+        await reload()
         return
       }
 
@@ -458,7 +606,13 @@ export default function IntegrationsPage() {
       }
 
       if (action === 'remove-config') {
-        await api.deleteIntegrationConfig(provider.unique_key)
+        const defaultProfile = configs.find(
+          c => c.provider === provider.unique_key && c.is_default,
+        ) ?? configs.find(c => c.provider === provider.unique_key)
+        if (!defaultProfile) {
+          return
+        }
+        await api.deleteIntegrationConfig(defaultProfile.id)
         await reload()
       }
     } catch (e: any) {
@@ -574,7 +728,7 @@ export default function IntegrationsPage() {
       {configModal && (
         <ConfigureModal
           provider={configModal}
-          existing={configs.find(c => c.unique_key === configModal.unique_key)}
+          existing={configs.find(c => c.provider === configModal.unique_key && c.is_default) ?? configs.find(c => c.provider === configModal.unique_key)}
           callbackUrl={callbackUrl}
           onClose={() => setConfigModal(null)}
           onSaved={async () => {

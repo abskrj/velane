@@ -103,6 +103,8 @@ export interface Connection {
   tenant_id: string
   provider: string
   alias: string
+  provider_config_key: string
+  credential_profile_id?: string
   nango_connection_id: string
   display_name: string
   created_at: string
@@ -124,6 +126,7 @@ export interface NangoProvider {
   name: string
   auth_mode: string
   categories?: string[]
+  default_scopes?: string[]
   docs?: string
   logo_url?: string
   connection_config?: Record<string, ConnectionField>
@@ -131,10 +134,21 @@ export interface NangoProvider {
 }
 
 export interface IntegrationConfig {
-  unique_key: string
+  id: string
+  tenant_id: string
+  alias: string
+  name: string
+  nango_provider_config_key: string
+  credentials_type: string
+  is_default: boolean
   provider: string
   oauth_scopes?: string
-  created_at?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface MCPInfo {
+  mcp_url: string
 }
 
 export interface Secret {

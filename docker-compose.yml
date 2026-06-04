@@ -114,6 +114,7 @@ services:
       # Set to the signing secret from the Nango dashboard webhook configuration.
       # Configure the webhook URL as: http://control-plane:8080/v1/webhooks/nango
       NANGO_WEBHOOK_SECRET: ${NANGO_WEBHOOK_SECRET:-}
+      MCP_PUBLIC_URL: ${MCP_PUBLIC_URL:-http://localhost:8090/mcp}
       INTERNAL_PROXY_URL: http://control-plane:8080
       CLICKHOUSE_DSN: http://clickhouse:8123
       LOGS_BUCKET: velane-logs

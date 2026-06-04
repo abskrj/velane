@@ -28,8 +28,9 @@ _TENANT_ID = os.environ.get("VELANE_TENANT_ID", "")
 
 
 class IntegrationClient:
-    def __init__(self, provider: str) -> None:
+    def __init__(self, provider: str, alias: str | None = None) -> None:
         self._provider = provider
+        self._alias = alias
 
     def _req(self, method: str, endpoint: str, body=None):
         if not _PROXY_URL:
@@ -46,6 +47,7 @@ class IntegrationClient:
             headers={
                 "Content-Type": "application/json",
                 "X-Velane-Tenant": _TENANT_ID,
+                **({"X-Velane-Integration-Alias": self._alias} if self._alias else {}),
             },
         )
         try:
@@ -84,10 +86,13 @@ class IntegrationClient:
         return self._req("DELETE", endpoint)
 
 
-def integration(provider: str) -> IntegrationClient:
+def integration(provider: str, opts: dict | None = None) -> IntegrationClient:
     """Returns a client for the given connected integration provider.
 
     Args:
         provider: Provider slug, e.g. "github", "salesforce", "slack"
     """
-    return IntegrationClient(provider)
+    alias = None
+    if isinstance(opts, dict):
+        alias = opts.get("alias")
+    return IntegrationClient(provider, alias=alias)

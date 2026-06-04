@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/abskrj/velane/services/control-plane/internal/auth"
 	"github.com/abskrj/velane/services/control-plane/internal/models"
+	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
 )
 

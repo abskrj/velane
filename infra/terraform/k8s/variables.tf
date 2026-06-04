@@ -250,6 +250,12 @@ variable "mcp_subdomain" {
   default     = "mcp"
 }
 
+variable "mcp_public_url" {
+  description = "Public MCP URL exposed to users (e.g. https://mcp.yourdomain.com/mcp). If empty, it is derived from ingress host when ingress is enabled."
+  type        = string
+  default     = ""
+}
+
 variable "nango_connect_subdomain" {
   description = "Subdomain prefix for the Nango Connect UI."
   type        = string

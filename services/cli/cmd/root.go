@@ -7,7 +7,7 @@ import (
 )
 
 var (
-	apiURL    string
+	apiURL     string
 	tenantSlug string
 )
 

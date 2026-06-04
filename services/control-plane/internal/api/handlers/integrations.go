@@ -7,10 +7,10 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/abskrj/velane/services/control-plane/internal/models"
 	"github.com/abskrj/velane/services/control-plane/internal/nango"
 	"github.com/abskrj/velane/services/control-plane/internal/providers"
+	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 )
 
@@ -20,10 +20,17 @@ type IntegrationsHandler struct {
 	log              *zap.Logger
 	nangoInternalURL string // used to proxy Nango assets through control plane
 	nangoApiURL      string // browser-accessible Nango API URL, used to derive OAuth callback URL
+	mcpPublicURL     string // public MCP endpoint URL shown in admin UI
 }
 
-func NewIntegrationsHandler(nangoClient *nango.Client, log *zap.Logger, nangoInternalURL, nangoApiURL string) *IntegrationsHandler {
-	return &IntegrationsHandler{nango: nangoClient, log: log, nangoInternalURL: nangoInternalURL, nangoApiURL: nangoApiURL}
+func NewIntegrationsHandler(nangoClient *nango.Client, log *zap.Logger, nangoInternalURL, nangoApiURL, mcpPublicURL string) *IntegrationsHandler {
+	return &IntegrationsHandler{
+		nango:            nangoClient,
+		log:              log,
+		nangoInternalURL: nangoInternalURL,
+		nangoApiURL:      nangoApiURL,
+		mcpPublicURL:     strings.TrimSpace(mcpPublicURL),
+	}
 }
 
 // ConnectInfo handles GET /v1/connect/info.
@@ -33,6 +40,19 @@ func NewIntegrationsHandler(nangoClient *nango.Client, log *zap.Logger, nangoInt
 func (h *IntegrationsHandler) ConnectInfo(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{
 		"oauth_callback_url": h.nangoApiURL + "/oauth/callback",
+	})
+}
+
+// MCPInfo handles GET /v1/mcp/info.
+// Returns the public MCP endpoint URL for IDE configuration.
+// No authentication required.
+func (h *IntegrationsHandler) MCPInfo(w http.ResponseWriter, r *http.Request) {
+	if h.mcpPublicURL == "" {
+		writeError(w, http.StatusServiceUnavailable, "MCP URL not configured")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{
+		"mcp_url": h.mcpPublicURL,
 	})
 }
 
@@ -124,6 +144,7 @@ func (h *IntegrationsHandler) ListProviders(w http.ResponseWriter, r *http.Reque
 		Name             string                            `json:"name"`
 		AuthMode         string                            `json:"auth_mode"`
 		Categories       []string                          `json:"categories"`
+		DefaultScopes    []string                          `json:"default_scopes,omitempty"`
 		LogoURL          string                            `json:"logo_url,omitempty"`
 		ConnectionConfig map[string]models.ConnectionField `json:"connection_config,omitempty"`
 		Credentials      map[string]models.ConnectionField `json:"credentials,omitempty"`
@@ -135,6 +156,7 @@ func (h *IntegrationsHandler) ListProviders(w http.ResponseWriter, r *http.Reque
 			Name:             p.Name,
 			AuthMode:         p.AuthMode,
 			Categories:       p.Categories,
+			DefaultScopes:    p.DefaultScopes,
 			LogoURL:          h.rewriteLogoURL(p.LogoURL),
 			ConnectionConfig: p.ConnectionConfig,
 			Credentials:      p.Credentials,

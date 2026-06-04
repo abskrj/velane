@@ -26,6 +26,7 @@ locals {
 
   effective_nango_connect_url = var.nango_connect_url != "" ? var.nango_connect_url : "${local.public_scheme}://${var.nango_connect_subdomain}.${var.base_domain}"
   effective_nango_api_url     = var.nango_api_url != "" ? var.nango_api_url : "${local.public_scheme}://${var.nango_api_subdomain}.${var.base_domain}"
+  effective_mcp_public_url    = var.mcp_public_url != "" ? var.mcp_public_url : (var.enable_ingress ? "${local.public_scheme}://${var.mcp_subdomain}.${var.base_domain}/mcp" : "")
 
   # Derive a separate Nango database URL from the main Postgres DSN when the user
   # doesn't provide one. Terraform's replace() is plain string replacement, so we
@@ -396,6 +397,10 @@ resource "kubernetes_deployment_v1" "control_plane" {
           env {
             name  = "NANGO_API_URL"
             value = local.effective_nango_api_url
+          }
+          env {
+            name  = "MCP_PUBLIC_URL"
+            value = local.effective_mcp_public_url
           }
         }
       }

@@ -14,6 +14,7 @@ import EmbedPage from './pages/EmbedPage'
 import EmbedEntryPage from './pages/EmbedEntryPage'
 import VariablesPage from './pages/VariablesPage'
 import IntegrationsPage from './pages/IntegrationsPage'
+import MCPPage from './pages/MCPPage'
 import ProtectedRoute from './components/ProtectedRoute'
 
 function RootRedirect() {
@@ -49,6 +50,7 @@ export default function App() {
           <Route path="snippets" element={<SnippetsPage />} />
           <Route path="snippets/:id" element={<SnippetEditorPage />} />
           <Route path="integrations" element={<IntegrationsPage />} />
+          <Route path="mcp" element={<MCPPage />} />
           <Route path="variables" element={<VariablesPage />} />
           <Route path="embed" element={<EmbedPage />} />
         </Route>

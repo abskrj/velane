@@ -40,10 +40,79 @@ func setupWithNango(t *testing.T) *testEnv {
 	t.Cleanup(func() { store.Close() })
 
 	// Mock Nango server handling the subset of endpoints we need.
+	configuredIntegrations := map[string]string{} // key: unique_key, val: provider
+	providerAuthModes := map[string]string{
+		"github": "OAUTH2",
+		"slack":  "OAUTH2",
+		"figma":  "OAUTH2",
+		"8x8":    "OAUTH2_CC",
+	}
 	mockNango := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
+		// POST /integrations — create/update provider config.
+		case r.Method == http.MethodPost && r.URL.Path == "/integrations":
+			var req struct {
+				UniqueKey   string         `json:"unique_key"`
+				Provider    string         `json:"provider"`
+				Credentials map[string]any `json:"credentials"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&req)
+			if expectedType, ok := providerAuthModes[req.Provider]; ok {
+				if expectedType == "OAUTH2_CC" {
+					if len(req.Credentials) > 0 {
+						w.WriteHeader(http.StatusBadRequest)
+						_, _ = w.Write([]byte(`{"error":{"code":"invalid_body","errors":[{"code":"invalid_union","message":"invalid credentials object","path":["credentials","type"]}]}}`))
+						return
+					}
+				} else {
+					gotType, _ := req.Credentials["type"].(string)
+					if gotType != expectedType {
+						w.WriteHeader(http.StatusBadRequest)
+						_, _ = w.Write([]byte(`{"error":{"code":"invalid_body","message":"incompatible credentials auth type and provider auth"}}`))
+						return
+					}
+				}
+			}
+			if req.UniqueKey != "" && req.Provider != "" {
+				configuredIntegrations[req.UniqueKey] = req.Provider
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{}`))
+
+		// GET /integrations — list configured provider configs.
+		case r.Method == http.MethodGet && r.URL.Path == "/integrations":
+			type cfg struct {
+				UniqueKey string `json:"unique_key"`
+				Provider  string `json:"provider"`
+			}
+			out := make([]cfg, 0, len(configuredIntegrations))
+			for k, p := range configuredIntegrations {
+				out = append(out, cfg{UniqueKey: k, Provider: p})
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": out})
+
+		// DELETE /integrations/{unique_key}
+		case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/integrations/"):
+			key := strings.TrimPrefix(r.URL.Path, "/integrations/")
+			delete(configuredIntegrations, key)
+			w.WriteHeader(http.StatusNoContent)
+
 		// POST /connect/sessions — returns a session token.
 		case r.Method == http.MethodPost && r.URL.Path == "/connect/sessions":
+			var req struct {
+				AllowedIntegrations []string `json:"allowed_integrations"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&req)
+			if len(req.AllowedIntegrations) > 0 {
+				if _, ok := configuredIntegrations[req.AllowedIntegrations[0]]; !ok {
+				w.WriteHeader(http.StatusBadRequest)
+				_, _ = w.Write([]byte(`{"error":"provider config not found"}`))
+				return
+			}
+			}
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"data":{"token":"mock-session-token"}}`))
@@ -56,17 +125,22 @@ func setupWithNango(t *testing.T) *testEnv {
 		case r.Method == http.MethodGet && r.URL.Path == "/providers":
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`[` +
+			_, _ = w.Write([]byte(`{"data":[` +
 				`{"unique_key":"github","name":"GitHub","auth_mode":"OAUTH2","categories":["developer-tools"]},` +
 				`{"unique_key":"slack","name":"Slack","auth_mode":"OAUTH2","categories":["communication"]},` +
-				`{"unique_key":"figma","name":"Figma","auth_mode":"OAUTH2","categories":["design"]}` +
-				`]`))
+				`{"unique_key":"figma","name":"Figma","auth_mode":"OAUTH2","categories":["design"]},` +
+				`{"unique_key":"8x8","name":"8x8","auth_mode":"OAUTH2_CC","categories":["communication"]}` +
+				`]}`))
 
 		// GET /proxy/* — forward as a JSON response from the mock provider.
 		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/proxy/"):
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"login":"mockuser"}`))
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"login":               "mockuser",
+				"provider_config_key": r.Header.Get("Provider-Config-Key"),
+				"connection_id":       r.Header.Get("Connection-Id"),
+			})
 
 		default:
 			w.WriteHeader(http.StatusNotFound)
@@ -87,7 +161,7 @@ func setupWithNango(t *testing.T) *testEnv {
 	exec := remote.New(mockExec.URL, mockExec.URL)
 	sched := scheduler.New(store, exec, testEncKey, nil)
 	log := zap.NewNop()
-	router := api.NewRouter(store, sched, log, testEncKey, auth.NewPasswordProvider(store), nangoClient, "", "", "", "", nil)
+	router := api.NewRouter(store, sched, log, testEncKey, auth.NewPasswordProvider(store), nangoClient, "", "", "", "", "", nil)
 
 	slug := fmt.Sprintf("test-nango-%d", time.Now().UnixNano())
 	tenant, err := store.CreateTenant(context.Background(), "Nango Tenant", slug)
@@ -114,6 +188,23 @@ func setupWithNango(t *testing.T) *testEnv {
 		manageKey: manageKey,
 		invokeKey: invokeKey,
 	}
+}
+
+func configureProfile(t *testing.T, env *testEnv, provider, alias string, isDefault bool) map[string]any {
+	t.Helper()
+	rec := env.do(t, http.MethodPost, "/v1/integrations/configured", env.manageKey, map[string]any{
+		"provider":            provider,
+		"alias":               alias,
+		"name":                alias + "-profile",
+		"credentials_type":    "OAUTH2",
+		"oauth_client_id":     "client-id-" + alias,
+		"oauth_client_secret": "client-secret-" + alias,
+		"is_default":          isDefault,
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("configure profile %s: status=%d body=%s", alias, rec.Code, rec.Body.String())
+	}
+	return decodeJSON(t, rec)
 }
 
 // --- Connections CRUD ---
@@ -235,6 +326,8 @@ func TestConnections_TenantIsolation(t *testing.T) {
 
 func TestConnections_CreateSession(t *testing.T) {
 	env := setupWithNango(t)
+	profile := configureProfile(t, env, "github", "default", true)
+
 	path := fmt.Sprintf("/v1/tenants/%s/connections/session", env.tenant.Slug)
 	rec := env.do(t, http.MethodPost, path, env.manageKey, map[string]any{
 		"provider": "github",
@@ -245,6 +338,20 @@ func TestConnections_CreateSession(t *testing.T) {
 	body := decodeJSON(t, rec)
 	if body["session_token"] != "mock-session-token" {
 		t.Errorf("session_token = %q; want %q", body["session_token"], "mock-session-token")
+	}
+	if body["credential_profile_id"] != profile["id"] {
+		t.Errorf("credential_profile_id = %q; want %q", body["credential_profile_id"], profile["id"])
+	}
+}
+
+func TestConnections_CreateSessionRequiresConfiguredProfile(t *testing.T) {
+	env := setupWithNango(t)
+	path := fmt.Sprintf("/v1/tenants/%s/connections/session", env.tenant.Slug)
+	rec := env.do(t, http.MethodPost, path, env.manageKey, map[string]any{
+		"provider": "github",
+	})
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d; want 400\nbody: %s", rec.Code, rec.Body.String())
 	}
 }
 
@@ -375,10 +482,12 @@ func TestProxy_NoConnection(t *testing.T) {
 func TestProxy_ForwardsToNango(t *testing.T) {
 	env := setupWithNango(t)
 	basePath := fmt.Sprintf("/v1/tenants/%s/connections", env.tenant.Slug)
+	defaultProfile := configureProfile(t, env, "github", "default", true)
 
 	// Record a github connection via the API.
 	rec := env.do(t, http.MethodPost, basePath, env.manageKey, map[string]any{
-		"provider": "github",
+		"provider":              "github",
+		"credential_profile_id": defaultProfile["id"],
 	})
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("record connection: status = %d; want 201\nbody: %s", rec.Code, rec.Body.String())
@@ -401,6 +510,47 @@ func TestProxy_ForwardsToNango(t *testing.T) {
 	if body["login"] != "mockuser" {
 		t.Errorf("login = %q; want %q", body["login"], "mockuser")
 	}
+	if body["provider_config_key"] != defaultProfile["nango_provider_config_key"] {
+		t.Errorf("provider_config_key = %q; want %q", body["provider_config_key"], defaultProfile["nango_provider_config_key"])
+	}
+}
+
+func TestProxy_UsesAliasHeader(t *testing.T) {
+	env := setupWithNango(t)
+	basePath := fmt.Sprintf("/v1/tenants/%s/connections", env.tenant.Slug)
+	defaultProfile := configureProfile(t, env, "github", "default", true)
+	sandboxProfile := configureProfile(t, env, "github", "sandbox", false)
+
+	recDefault := env.do(t, http.MethodPost, basePath, env.manageKey, map[string]any{
+		"provider":              "github",
+		"alias":                 "default",
+		"credential_profile_id": defaultProfile["id"],
+	})
+	if recDefault.Code != http.StatusCreated {
+		t.Fatalf("record default connection: status=%d body=%s", recDefault.Code, recDefault.Body.String())
+	}
+	recSandbox := env.do(t, http.MethodPost, basePath, env.manageKey, map[string]any{
+		"provider":              "github",
+		"alias":                 "sandbox",
+		"credential_profile_id": sandboxProfile["id"],
+	})
+	if recSandbox.Code != http.StatusCreated {
+		t.Fatalf("record sandbox connection: status=%d body=%s", recSandbox.Code, recSandbox.Body.String())
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/proxy/github/user", nil)
+	req.Header.Set("X-Velane-Tenant", env.tenant.ID)
+	req.Header.Set("X-Velane-Integration-Alias", "sandbox")
+	recProxy := httptest.NewRecorder()
+	env.router.ServeHTTP(recProxy, req)
+
+	if recProxy.Code != http.StatusOK {
+		t.Fatalf("proxy status = %d; want 200\nbody: %s", recProxy.Code, recProxy.Body.String())
+	}
+	body := decodeJSON(t, recProxy)
+	if body["provider_config_key"] != sandboxProfile["nango_provider_config_key"] {
+		t.Errorf("provider_config_key = %q; want %q", body["provider_config_key"], sandboxProfile["nango_provider_config_key"])
+	}
 }
 
 func TestProxy_MissingTenantHeader(t *testing.T) {
@@ -417,6 +567,75 @@ func TestProxy_MissingTenantHeader(t *testing.T) {
 }
 
 // --- Integrations catalog ---
+
+func TestIntegrations_ConfiguredProfilesCRUD(t *testing.T) {
+	env := setupWithNango(t)
+
+	defaultProfile := configureProfile(t, env, "github", "default", true)
+	secondProfile := configureProfile(t, env, "github", "sandbox", false)
+
+	recList := env.do(t, http.MethodGet, "/v1/integrations/configured", env.manageKey, nil)
+	if recList.Code != http.StatusOK {
+		t.Fatalf("list configured profiles: status = %d body=%s", recList.Code, recList.Body.String())
+	}
+	var profiles []map[string]any
+	if err := json.NewDecoder(recList.Body).Decode(&profiles); err != nil {
+		t.Fatalf("decode configured profiles: %v", err)
+	}
+	if len(profiles) < 2 {
+		t.Fatalf("expected at least 2 profiles, got %d", len(profiles))
+	}
+
+	delPath := fmt.Sprintf("/v1/integrations/configured/%s", defaultProfile["id"])
+	recDel := env.do(t, http.MethodDelete, delPath, env.manageKey, nil)
+	if recDel.Code != http.StatusNoContent {
+		t.Fatalf("delete configured profile: status = %d body=%s", recDel.Code, recDel.Body.String())
+	}
+
+	recList2 := env.do(t, http.MethodGet, "/v1/integrations/configured", env.manageKey, nil)
+	if recList2.Code != http.StatusOK {
+		t.Fatalf("list configured profiles after delete: status = %d", recList2.Code)
+	}
+	var profiles2 []map[string]any
+	if err := json.NewDecoder(recList2.Body).Decode(&profiles2); err != nil {
+		t.Fatalf("decode configured profiles after delete: %v", err)
+	}
+	foundSecond := false
+	for _, p := range profiles2 {
+		if p["id"] == secondProfile["id"] {
+			foundSecond = true
+			if isDefault, _ := p["is_default"].(bool); !isDefault {
+				t.Errorf("expected remaining profile to be auto-promoted to default")
+			}
+		}
+	}
+	if !foundSecond {
+		t.Fatalf("remaining profile %v not found after deleting default", secondProfile["id"])
+	}
+}
+
+func TestIntegrations_ConfigureProfileResolvesProviderAuthMode(t *testing.T) {
+	env := setupWithNango(t)
+
+	rec := env.do(t, http.MethodPost, "/v1/integrations/configured", env.manageKey, map[string]any{
+		"provider":         "8x8",
+		"alias":            "default",
+		"name":             "8x8 default",
+		"credentials_type": "OAUTH2", // intentionally mismatched; backend should resolve to OAUTH2_CC
+		"credentials": map[string]string{
+			"client_id":     "cc-client-id",
+			"client_secret": "cc-client-secret",
+		},
+		"is_default": true,
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("configure 8x8 profile: status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	body := decodeJSON(t, rec)
+	if body["credentials_type"] != "OAUTH2_CC" {
+		t.Fatalf("credentials_type = %v; want OAUTH2_CC", body["credentials_type"])
+	}
+}
 
 func TestIntegrations_ListProviders(t *testing.T) {
 	env := setupWithNango(t)
@@ -513,4 +732,3 @@ func TestIntegrations_DocsRequiresInvokeScope(t *testing.T) {
 		t.Errorf("status = %d; want 401", rec.Code)
 	}
 }
-

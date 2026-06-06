@@ -19,16 +19,16 @@ import (
 )
 
 // NewRouter builds and returns the fully configured chi router.
-func NewRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logger, encKey []byte, authProvider auth.Provider, nangoClient *nango.Client, nangoInternalURL, nangoConnectURL, nangoApiURL, nangoWebhookSecret, mcpPublicURL string, platLibs []platformlibs.PlatformLib) http.Handler {
-	return newRouter(store, sched, log, encKey, authProvider, nil, nangoClient, nangoInternalURL, nangoConnectURL, nangoApiURL, nangoWebhookSecret, mcpPublicURL, platLibs)
+func NewRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logger, encKey []byte, authProvider auth.Provider, nangoClient *nango.Client, nangoInternalURL, nangoConnectURL, nangoApiURL, nangoWebhookSecret, nangoSecretKey, mcpPublicURL string, platLibs []platformlibs.PlatformLib) http.Handler {
+	return newRouter(store, sched, log, encKey, authProvider, nil, nangoClient, nangoInternalURL, nangoConnectURL, nangoApiURL, nangoWebhookSecret, nangoSecretKey, mcpPublicURL, platLibs)
 }
 
 // NewRouterWithJWT builds the router and wires the RSA public key for the JWKS endpoint.
-func NewRouterWithJWT(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logger, encKey []byte, authProvider auth.Provider, pubKey *rsa.PublicKey, nangoClient *nango.Client, nangoInternalURL, nangoConnectURL, nangoApiURL, nangoWebhookSecret, mcpPublicURL string, platLibs []platformlibs.PlatformLib) http.Handler {
-	return newRouter(store, sched, log, encKey, authProvider, pubKey, nangoClient, nangoInternalURL, nangoConnectURL, nangoApiURL, nangoWebhookSecret, mcpPublicURL, platLibs)
+func NewRouterWithJWT(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logger, encKey []byte, authProvider auth.Provider, pubKey *rsa.PublicKey, nangoClient *nango.Client, nangoInternalURL, nangoConnectURL, nangoApiURL, nangoWebhookSecret, nangoSecretKey, mcpPublicURL string, platLibs []platformlibs.PlatformLib) http.Handler {
+	return newRouter(store, sched, log, encKey, authProvider, pubKey, nangoClient, nangoInternalURL, nangoConnectURL, nangoApiURL, nangoWebhookSecret, nangoSecretKey, mcpPublicURL, platLibs)
 }
 
-func newRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logger, encKey []byte, authProvider auth.Provider, pubKey *rsa.PublicKey, nangoClient *nango.Client, nangoInternalURL, nangoConnectURL, nangoApiURL, nangoWebhookSecret, mcpPublicURL string, platLibs []platformlibs.PlatformLib) http.Handler {
+func newRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logger, encKey []byte, authProvider auth.Provider, pubKey *rsa.PublicKey, nangoClient *nango.Client, nangoInternalURL, nangoConnectURL, nangoApiURL, nangoWebhookSecret, nangoSecretKey, mcpPublicURL string, platLibs []platformlibs.PlatformLib) http.Handler {
 	r := chi.NewRouter()
 
 	// Global middleware.
@@ -48,7 +48,7 @@ func newRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logge
 	secretsH := handlers.NewSecretsHandler(store, log, encKey).WithAuditor(auditor)
 	gitIntH := handlers.NewGitIntegrationHandler(store, log)
 	webhookH := handlers.NewWebhookHandler(store, sched, log)
-	nangoWebhookH := handlers.NewNangoWebhookHandler(store, nangoClient, nangoWebhookSecret, log)
+	nangoWebhookH := handlers.NewNangoWebhookHandler(store, nangoClient, nangoWebhookSecret, nangoSecretKey, log)
 	logsH := handlers.NewLogsHandler(store, log)
 	metricsH := handlers.NewMetricsHandler(store, log)
 	replayH := handlers.NewReplayHandler(store, sched, log)

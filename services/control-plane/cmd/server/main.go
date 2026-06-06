@@ -128,7 +128,7 @@ func main() {
 	}
 
 	// --- Router ---
-	router := api.NewRouterWithJWT(store, sched, log, encKey, authProvider, pubKey, nangoClient, cfg.NangoInternalURL, cfg.NangoConnectURL, cfg.NangoApiURL, cfg.NangoWebhookSecret, cfg.MCPPublicURL, platLibs)
+	router := api.NewRouterWithJWT(store, sched, log, encKey, authProvider, pubKey, nangoClient, cfg.NangoInternalURL, cfg.NangoConnectURL, cfg.NangoApiURL, cfg.NangoWebhookSecret, cfg.NangoSecretKey, cfg.MCPPublicURL, platLibs)
 
 	// --- HTTP server ---
 	srv := &http.Server{

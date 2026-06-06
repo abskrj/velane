@@ -98,7 +98,7 @@ const config: Config = {
           items: [
             {label: 'GitHub', href: 'https://github.com/abskrj/velane'},
             {label: 'Issues', href: 'https://github.com/abskrj/velane/issues'},
-            {label: 'Admin dashboard', href: 'https://admin.velane.sh'},
+            {label: 'App', href: 'https://app.velane.sh'},
             {label: 'License', href: 'https://github.com/abskrj/velane/blob/main/LICENSE'}
           ]
         }

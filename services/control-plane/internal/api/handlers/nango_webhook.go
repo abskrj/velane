@@ -24,30 +24,42 @@ type NangoWebhookStore interface {
 type NangoWebhookHandler struct {
 	store         NangoWebhookStore
 	nango         *nango.Client
-	webhookSecret string
+	webhookSecret string // NANGO_WEBHOOK_SECRET — dashboard webhook signing key
+	apiSecret     string // NANGO_SECRET_KEY — self-hosted Nango also signs with the env API secret
 	log           *zap.Logger
 }
 
-func NewNangoWebhookHandler(store NangoWebhookStore, nangoClient *nango.Client, webhookSecret string, log *zap.Logger) *NangoWebhookHandler {
-	return &NangoWebhookHandler{store: store, nango: nangoClient, webhookSecret: webhookSecret, log: log}
+func NewNangoWebhookHandler(store NangoWebhookStore, nangoClient *nango.Client, webhookSecret, apiSecret string, log *zap.Logger) *NangoWebhookHandler {
+	return &NangoWebhookHandler{store: store, nango: nangoClient, webhookSecret: webhookSecret, apiSecret: apiSecret, log: log}
 }
 
 // nangoWebhookPayload is the subset of Nango's webhook body that we care about.
-//
-// ⚠️ Field names must be verified against the actual Nango self-hosted webhook delivery.
-// Fire a real OAuth flow and inspect the raw body in container logs to confirm:
-//   - Top-level field casing (camelCase shown here is what Nango JS SDK uses)
-//   - The path where the connection ID is returned ("connectionId" assumed)
-//   - The signature header name (X-Nango-Signature assumed; raw hex, no prefix)
 type nangoWebhookPayload struct {
-	Type              string `json:"type"`              // "auth"
-	ConnectionID      string `json:"connectionId"`      // Nango-generated UUID
-	ProviderConfigKey string `json:"providerConfigKey"` // integration key e.g. "salesforce"
-	Success           bool   `json:"success"`
+	Type              string            `json:"type"`
+	ConnectionID      string            `json:"connectionId"`
+	ProviderConfigKey string            `json:"providerConfigKey"`
+	Success           bool              `json:"success"`
+	Tags              map[string]string `json:"tags"`
 	EndUser           struct {
-		ID          string `json:"id"` // our tenant_id, set in CreateConnectSession
+		ID          string `json:"id"`
+		EndUserID   string `json:"endUserId"`
 		DisplayName string `json:"displayName"`
 	} `json:"endUser"`
+}
+
+func (p *nangoWebhookPayload) tenantID() string {
+	if id := p.EndUser.ID; id != "" {
+		return id
+	}
+	if id := p.EndUser.EndUserID; id != "" {
+		return id
+	}
+	if p.Tags != nil {
+		if id := p.Tags["end_user_id"]; id != "" {
+			return id
+		}
+	}
+	return ""
 }
 
 // HandleNangoEvent receives Nango webhook events and stores the real connection UUID.
@@ -58,9 +70,8 @@ func (h *NangoWebhookHandler) HandleNangoEvent(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	if h.webhookSecret != "" {
-		sig := r.Header.Get("X-Nango-Signature")
-		if !verifyNangoSignature(body, h.webhookSecret, sig) {
+	if h.webhookSecret != "" || h.apiSecret != "" {
+		if !verifyNangoWebhook(body, h.webhookSecret, h.apiSecret, r.Header) {
 			writeError(w, http.StatusUnauthorized, "invalid webhook signature")
 			return
 		}
@@ -80,7 +91,7 @@ func (h *NangoWebhookHandler) HandleNangoEvent(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	tenantID := payload.EndUser.ID
+	tenantID := payload.tenantID()
 	provider := payload.ProviderConfigKey
 	nangoConnID := payload.ConnectionID
 
@@ -130,15 +141,71 @@ func (h *NangoWebhookHandler) HandleNangoEvent(w http.ResponseWriter, r *http.Re
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-// verifyNangoSignature checks the HMAC-SHA256 signature Nango attaches to webhook deliveries.
-// Nango self-hosted sends a raw hex digest (no "sha256=" prefix) in X-Nango-Signature.
-// ⚠️ Verify the exact format against your Nango version before enabling in production.
-func verifyNangoSignature(body []byte, secret, sig string) bool {
+// verifyNangoWebhook checks Nango webhook signatures.
+//
+// Self-hosted Nango signs outgoing webhooks with the environment API secret
+// (NANGO_SECRET_KEY_DEV), sending:
+//   - X-Nango-Hmac-Sha256: HMAC-SHA256(secret, body)
+//   - X-Nango-Signature: SHA256(secret + body)  (legacy)
+//
+// Nango Cloud / dashboard docs also describe a separate webhook signing key;
+// we accept HMAC on X-Nango-Signature with that key for backwards compatibility.
+func verifyNangoWebhook(body []byte, webhookSecret, apiSecret string, headers http.Header) bool {
+	secrets := []string{}
+	for _, s := range []string{webhookSecret, apiSecret} {
+		if s == "" {
+			continue
+		}
+		dup := false
+		for _, existing := range secrets {
+			if existing == s {
+				dup = true
+				break
+			}
+		}
+		if !dup {
+			secrets = append(secrets, s)
+		}
+	}
+	if len(secrets) == 0 {
+		return false
+	}
+
+	if sig := headers.Get("X-Nango-Hmac-Sha256"); sig != "" {
+		for _, secret := range secrets {
+			if verifyNangoHMAC(body, secret, sig) {
+				return true
+			}
+		}
+	}
+
+	if sig := headers.Get("X-Nango-Signature"); sig != "" {
+		for _, secret := range secrets {
+			if verifyNangoLegacySignature(body, secret, sig) || verifyNangoHMAC(body, secret, sig) {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+func verifyNangoHMAC(body []byte, secret, sig string) bool {
 	if sig == "" {
 		return false
 	}
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write(body)
 	expected := hex.EncodeToString(mac.Sum(nil))
+	return hmac.Equal([]byte(expected), []byte(sig))
+}
+
+func verifyNangoLegacySignature(body []byte, secret, sig string) bool {
+	if sig == "" {
+		return false
+	}
+	combined := append([]byte(secret), body...)
+	sum := sha256.Sum256(combined)
+	expected := hex.EncodeToString(sum[:])
 	return hmac.Equal([]byte(expected), []byte(sig))
 }

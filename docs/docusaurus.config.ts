@@ -54,6 +54,12 @@ const config: Config = {
           sidebarId: 'docs',
           position: 'left',
           label: 'Docs'
+        },
+        {
+          href: 'https://github.com/abskrj/velane',
+          className: 'header-github-link',
+          'aria-label': 'GitHub repository',
+          position: 'right'
         }
       ]
     },

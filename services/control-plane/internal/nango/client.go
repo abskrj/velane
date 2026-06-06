@@ -232,7 +232,7 @@ func (c *Client) Proxy(w http.ResponseWriter, r *http.Request, connectionID, pro
 	io.Copy(w, resp.Body) //nolint:errcheck
 }
 
-// CreateIntegrationConfig creates or updates a provider config in Nango.
+// CreateIntegrationConfig creates a provider config in Nango.
 // Nango API: POST /integrations with unique_key, provider, credentials.
 func (c *Client) CreateIntegrationConfig(ctx context.Context, providerConfigKey, provider string, credentials map[string]any) error {
 	body := map[string]any{
@@ -260,6 +260,35 @@ func (c *Client) CreateIntegrationConfig(ctx context.Context, providerConfigKey,
 	if resp.StatusCode >= 300 {
 		raw, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("nango CreateIntegrationConfig %d: %s", resp.StatusCode, raw)
+	}
+	return nil
+}
+
+// UpdateIntegrationConfig updates an existing provider config in Nango.
+// Nango API: PATCH /integrations/{uniqueKey}
+func (c *Client) UpdateIntegrationConfig(ctx context.Context, providerConfigKey string, credentials map[string]any) error {
+	body := map[string]any{}
+	if len(credentials) > 0 {
+		body["credentials"] = credentials
+	}
+
+	b, _ := json.Marshal(body)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, c.baseURL+"/integrations/"+providerConfigKey, bytes.NewReader(b))
+	if err != nil {
+		return err
+	}
+	c.setAuth(req)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("nango UpdateIntegrationConfig: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 300 {
+		raw, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("nango UpdateIntegrationConfig %d: %s", resp.StatusCode, raw)
 	}
 	return nil
 }

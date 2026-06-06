@@ -49,7 +49,7 @@ func setupWithNango(t *testing.T) *testEnv {
 	}
 	mockNango := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		// POST /integrations — create/update provider config.
+		// POST /integrations — create provider config.
 		case r.Method == http.MethodPost && r.URL.Path == "/integrations":
 			var req struct {
 				UniqueKey   string         `json:"unique_key"`
@@ -57,6 +57,20 @@ func setupWithNango(t *testing.T) *testEnv {
 				Credentials map[string]any `json:"credentials"`
 			}
 			_ = json.NewDecoder(r.Body).Decode(&req)
+			if req.UniqueKey != "" {
+				if _, exists := configuredIntegrations[req.UniqueKey]; exists {
+					w.WriteHeader(http.StatusBadRequest)
+					_, _ = w.Write([]byte(`{"error":{"code":"invalid_body","errors":[{"code":"invalid_string","message":"Unique key already exists","path":["uniqueKey"]}]}}`))
+					return
+				}
+			}
+			if scopes, ok := req.Credentials["scopes"]; ok {
+				if _, isSlice := scopes.([]any); isSlice {
+					w.WriteHeader(http.StatusBadRequest)
+					_, _ = w.Write([]byte(`{"error":{"code":"invalid_body","errors":[{"code":"invalid_union","message":"Invalid input","path":["credentials","scopes"]}]}}`))
+					return
+				}
+			}
 			if expectedType, ok := providerAuthModes[req.Provider]; ok {
 				if expectedType == "OAUTH2_CC" {
 					if len(req.Credentials) > 0 {
@@ -75,6 +89,28 @@ func setupWithNango(t *testing.T) *testEnv {
 			}
 			if req.UniqueKey != "" && req.Provider != "" {
 				configuredIntegrations[req.UniqueKey] = req.Provider
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{}`))
+
+		// PATCH /integrations/{unique_key} — update provider config.
+		case r.Method == http.MethodPatch && strings.HasPrefix(r.URL.Path, "/integrations/"):
+			key := strings.TrimPrefix(r.URL.Path, "/integrations/")
+			if key == "" || configuredIntegrations[key] == "" {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			var req struct {
+				Credentials map[string]any `json:"credentials"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&req)
+			if scopes, ok := req.Credentials["scopes"]; ok {
+				if _, isSlice := scopes.([]any); isSlice {
+					w.WriteHeader(http.StatusBadRequest)
+					_, _ = w.Write([]byte(`{"error":{"code":"invalid_body","errors":[{"code":"invalid_union","message":"Invalid input","path":["credentials","scopes"]}]}}`))
+					return
+				}
 			}
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
@@ -735,6 +771,48 @@ func TestIntegrations_ConfigureProfileResolvesProviderAuthMode(t *testing.T) {
 	body := decodeJSON(t, rec)
 	if body["credentials_type"] != "OAUTH2_CC" {
 		t.Fatalf("credentials_type = %v; want OAUTH2_CC", body["credentials_type"])
+	}
+}
+
+func TestIntegrations_ConfigureProfileUpdateWithScopes(t *testing.T) {
+	env := setupWithNango(t)
+	configureProfile(t, env, "github", "default", true)
+
+	rec := env.do(t, http.MethodPost, "/v1/integrations/configured", env.manageKey, map[string]any{
+		"provider": "github",
+		"alias":    "default",
+		"name":     "github default updated",
+		"credentials": map[string]string{
+			"scopes": "repo,read:user",
+		},
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("update github profile with scopes: status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	body := decodeJSON(t, rec)
+	if body["name"] != "github default updated" {
+		t.Fatalf("name = %v; want github default updated", body["name"])
+	}
+	if body["oauth_scopes"] != "repo,read:user" {
+		t.Fatalf("oauth_scopes = %v; want repo,read:user", body["oauth_scopes"])
+	}
+}
+
+func TestIntegrations_ConfigureProfileUpdateWithoutCredentials(t *testing.T) {
+	env := setupWithNango(t)
+	configureProfile(t, env, "github", "default", true)
+
+	rec := env.do(t, http.MethodPost, "/v1/integrations/configured", env.manageKey, map[string]any{
+		"provider": "github",
+		"alias":    "default",
+		"name":     "github renamed only",
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("update github profile without credentials: status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	body := decodeJSON(t, rec)
+	if body["name"] != "github renamed only" {
+		t.Fatalf("name = %v; want github renamed only", body["name"])
 	}
 }
 

@@ -44,7 +44,6 @@ const FALLBACK_FIELDS_BY_MODE: Record<string, ManualField[]> = {
       key: 'scopes',
       field: {
         title: 'Scopes',
-        description: 'Optional — leave blank to use provider defaults',
         optional: true,
       },
     },
@@ -69,7 +68,6 @@ const FALLBACK_FIELDS_BY_MODE: Record<string, ManualField[]> = {
       key: 'scopes',
       field: {
         title: 'Scopes',
-        description: 'Optional — leave blank to use provider defaults',
         optional: true,
       },
     },

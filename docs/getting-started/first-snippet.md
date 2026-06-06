@@ -24,14 +24,13 @@ Use the built-in test panel in the snippet editor to run your snippet immediatel
 
 ## Invoke from the API
 
-Use an API key and tenant slug.
+Use an API key. The tenant is resolved from the key — it is not part of the invoke URL.
 
 ```bash
 KEY=vl_xxxx
-TENANT=myorg
 SNIPPET=<snippet-id-or-slug>
 
-curl -s -X POST "http://localhost:8080/v1/invoke/$TENANT/$SNIPPET" \
+curl -s -X POST "http://localhost:8080/v1/invoke/$SNIPPET" \
   -H "Authorization: Bearer $KEY" \
   -H "Content-Type: application/json" \
   -d '{"name":"world"}'

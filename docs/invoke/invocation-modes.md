@@ -13,7 +13,7 @@ Velane supports three invocation modes for snippets: sync, async, and stream.
 Use sync when you want a direct request-response call.
 
 ```bash
-curl -X POST "http://localhost:8080/v1/invoke/myorg/<snippet>" \
+curl -X POST "http://localhost:8080/v1/invoke/<snippet>" \
   -H "Authorization: Bearer vl_xxxx" \
   -H "Content-Type: application/json" \
   -d '{"hello":"world"}'
@@ -30,7 +30,7 @@ Best for:
 Use async when a job can take longer and you do not want the caller to block.
 
 ```bash
-curl -X POST "http://localhost:8080/v1/invoke/myorg/<snippet>" \
+curl -X POST "http://localhost:8080/v1/invoke/<snippet>" \
   -H "Authorization: Bearer vl_xxxx" \
   -H "X-Invoke-Mode: async" \
   -H "Content-Type: application/json" \
@@ -48,7 +48,7 @@ Best for:
 Use stream when you want incremental events rather than one final payload.
 
 ```bash
-curl -X POST "http://localhost:8080/v1/invoke/myorg/<snippet>" \
+curl -X POST "http://localhost:8080/v1/invoke/<snippet>" \
   -H "Authorization: Bearer vl_xxxx" \
   -H "X-Invoke-Mode: stream" \
   -H "Content-Type: application/json" \

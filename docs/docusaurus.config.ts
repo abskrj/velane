@@ -47,7 +47,11 @@ const config: Config = {
 
   themeConfig: {
     navbar: {
-      title: 'Velane Docs',
+      title: 'Velane',
+      logo: {
+        alt: 'Velane logo',
+        src: 'velane_sh.jpeg'
+      },
       items: [
         {
           type: 'docSidebar',
@@ -59,6 +63,12 @@ const config: Config = {
           href: 'https://github.com/abskrj/velane',
           className: 'header-github-link',
           'aria-label': 'GitHub repository',
+          position: 'right'
+        },
+        {
+          href: 'https://discord.gg/XKFMyhFrq6',
+          className: 'header-discord-link',
+          'aria-label': 'Discord community',
           position: 'right'
         }
       ]

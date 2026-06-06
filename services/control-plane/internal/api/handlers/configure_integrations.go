@@ -217,13 +217,27 @@ func (h *ConfigureIntegrationsHandler) Configure(w http.ResponseWriter, r *http.
 	if req.OAuthScopes != "" {
 		plainFields["oauth_scopes"] = req.OAuthScopes
 	}
-	resolvedOAuthScopes := firstNonEmpty(plainFields["oauth_scopes"], plainFields["scopes"])
 
 	existing, _ := h.store.GetIntegrationCredentialProfileByAlias(r.Context(), tenant.ID, req.Provider, req.Alias)
 	providerConfigKey := ""
 	if existing != nil {
 		providerConfigKey = existing.NangoProviderConfigKey
+		view, existingFields, decErr := h.store.DecryptIntegrationCredentialProfile(existing, h.encKey)
+		if decErr != nil {
+			h.log.Error("decrypt existing integration profile", zap.Error(decErr))
+			writeError(w, http.StatusInternalServerError, "failed to load integration credentials")
+			return
+		}
+		for key, value := range existingFields {
+			if strings.TrimSpace(plainFields[key]) == "" {
+				plainFields[key] = value
+			}
+		}
+		if strings.TrimSpace(plainFields["oauth_scopes"]) == "" && strings.TrimSpace(plainFields["scopes"]) == "" && strings.TrimSpace(view.OAuthScopes) != "" {
+			plainFields["oauth_scopes"] = view.OAuthScopes
+		}
 	}
+	resolvedOAuthScopes := firstNonEmpty(plainFields["oauth_scopes"], plainFields["scopes"])
 
 	nangoCreds := map[string]any{}
 	if shouldSendCredentialsType(credType) {
@@ -240,7 +254,7 @@ func (h *ConfigureIntegrationsHandler) Configure(w http.ResponseWriter, r *http.
 		nangoCreds["client_id"] = clientID
 		nangoCreds["client_secret"] = clientSecret
 		if scopes := firstNonEmpty(plainFields["oauth_scopes"], plainFields["scopes"]); scopes != "" {
-			nangoCreds["scopes"] = parseScopes(scopes)
+			nangoCreds["scopes"] = formatScopesForNango(scopes)
 		}
 	case "OAUTH2_CC":
 		clientID := firstNonEmpty(plainFields["oauth_client_id"], plainFields["client_id"])
@@ -285,14 +299,16 @@ func (h *ConfigureIntegrationsHandler) Configure(w http.ResponseWriter, r *http.
 		}
 	}
 
-	if err := h.nango.CreateIntegrationConfig(
-		r.Context(),
-		chooseProviderConfigKey(providerConfigKey, tenant.ID, req.Provider, req.Alias),
-		req.Provider,
-		nangoCreds,
-	); err != nil {
-		h.log.Error("configure integration", zap.String("provider", req.Provider), zap.Error(err))
-		writeError(w, http.StatusBadGateway, "failed to configure integration: "+err.Error())
+	configKey := chooseProviderConfigKey(providerConfigKey, tenant.ID, req.Provider, req.Alias)
+	var nangoErr error
+	if existing != nil {
+		nangoErr = h.nango.UpdateIntegrationConfig(r.Context(), configKey, nangoCreds)
+	} else {
+		nangoErr = h.nango.CreateIntegrationConfig(r.Context(), configKey, req.Provider, nangoCreds)
+	}
+	if nangoErr != nil {
+		h.log.Error("configure integration", zap.String("provider", req.Provider), zap.Error(nangoErr))
+		writeError(w, http.StatusBadGateway, "failed to configure integration: "+nangoErr.Error())
 		return
 	}
 
@@ -385,7 +401,13 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-func parseScopes(raw string) []string {
+// formatScopesForNango normalizes user input into the comma-separated scope
+// string Nango expects on /integrations (not a JSON array).
+func formatScopesForNango(raw string) string {
+	return strings.Join(parseScopeList(raw), ",")
+}
+
+func parseScopeList(raw string) []string {
 	parts := strings.FieldsFunc(raw, func(r rune) bool {
 		return r == ',' || r == ' ' || r == '\t' || r == '\n'
 	})

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/abskrj/velane/services/control-plane/internal/models"
@@ -130,15 +131,11 @@ func (h *IntegrationsHandler) ProxyAsset(w http.ResponseWriter, r *http.Request)
 // Falls back to the bundled catalog if Nango is unavailable.
 // Always returns the same shape: { unique_key, name, auth_mode, categories, logo_url }.
 func (h *IntegrationsHandler) ListProviders(w http.ResponseWriter, r *http.Request) {
-	list, err := h.nango.ListProviders(r.Context())
-	if err != nil {
-		h.log.Warn("nango /providers unavailable, falling back to bundled catalog", zap.Error(err))
-		writeJSON(w, http.StatusOK, providers.Catalog)
-		return
-	}
+	searchQuery := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
+	limit := parseProvidersLimit(r.URL.Query().Get("limit"))
+	offset := parseProvidersOffset(r.URL.Query().Get("offset"))
 
-	// Normalise to a stable API shape. Include connection_config and credentials
-	// so the frontend can build dynamic configuration forms.
+	list, err := h.nango.ListProviders(r.Context())
 	type providerOut struct {
 		UniqueKey        string                            `json:"unique_key"`
 		Name             string                            `json:"name"`
@@ -149,20 +146,84 @@ func (h *IntegrationsHandler) ListProviders(w http.ResponseWriter, r *http.Reque
 		ConnectionConfig map[string]models.ConnectionField `json:"connection_config,omitempty"`
 		Credentials      map[string]models.ConnectionField `json:"credentials,omitempty"`
 	}
-	out := make([]providerOut, 0, len(list))
-	for _, p := range list {
-		out = append(out, providerOut{
-			UniqueKey:        p.UniqueKey,
-			Name:             p.Name,
-			AuthMode:         p.AuthMode,
-			Categories:       p.Categories,
-			DefaultScopes:    p.DefaultScopes,
-			LogoURL:          h.rewriteLogoURL(p.LogoURL),
-			ConnectionConfig: p.ConnectionConfig,
-			Credentials:      p.Credentials,
-		})
+
+	out := make([]providerOut, 0)
+	if err != nil {
+		h.log.Warn("nango /providers unavailable, falling back to bundled catalog", zap.Error(err))
+		out = make([]providerOut, 0, len(providers.Catalog))
+		for _, p := range providers.Catalog {
+			out = append(out, providerOut{
+				UniqueKey:  p.UniqueKey,
+				Name:       p.Name,
+				AuthMode:   p.AuthMode,
+				Categories: p.Categories,
+			})
+		}
+	} else {
+		// Normalise to a stable API shape. Include connection_config and credentials
+		// so the frontend can build dynamic configuration forms.
+		out = make([]providerOut, 0, len(list))
+		for _, p := range list {
+			out = append(out, providerOut{
+				UniqueKey:        p.UniqueKey,
+				Name:             p.Name,
+				AuthMode:         p.AuthMode,
+				Categories:       p.Categories,
+				DefaultScopes:    p.DefaultScopes,
+				LogoURL:          h.rewriteLogoURL(p.LogoURL),
+				ConnectionConfig: p.ConnectionConfig,
+				Credentials:      p.Credentials,
+			})
+		}
 	}
-	writeJSON(w, http.StatusOK, out)
+
+	filtered := make([]providerOut, 0, len(out))
+	if searchQuery == "" {
+		filtered = append(filtered, out...)
+	} else {
+		for _, p := range out {
+			if strings.Contains(strings.ToLower(p.Name), searchQuery) || strings.Contains(strings.ToLower(p.UniqueKey), searchQuery) {
+				filtered = append(filtered, p)
+			}
+		}
+	}
+	if offset > 0 {
+		if offset >= len(filtered) {
+			filtered = []providerOut{}
+		} else {
+			filtered = filtered[offset:]
+		}
+	}
+	if limit > 0 && len(filtered) > limit {
+		filtered = filtered[:limit]
+	}
+	writeJSON(w, http.StatusOK, filtered)
+}
+
+func parseProvidersLimit(raw string) int {
+	if raw == "" {
+		return 0
+	}
+	v, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || v <= 0 {
+		return 0
+	}
+	// Keep a sane upper bound for public endpoint requests.
+	if v > 100 {
+		return 100
+	}
+	return v
+}
+
+func parseProvidersOffset(raw string) int {
+	if raw == "" {
+		return 0
+	}
+	v, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || v < 0 {
+		return 0
+	}
+	return v
 }
 
 // GetProviderDocs handles GET /v1/integrations/{provider}/docs.

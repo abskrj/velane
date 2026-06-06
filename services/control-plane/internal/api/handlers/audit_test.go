@@ -66,7 +66,7 @@ func buildAuditRequest(method, path string, authTenant *models.Tenant, apiKey *m
 	return req.WithContext(ctx)
 }
 
-// TestListAuditLog_AdminOnly verifies that a request from a different tenant gets 403.
+// TestListAuditLog_AdminOnly verifies that unauthenticated requests are rejected.
 func TestListAuditLog_AdminOnly(t *testing.T) {
 	tenant := &models.Tenant{ID: "t1", Slug: "acme", Name: "Acme"}
 	store := &mockAPIKeyAuditStore{tenant: tenant}
@@ -75,12 +75,10 @@ func TestListAuditLog_AdminOnly(t *testing.T) {
 
 	// Build router with chi param.
 	r := chi.NewRouter()
-	r.Get("/v1/tenants/{slug}/audit-log", h.ListAuditLog)
+	r.Get("/v1/tenant/audit-log", h.ListAuditLog)
 
-	// Inject a DIFFERENT tenant in context — should get 403.
-	otherTenant := &models.Tenant{ID: "t2", Slug: "other", Name: "Other"}
-	req := httptest.NewRequest(http.MethodGet, "/v1/tenants/acme/audit-log", nil)
-	req = req.WithContext(context.WithValue(req.Context(), middleware.ExportedTenantKey(), otherTenant))
+	// No tenant in context — should get 403.
+	req := httptest.NewRequest(http.MethodGet, "/v1/tenant/audit-log", nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
@@ -107,10 +105,10 @@ func TestListAuditLog_ReturnsEntries(t *testing.T) {
 	h := handlers.NewAuditHandler(store, log)
 
 	r := chi.NewRouter()
-	r.Get("/v1/tenants/{slug}/audit-log", h.ListAuditLog)
+	r.Get("/v1/tenant/audit-log", h.ListAuditLog)
 
 	// Inject the SAME tenant in context.
-	req := httptest.NewRequest(http.MethodGet, "/v1/tenants/acme/audit-log", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/tenant/audit-log", nil)
 	req = req.WithContext(context.WithValue(req.Context(), middleware.ExportedTenantKey(), tenant))
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)

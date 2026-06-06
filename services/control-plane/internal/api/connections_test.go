@@ -211,7 +211,7 @@ func configureProfile(t *testing.T, env *testEnv, provider, alias string, isDefa
 
 func TestConnections_ListEmpty(t *testing.T) {
 	env := setupWithNango(t)
-	path := fmt.Sprintf("/v1/tenants/%s/connections", env.tenant.Slug)
+	path := "/v1/tenant/connections"
 	rec := env.do(t, http.MethodGet, path, env.manageKey, nil)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d; want 200\nbody: %s", rec.Code, rec.Body.String())
@@ -227,7 +227,7 @@ func TestConnections_ListEmpty(t *testing.T) {
 
 func TestConnections_Record(t *testing.T) {
 	env := setupWithNango(t)
-	path := fmt.Sprintf("/v1/tenants/%s/connections", env.tenant.Slug)
+	path := "/v1/tenant/connections"
 	rec := env.do(t, http.MethodPost, path, env.manageKey, map[string]any{
 		"provider": "github",
 	})
@@ -245,7 +245,7 @@ func TestConnections_Record(t *testing.T) {
 
 func TestConnections_ListAfterRecord(t *testing.T) {
 	env := setupWithNango(t)
-	path := fmt.Sprintf("/v1/tenants/%s/connections", env.tenant.Slug)
+	path := "/v1/tenant/connections"
 
 	// Record a connection first.
 	rec := env.do(t, http.MethodPost, path, env.manageKey, map[string]any{
@@ -279,9 +279,55 @@ func TestConnections_ListAfterRecord(t *testing.T) {
 	}
 }
 
+func TestConnections_List_SearchAndPagination(t *testing.T) {
+	env := setupWithNango(t)
+	path := "/v1/tenant/connections"
+
+	recGitHub := env.do(t, http.MethodPost, path, env.manageKey, map[string]any{
+		"provider": "github",
+	})
+	if recGitHub.Code != http.StatusCreated {
+		t.Fatalf("record github: status = %d; want 201\nbody: %s", recGitHub.Code, recGitHub.Body.String())
+	}
+
+	recFigma := env.do(t, http.MethodPost, path, env.manageKey, map[string]any{
+		"provider": "figma",
+	})
+	if recFigma.Code != http.StatusCreated {
+		t.Fatalf("record figma: status = %d; want 201\nbody: %s", recFigma.Code, recFigma.Body.String())
+	}
+
+	recList := env.do(t, http.MethodGet, path+"?q=git&limit=1&offset=0", env.manageKey, nil)
+	if recList.Code != http.StatusOK {
+		t.Fatalf("list filtered: status = %d; want 200\nbody: %s", recList.Code, recList.Body.String())
+	}
+	var conns []map[string]any
+	if err := json.NewDecoder(recList.Body).Decode(&conns); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(conns) != 1 {
+		t.Fatalf("len = %d; want 1", len(conns))
+	}
+	if provider, _ := conns[0]["provider"].(string); !strings.Contains(strings.ToLower(provider), "git") {
+		t.Fatalf("provider %q did not match q=git", provider)
+	}
+
+	recOffset := env.do(t, http.MethodGet, path+"?q=git&offset=100", env.manageKey, nil)
+	if recOffset.Code != http.StatusOK {
+		t.Fatalf("list with large offset: status = %d; want 200", recOffset.Code)
+	}
+	var connsOffset []map[string]any
+	if err := json.NewDecoder(recOffset.Body).Decode(&connsOffset); err != nil {
+		t.Fatalf("decode offset response: %v", err)
+	}
+	if len(connsOffset) != 0 {
+		t.Fatalf("expected empty result for large offset, got %d", len(connsOffset))
+	}
+}
+
 func TestConnections_RecordRequiresManageScope(t *testing.T) {
 	env := setupWithNango(t)
-	path := fmt.Sprintf("/v1/tenants/%s/connections", env.tenant.Slug)
+	path := "/v1/tenant/connections"
 	rec := env.do(t, http.MethodPost, path, env.invokeKey, map[string]any{
 		"provider": "github",
 	})
@@ -292,7 +338,7 @@ func TestConnections_RecordRequiresManageScope(t *testing.T) {
 
 func TestConnections_TenantIsolation(t *testing.T) {
 	env := setupWithNango(t)
-	path := fmt.Sprintf("/v1/tenants/%s/connections", env.tenant.Slug)
+	path := "/v1/tenant/connections"
 
 	// Record a connection under env's tenant.
 	rec := env.do(t, http.MethodPost, path, env.manageKey, map[string]any{
@@ -328,7 +374,7 @@ func TestConnections_CreateSession(t *testing.T) {
 	env := setupWithNango(t)
 	profile := configureProfile(t, env, "github", "default", true)
 
-	path := fmt.Sprintf("/v1/tenants/%s/connections/session", env.tenant.Slug)
+	path := "/v1/tenant/connections/session"
 	rec := env.do(t, http.MethodPost, path, env.manageKey, map[string]any{
 		"provider": "github",
 	})
@@ -346,7 +392,7 @@ func TestConnections_CreateSession(t *testing.T) {
 
 func TestConnections_CreateSessionRequiresConfiguredProfile(t *testing.T) {
 	env := setupWithNango(t)
-	path := fmt.Sprintf("/v1/tenants/%s/connections/session", env.tenant.Slug)
+	path := "/v1/tenant/connections/session"
 	rec := env.do(t, http.MethodPost, path, env.manageKey, map[string]any{
 		"provider": "github",
 	})
@@ -357,7 +403,7 @@ func TestConnections_CreateSessionRequiresConfiguredProfile(t *testing.T) {
 
 func TestConnections_CreateSessionRequiresManageScope(t *testing.T) {
 	env := setupWithNango(t)
-	path := fmt.Sprintf("/v1/tenants/%s/connections/session", env.tenant.Slug)
+	path := "/v1/tenant/connections/session"
 	rec := env.do(t, http.MethodPost, path, env.invokeKey, map[string]any{
 		"provider": "github",
 	})
@@ -368,7 +414,7 @@ func TestConnections_CreateSessionRequiresManageScope(t *testing.T) {
 
 func TestConnections_CreateSessionMissingProvider(t *testing.T) {
 	env := setupWithNango(t)
-	path := fmt.Sprintf("/v1/tenants/%s/connections/session", env.tenant.Slug)
+	path := "/v1/tenant/connections/session"
 	rec := env.do(t, http.MethodPost, path, env.manageKey, map[string]any{})
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("status = %d; want 400", rec.Code)
@@ -379,7 +425,7 @@ func TestConnections_CreateSessionMissingProvider(t *testing.T) {
 
 func TestConnections_Disconnect(t *testing.T) {
 	env := setupWithNango(t)
-	basePath := fmt.Sprintf("/v1/tenants/%s/connections", env.tenant.Slug)
+	basePath := "/v1/tenant/connections"
 
 	// Record a connection first.
 	rec := env.do(t, http.MethodPost, basePath, env.manageKey, map[string]any{
@@ -412,16 +458,37 @@ func TestConnections_Disconnect(t *testing.T) {
 
 func TestConnections_DisconnectNotFound(t *testing.T) {
 	env := setupWithNango(t)
-	path := fmt.Sprintf("/v1/tenants/%s/connections/nonexistent-provider-xyz", env.tenant.Slug)
+	path := "/v1/tenant/connections/nonexistent-provider-xyz"
 	rec := env.do(t, http.MethodDelete, path, env.manageKey, nil)
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("status = %d; want 404", rec.Code)
 	}
 }
 
+func TestConnections_DisconnectProviderWithNonDefaultAlias(t *testing.T) {
+	env := setupWithNango(t)
+	basePath := "/v1/tenant/connections"
+	defaultProfile := configureProfile(t, env, "github", "sandbox", false)
+
+	rec := env.do(t, http.MethodPost, basePath, env.manageKey, map[string]any{
+		"provider":              "github",
+		"alias":                 "sandbox",
+		"credential_profile_id": defaultProfile["id"],
+	})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("record connection: status = %d; want 201\nbody: %s", rec.Code, rec.Body.String())
+	}
+
+	delPath := basePath + "/github"
+	recDel := env.do(t, http.MethodDelete, delPath, env.manageKey, nil)
+	if recDel.Code != http.StatusNoContent {
+		t.Fatalf("disconnect: status = %d; want 204\nbody: %s", recDel.Code, recDel.Body.String())
+	}
+}
+
 func TestConnections_DisconnectRequiresManageScope(t *testing.T) {
 	env := setupWithNango(t)
-	path := fmt.Sprintf("/v1/tenants/%s/connections/github", env.tenant.Slug)
+	path := "/v1/tenant/connections/github"
 	rec := env.do(t, http.MethodDelete, path, env.invokeKey, nil)
 	if rec.Code != http.StatusForbidden {
 		t.Errorf("status = %d; want 403", rec.Code)
@@ -432,7 +499,7 @@ func TestConnections_DisconnectRequiresManageScope(t *testing.T) {
 
 func TestConnections_ListForToken(t *testing.T) {
 	env := setupWithNango(t)
-	basePath := fmt.Sprintf("/v1/tenants/%s/connections", env.tenant.Slug)
+	basePath := "/v1/tenant/connections"
 
 	// Record a connection so the list is non-empty.
 	rec := env.do(t, http.MethodPost, basePath, env.manageKey, map[string]any{
@@ -481,7 +548,7 @@ func TestProxy_NoConnection(t *testing.T) {
 
 func TestProxy_ForwardsToNango(t *testing.T) {
 	env := setupWithNango(t)
-	basePath := fmt.Sprintf("/v1/tenants/%s/connections", env.tenant.Slug)
+	basePath := "/v1/tenant/connections"
 	defaultProfile := configureProfile(t, env, "github", "default", true)
 
 	// Record a github connection via the API.
@@ -517,7 +584,7 @@ func TestProxy_ForwardsToNango(t *testing.T) {
 
 func TestProxy_UsesAliasHeader(t *testing.T) {
 	env := setupWithNango(t)
-	basePath := fmt.Sprintf("/v1/tenants/%s/connections", env.tenant.Slug)
+	basePath := "/v1/tenant/connections"
 	defaultProfile := configureProfile(t, env, "github", "default", true)
 	sandboxProfile := configureProfile(t, env, "github", "sandbox", false)
 
@@ -614,6 +681,40 @@ func TestIntegrations_ConfiguredProfilesCRUD(t *testing.T) {
 	}
 }
 
+func TestIntegrations_ConfiguredProfiles_SearchAndPagination(t *testing.T) {
+	env := setupWithNango(t)
+	configureProfile(t, env, "github", "default", true)
+	configureProfile(t, env, "github", "sandbox", false)
+
+	recFiltered := env.do(t, http.MethodGet, "/v1/integrations/configured?q=sandbox&limit=1", env.manageKey, nil)
+	if recFiltered.Code != http.StatusOK {
+		t.Fatalf("filtered list configured: status = %d body=%s", recFiltered.Code, recFiltered.Body.String())
+	}
+	var filtered []map[string]any
+	if err := json.NewDecoder(recFiltered.Body).Decode(&filtered); err != nil {
+		t.Fatalf("decode configured filtered: %v", err)
+	}
+	if len(filtered) != 1 {
+		t.Fatalf("len = %d; want 1", len(filtered))
+	}
+	alias, _ := filtered[0]["alias"].(string)
+	if alias != "sandbox" {
+		t.Fatalf("alias = %q; want sandbox", alias)
+	}
+
+	recOffset := env.do(t, http.MethodGet, "/v1/integrations/configured?offset=100", env.manageKey, nil)
+	if recOffset.Code != http.StatusOK {
+		t.Fatalf("configured list large offset: status = %d", recOffset.Code)
+	}
+	var withOffset []map[string]any
+	if err := json.NewDecoder(recOffset.Body).Decode(&withOffset); err != nil {
+		t.Fatalf("decode configured offset: %v", err)
+	}
+	if len(withOffset) != 0 {
+		t.Fatalf("expected empty configured list for large offset, got %d", len(withOffset))
+	}
+}
+
 func TestIntegrations_ConfigureProfileResolvesProviderAuthMode(t *testing.T) {
 	env := setupWithNango(t)
 
@@ -660,6 +761,43 @@ func TestIntegrations_ListProviders(t *testing.T) {
 	}
 	if !found {
 		t.Error("github not found in provider list")
+	}
+}
+
+func TestIntegrations_ListProviders_SearchAndLimit(t *testing.T) {
+	env := setupWithNango(t)
+
+	rec := env.do(t, http.MethodGet, "/v1/integrations?q=git&limit=1", "", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d; want 200\nbody: %s", rec.Code, rec.Body.String())
+	}
+
+	var providers []map[string]any
+	if err := json.NewDecoder(rec.Body).Decode(&providers); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(providers) != 1 {
+		t.Fatalf("len = %d; want 1", len(providers))
+	}
+
+	name, _ := providers[0]["name"].(string)
+	key, _ := providers[0]["unique_key"].(string)
+	lowerName := strings.ToLower(name)
+	lowerKey := strings.ToLower(key)
+	if !strings.Contains(lowerName, "git") && !strings.Contains(lowerKey, "git") {
+		t.Fatalf("expected provider to match query 'git'; got name=%q key=%q", name, key)
+	}
+
+	recOffset := env.do(t, http.MethodGet, "/v1/integrations?q=git&offset=100", "", nil)
+	if recOffset.Code != http.StatusOK {
+		t.Fatalf("status = %d; want 200\nbody: %s", recOffset.Code, recOffset.Body.String())
+	}
+	var withOffset []map[string]any
+	if err := json.NewDecoder(recOffset.Body).Decode(&withOffset); err != nil {
+		t.Fatalf("decode offset response: %v", err)
+	}
+	if len(withOffset) != 0 {
+		t.Fatalf("expected empty list for large offset, got %d", len(withOffset))
 	}
 }
 

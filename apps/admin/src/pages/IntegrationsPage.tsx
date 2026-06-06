@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Plug, Search, CheckCircle2, Loader2, X, Settings, ChevronDown, ChevronUp, Pencil } from 'lucide-react'
+import { Plug, Search, CheckCircle2, Loader2, X, Pencil, Plus } from 'lucide-react'
 import Nango from '@nangohq/frontend'
 import { api } from '../lib/api'
 import type { Connection, NangoProvider, IntegrationConfig } from '../types'
@@ -89,6 +89,64 @@ const FALLBACK_FIELDS_BY_MODE: Record<string, ManualField[]> = {
       },
     },
   ],
+  APP: [
+    {
+      key: 'app_id',
+      field: {
+        title: 'App ID',
+        description: 'Provider application ID',
+      },
+    },
+    {
+      key: 'app_link',
+      field: {
+        title: 'App Link',
+        description: 'Public URL of your application in the provider dashboard',
+      },
+    },
+    {
+      key: 'private_key',
+      field: {
+        title: 'Private Key (RSA PEM)',
+        description: 'Paste the full RSA private key including BEGIN/END lines',
+        secret: true,
+      },
+    },
+  ],
+  CUSTOM: [
+    {
+      key: 'client_id',
+      field: {
+        title: 'Client ID',
+      },
+    },
+    {
+      key: 'client_secret',
+      field: {
+        title: 'Client Secret',
+        secret: true,
+      },
+    },
+    {
+      key: 'app_id',
+      field: {
+        title: 'App ID',
+      },
+    },
+    {
+      key: 'app_link',
+      field: {
+        title: 'App Link',
+      },
+    },
+    {
+      key: 'private_key',
+      field: {
+        title: 'Private Key (RSA PEM)',
+        secret: true,
+      },
+    },
+  ],
 }
 
 // ---- Configure Modal -------------------------------------------------------
@@ -111,19 +169,40 @@ function ConfigureModal({ provider, existing, callbackUrl, onClose, onSaved }: C
 
   // Non-automated credentials fields the operator can provide for this profile.
   const mode = provider.auth_mode.toUpperCase().trim()
-  const providerCredentialFields = provider.credentials
-    ? Object.entries(provider.credentials)
-    : []
-  const providerConnectionConfigFields = provider.connection_config
-    ? Object.entries(provider.connection_config)
-    : []
-  const shouldUseFallbackFields =
-    providerCredentialFields.length === 0 &&
-    providerConnectionConfigFields.length === 0 &&
-    Boolean(FALLBACK_FIELDS_BY_MODE[mode])
-  const effectiveCredentialFields = shouldUseFallbackFields
-    ? FALLBACK_FIELDS_BY_MODE[mode]
-    : providerCredentialFields.map(([key, field]) => ({ key, field }))
+  const providerCredentialFields = provider.credentials ? Object.entries(provider.credentials) : []
+  const providerConnectionConfigFields = provider.connection_config ? Object.entries(provider.connection_config) : []
+  const mergedSchemaFields = useMemo(() => {
+    const seen = new Set<string>()
+    const merged: ManualField[] = []
+    const includeProviderCredentials = true
+    if (includeProviderCredentials) {
+      for (const [key, field] of providerCredentialFields) {
+        if ((field as any).automated) continue
+        if (seen.has(key)) continue
+        merged.push({ key, field })
+        seen.add(key)
+      }
+    }
+    for (const [key, field] of providerConnectionConfigFields) {
+      if ((field as any).automated) continue
+      if (seen.has(key)) continue
+      merged.push({ key, field })
+      seen.add(key)
+    }
+    if (includeProviderCredentials && (mode === 'OAUTH2' || mode === 'OAUTH2_CC')) {
+      const hasClientID = seen.has('client_id') || seen.has('oauth_client_id')
+      const hasClientSecret = seen.has('client_secret') || seen.has('oauth_client_secret')
+      if (!hasClientID || !hasClientSecret) {
+        for (const entry of FALLBACK_FIELDS_BY_MODE[mode] ?? []) {
+          if (seen.has(entry.key)) continue
+          merged.push(entry)
+          seen.add(entry.key)
+        }
+      }
+    }
+    return merged
+  }, [provider.auth_mode, providerCredentialFields, providerConnectionConfigFields, mode])
+  const effectiveCredentialFields = mergedSchemaFields
 
   const configFields = useMemo(() => {
     return effectiveCredentialFields
@@ -305,9 +384,11 @@ function ConfigureModal({ provider, existing, callbackUrl, onClose, onSaved }: C
               />
             ))}
 
-            {!isOAuthMode(provider.auth_mode) && configFields.length === 0 && (
+            {configFields.length === 0 && optionalConfigFields.length === 0 && (
               <p className="text-xs text-gray-500">
-                No configuration needed. Users will enter their credentials when they connect.
+                {isOAuthMode(provider.auth_mode)
+                  ? 'No manual setup fields were provided for this provider. Save this profile, then click Connect.'
+                  : 'No configuration needed. Users will enter their credentials when they connect.'}
               </p>
             )}
 
@@ -382,244 +463,283 @@ function Field({ label, value, onChange, required, secret, placeholder, descript
   )
 }
 
-// ---- Provider Card ---------------------------------------------------------
-
-type CardAction = 'connect' | 'setup' | 'disconnect' | 'remove-config'
-
-interface ProviderCardProps {
-  provider: NangoProvider
-  status: 'connected' | 'configured' | 'available'
-  connectingOrBusy: boolean
-  onAction: (action: CardAction, provider: NangoProvider) => void
+type IntegrationProfileRow = {
+  id: string
+  providerKey: string
+  providerName: string
+  providerAuthMode: string
+  providerLogoURL?: string
+  alias: string
+  profileName: string
+  isDefault: boolean
+  config: IntegrationConfig
+  connection?: Connection
+  status: 'connected' | 'configured'
 }
 
-function ProviderCard({ provider, status, connectingOrBusy, onAction }: ProviderCardProps) {
-  const canConnect = status === 'configured' || !isOAuthMode(provider.auth_mode)
-  const [imgError, setImgError] = useState(false)
+interface AddIntegrationModalProps {
+  providers: NangoProvider[]
+  onSelectProvider: (provider: NangoProvider) => void
+  onClose: () => void
+}
+
+function AddIntegrationModal({ providers, onSelectProvider, onClose }: AddIntegrationModalProps) {
+  const [search, setSearch] = useState('')
+  const [results, setResults] = useState<NangoProvider[]>(providers.slice(0, 6))
+  const [loadingResults, setLoadingResults] = useState(false)
+  const [resultsError, setResultsError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    const timer = setTimeout(async () => {
+      setLoadingResults(true)
+      try {
+        const list = await api.listProviders(search, 6)
+        if (cancelled) return
+        setResults(list)
+        setResultsError(null)
+      } catch (e: any) {
+        if (cancelled) return
+        setResultsError(e?.message ?? 'Failed to load integrations')
+      } finally {
+        if (!cancelled) setLoadingResults(false)
+      }
+    }, 200)
+
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [search])
 
   return (
-    <div className="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex items-center gap-2.5 min-w-0">
-          {/* Logo with fallback */}
-          {provider.logo_url && !imgError ? (
-            <img
-              src={provider.logo_url}
-              alt={provider.name}
-              className="h-8 w-8 shrink-0 object-contain"
-              onError={() => setImgError(true)}
-            />
-          ) : (
-            <Plug size={18} className="shrink-0 text-gray-400" />
-          )}
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-medium text-gray-900 leading-tight" style={{
-              display: '-webkit-box',
-              WebkitLineClamp: 2,
-              WebkitBoxOrient: 'vertical',
-              overflow: 'hidden',
-            }}>{provider.name}</p>
-            <p className="text-xs text-gray-400 mt-0.5">{provider.auth_mode}</p>
+    <>
+      <div className="fixed inset-0 z-40 bg-black/30" onClick={onClose} />
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="w-full max-w-2xl rounded-xl bg-white shadow-xl">
+          <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
+            <h2 className="text-base font-semibold text-gray-900">Add Integration</h2>
+            <button onClick={onClose} className="rounded-md p-1 text-gray-400 hover:bg-gray-100">
+              <X size={16} />
+            </button>
+          </div>
+
+          <div className="p-6">
+            <div className="relative">
+              <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input
+                autoFocus
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search integrations..."
+                className="w-full rounded-xl border border-gray-300 py-4 pl-12 pr-4 text-base text-gray-900 placeholder-gray-400 focus:border-gray-400 focus:outline-none"
+              />
+            </div>
+
+            <div className="mt-4 max-h-[55vh] overflow-y-auto rounded-lg border border-gray-200">
+              {resultsError && (
+                <p className="px-4 py-3 text-sm text-red-600">{resultsError}</p>
+              )}
+              {loadingResults && (
+                <p className="px-4 py-3 text-sm text-gray-500">Searching...</p>
+              )}
+              {!loadingResults && results.length === 0 ? (
+                <p className="px-4 py-6 text-sm text-gray-500">No matching integrations.</p>
+              ) : (
+                <div className="divide-y divide-gray-100">
+                  {results.map((provider) => (
+                    <button
+                      key={provider.unique_key}
+                      type="button"
+                      onClick={() => onSelectProvider(provider)}
+                      className="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-gray-50"
+                    >
+                      <div className="flex min-w-0 items-center gap-2.5">
+                        {provider.logo_url ? (
+                          <img
+                            src={provider.logo_url}
+                            alt={provider.name}
+                            className="h-6 w-6 shrink-0 object-contain"
+                          />
+                        ) : (
+                          <Plug size={14} className="shrink-0 text-gray-400" />
+                        )}
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium text-gray-900">{provider.name}</p>
+                          <p className="truncate text-xs text-gray-500">{provider.unique_key} · {provider.auth_mode}</p>
+                        </div>
+                      </div>
+                      <Plus size={14} className="shrink-0 text-gray-400" />
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
-        {status === 'connected' && (
-          <CheckCircle2 size={14} className="mt-0.5 shrink-0 text-green-500" />
-        )}
-        {status === 'configured' && (
-          <span className="shrink-0 rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-600">
-            Setup
-          </span>
-        )}
       </div>
-
-      {/* Category */}
-      {(provider.categories?.length ?? 0) > 0 && (
-        <p className="text-xs capitalize text-gray-400">
-          {provider.categories!.slice(0, 2).join(' · ').replace(/-/g, ' ')}
-        </p>
-      )}
-
-      {/* Actions */}
-      <div className="mt-auto flex gap-1.5">
-        {status === 'connected' ? (
-          <button
-            onClick={() => onAction('disconnect', provider)}
-            disabled={connectingOrBusy}
-            className="flex-1 rounded-md border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
-          >
-            {connectingOrBusy ? <Loader2 size={11} className="mx-auto animate-spin" /> : 'Disconnect'}
-          </button>
-        ) : canConnect ? (
-          <>
-            <button
-              onClick={() => onAction('connect', provider)}
-              disabled={connectingOrBusy}
-              className="flex-1 rounded-md bg-gray-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-800 disabled:opacity-50"
-            >
-              {connectingOrBusy ? <Loader2 size={11} className="mx-auto animate-spin" /> : 'Connect'}
-            </button>
-            {status === 'configured' && (
-              <button
-                onClick={() => onAction('remove-config', provider)}
-                className="rounded-md border border-gray-200 p-1.5 text-gray-400 hover:border-gray-300 hover:text-gray-600"
-                title="Remove OAuth app config"
-              >
-                <X size={12} />
-              </button>
-            )}
-          </>
-        ) : (
-          <button
-            onClick={() => onAction('setup', provider)}
-            disabled={connectingOrBusy}
-            className="flex-1 flex items-center justify-center gap-1 rounded-md border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50"
-          >
-            <Settings size={11} />
-            Setup
-          </button>
-        )}
-      </div>
-    </div>
+    </>
   )
 }
 
+type ProfilesTab = 'connected' | 'ready' | 'all'
+
 // ---- Main Page -------------------------------------------------------------
 
-const ALL_CATEGORIES = [
-  { key: 'all', label: 'All' },
-  { key: 'crm', label: 'CRM' },
-  { key: 'developer-tools', label: 'Dev Tools' },
-  { key: 'communication', label: 'Communication' },
-  { key: 'email', label: 'Email' },
-  { key: 'calendar', label: 'Calendar' },
-  { key: 'storage', label: 'Storage' },
-  { key: 'payments', label: 'Payments' },
-  { key: 'marketing', label: 'Marketing' },
-  { key: 'hr', label: 'HR' },
-  { key: 'analytics', label: 'Analytics' },
-  { key: 'productivity', label: 'Productivity' },
-]
-
 export default function IntegrationsPage() {
+  const PAGE_SIZE = 10
   const [providers,    setProviders]    = useState<NangoProvider[]>([])
   const [configs,      setConfigs]      = useState<IntegrationConfig[]>([])
-  const [connections,  setConnections]  = useState<Connection[]>([])
   const [loading,      setLoading]      = useState(true)
-  const [search,       setSearch]       = useState('')
-  const [category,     setCategory]     = useState('all')
-  const [showAllAvail, setShowAllAvail] = useState(false)
+  const [tableLoading, setTableLoading] = useState(false)
   const [busy,         setBusy]         = useState<string | null>(null)
   const [error,        setError]        = useState<string | null>(null)
-  const [configModal,  setConfigModal]  = useState<NangoProvider | null>(null)
+  const [showAddModal, setShowAddModal] = useState(false)
+  const [configModal,  setConfigModal]  = useState<{ provider: NangoProvider; existing?: IntegrationConfig } | null>(null)
   const [callbackUrl,  setCallbackUrl]  = useState('')
+  const [hasAnyProfiles, setHasAnyProfiles] = useState(false)
+  const [activeTab, setActiveTab] = useState<ProfilesTab>('connected')
+  const [connectedPage, setConnectedPage] = useState(1)
+  const [readyPage, setReadyPage] = useState(1)
+  const [allPage, setAllPage] = useState(1)
+  const [hasNextByTab, setHasNextByTab] = useState<Record<ProfilesTab, boolean>>({
+    connected: false,
+    ready: false,
+    all: false,
+  })
 
-  const configuredSet = useMemo(() => new Set(configs.map(c => c.provider)), [configs])
-  const connectedSet  = useMemo(() => new Set(connections.map(c => c.provider)), [connections])
+  const currentPageByTab: Record<ProfilesTab, number> = {
+    connected: connectedPage,
+    ready: readyPage,
+    all: allPage,
+  }
+  const setCurrentPageByTab: Record<ProfilesTab, (page: number) => void> = {
+    connected: setConnectedPage,
+    ready: setReadyPage,
+    all: setAllPage,
+  }
 
-  async function reload() {
-    const [p, cfg, conn] = await Promise.all([
-      api.listProviders(),
-      api.listConfigured(),
-      api.listConnections(),
+  async function reload(tab = activeTab, page = currentPageByTab[tab]) {
+    const status = tab === 'ready' ? 'configured' : tab
+    const offset = (Math.max(1, page) - 1) * PAGE_SIZE
+    const [p, cfg, anyConfigured] = await Promise.all([
+      providers.length > 0 ? Promise.resolve(providers) : api.listProviders(),
+      api.listConfigured(undefined, PAGE_SIZE + 1, offset, status),
+      api.listConfigured(undefined, 1, 0, 'all'),
     ])
     setProviders(p)
-    setConfigs(cfg)
-    setConnections(conn)
+    setConfigs(cfg.slice(0, PAGE_SIZE))
+    setHasAnyProfiles(anyConfigured.length > 0)
+    setHasNextByTab((prev) => ({
+      ...prev,
+      [tab]: cfg.length > PAGE_SIZE,
+    }))
   }
 
   useEffect(() => {
-    Promise.all([reload(), api.getConnectInfo().then(info => setCallbackUrl(info.oauth_callback_url))])
+    Promise.all([reload('connected', 1), api.getConnectInfo().then(info => setCallbackUrl(info.oauth_callback_url))])
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
   }, [])
 
-  function getStatus(providerKey: string): 'connected' | 'configured' | 'available' {
-    if (connectedSet.has(providerKey))  return 'connected'
-    if (configuredSet.has(providerKey)) return 'configured'
-    return 'available'
-  }
+  useEffect(() => {
+    if (loading) return
+    setTableLoading(true)
+    reload(activeTab, currentPageByTab[activeTab])
+      .catch((e: any) => setError(e?.message ?? 'Something went wrong'))
+      .finally(() => setTableLoading(false))
+  }, [activeTab, connectedPage, readyPage, allPage])
 
-  const filtered = useMemo(() => providers.filter(p => {
-    const matchSearch = !search ||
-      p.name.toLowerCase().includes(search.toLowerCase()) ||
-      p.unique_key.toLowerCase().includes(search.toLowerCase())
-    const matchCat = category === 'all' || (p.categories ?? []).includes(category)
-    return matchSearch && matchCat
-  }), [providers, search, category])
+  const providerByKey = useMemo(() => new Map(providers.map((p) => [p.unique_key, p])), [providers])
+  const profileRows = useMemo<IntegrationProfileRow[]>(() => {
+    const rows = configs.map((config) => {
+      const provider = providerByKey.get(config.provider)
+      const status: IntegrationProfileRow['status'] = config.connected ? 'connected' : 'configured'
+      return {
+        id: config.id,
+        providerKey: config.provider,
+        providerName: provider?.name ?? config.provider,
+        providerAuthMode: provider?.auth_mode ?? config.credentials_type,
+        providerLogoURL: provider?.logo_url,
+        alias: config.alias,
+        profileName: config.name?.trim() || config.alias,
+        isDefault: config.is_default,
+        config,
+        connection: undefined,
+        status,
+      }
+    })
+    return rows.sort((a, b) => {
+      if (a.profileName !== b.profileName) return a.profileName.localeCompare(b.profileName)
+      return a.alias.localeCompare(b.alias)
+    })
+  }, [configs, providerByKey])
 
-  const connected  = filtered.filter(p => getStatus(p.unique_key) === 'connected')
-  const configured = filtered.filter(p => getStatus(p.unique_key) === 'configured')
-  const available  = filtered.filter(p => getStatus(p.unique_key) === 'available')
-  const visibleAvailable = showAllAvail ? available : available.slice(0, 24)
+  const activePage = currentPageByTab[activeTab]
+  const hasNextPage = hasNextByTab[activeTab]
 
-  async function handleAction(action: CardAction, provider: NangoProvider) {
-    setBusy(provider.unique_key)
+  async function handleConnect(row: IntegrationProfileRow) {
+    setBusy(`${row.providerKey}::${row.alias}::connect`)
     setError(null)
     try {
-      if (action === 'setup') {
-        setConfigModal(provider)
-        return
-      }
-
-      if (action === 'connect') {
-        const providerConfigs = configs
-          .filter(c => c.provider === provider.unique_key)
-          .sort((a, b) => Number(b.is_default) - Number(a.is_default))
-        if (providerConfigs.length === 0) {
-          setConfigModal(provider)
-          return
-        }
-        const connectedAliases = new Set(
-          connections.filter(c => c.provider === provider.unique_key).map(c => c.alias),
-        )
-        const selectedConfig =
-          providerConfigs.find(c => !connectedAliases.has(c.alias)) ??
-          providerConfigs.find(c => c.is_default) ??
-          providerConfigs[0]
-
-        const { session_token, api_url, credential_profile_id, alias } =
-          await api.createConnectionSession(provider.unique_key, selectedConfig.alias, selectedConfig.id)
-        const nango = new Nango({
-          connectSessionToken: session_token,
-          host: api_url,
+      const { session_token, api_url, credential_profile_id, alias } =
+        await api.createConnectionSession(row.providerKey, row.alias, row.config.id)
+      const nango = new Nango({
+        connectSessionToken: session_token,
+        host: api_url,
+      })
+      try {
+        await nango.auth(row.config.nango_provider_config_key, {
+          detectClosedAuthWindow: true,
         })
-        try {
-          await nango.auth(selectedConfig.nango_provider_config_key, {
-            detectClosedAuthWindow: true,
-          })
-        } catch (err: any) {
-          if (err?.type === 'window_closed' || err?.message?.toLowerCase().includes('window')) {
-            throw new Error('cancelled')
-          }
-          throw err
+      } catch (err: any) {
+        if (err?.type === 'window_closed' || err?.message?.toLowerCase().includes('window')) {
+          throw new Error('cancelled')
         }
-        await api.recordConnection(provider.unique_key, '', alias, credential_profile_id)
-        await reload()
-        return
+        throw err
       }
-
-      if (action === 'disconnect') {
-        await api.disconnectProvider(provider.unique_key)
-        await reload()
-        return
-      }
-
-      if (action === 'remove-config') {
-        const defaultProfile = configs.find(
-          c => c.provider === provider.unique_key && c.is_default,
-        ) ?? configs.find(c => c.provider === provider.unique_key)
-        if (!defaultProfile) {
-          return
-        }
-        await api.deleteIntegrationConfig(defaultProfile.id)
-        await reload()
-      }
+      await api.recordConnection(row.providerKey, '', alias, credential_profile_id)
+      await reload()
     } catch (e: any) {
       if (e?.message !== 'cancelled') setError(e?.message ?? 'Something went wrong')
     } finally {
       setBusy(null)
     }
+  }
+
+  async function handleDisconnect(row: IntegrationProfileRow) {
+    setBusy(`${row.providerKey}::${row.alias}::disconnect`)
+    setError(null)
+    try {
+      await api.disconnectProvider(row.providerKey)
+      await reload()
+    } catch (e: any) {
+      setError(e?.message ?? 'Something went wrong')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  async function handleRemove(row: IntegrationProfileRow) {
+    setBusy(`${row.providerKey}::${row.alias}::remove`)
+    setError(null)
+    try {
+      await api.deleteIntegrationConfig(row.config.id)
+      await reload()
+    } catch (e: any) {
+      setError(e?.message ?? 'Something went wrong')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  function openAddModal() {
+    setShowAddModal(true)
+  }
+
+  function openConfigureProvider(provider: NangoProvider, existing?: IntegrationConfig) {
+    setConfigModal({ provider, existing })
   }
 
   if (loading) {
@@ -632,14 +752,26 @@ export default function IntegrationsPage() {
 
   return (
     <div>
-      <div className="mb-6">
-        <h1 className="text-xl font-semibold text-gray-900">Integrations</h1>
-        <p className="mt-1 text-sm text-gray-500">
-          Setup OAuth apps, then connect. Use{' '}
-          <code className="rounded bg-gray-100 px-1 py-0.5 text-xs">integration('provider')</code>
-          {' '}in snippets to call connected APIs.
-        </p>
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold text-gray-900">Integrations</h1>
+          <p className="mt-1 text-sm text-gray-500">
+            Manage saved integration profiles by name and alias, then connect each profile separately.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={openAddModal}
+          className="inline-flex items-center gap-1.5 rounded-lg bg-gray-900 px-3 py-2 text-sm text-white hover:bg-gray-800"
+        >
+          <Plus size={14} />
+          Add Integration
+        </button>
       </div>
+
+      <p className="mb-6 text-sm text-gray-500">
+        Use <code className="rounded bg-gray-100 px-1 py-0.5 text-xs">{`integration('provider', { alias: "..." })`}</code> in snippets.
+      </p>
 
       {error && (
         <div className="mb-4 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -648,87 +780,198 @@ export default function IntegrationsPage() {
         </div>
       )}
 
-      {/* Search + filters */}
-      <div className="mb-5 flex flex-col gap-3 sm:flex-row">
-        <div className="relative flex-1">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input
-            type="text"
-            placeholder="Search providers..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="w-full rounded-lg border border-gray-200 py-2 pl-9 pr-3 text-sm placeholder-gray-400 focus:border-gray-400 focus:outline-none"
-          />
+      {!hasAnyProfiles && (
+        <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 px-6 py-8 text-center">
+          <h3 className="text-sm font-semibold text-gray-900">No integration profiles yet</h3>
+          <p className="mt-1 text-sm text-gray-500">Create your first profile to configure credentials and connect.</p>
+          <button
+            type="button"
+            onClick={openAddModal}
+            className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-gray-900 px-3 py-2 text-sm text-white hover:bg-gray-800"
+          >
+            <Plus size={14} />
+            Add Integration
+          </button>
         </div>
-        <div className="flex flex-wrap gap-1.5">
-          {ALL_CATEGORIES.map(cat => (
+      )}
+
+      {hasAnyProfiles && (
+        <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
+          <div className="flex items-center gap-2 border-b border-gray-200 px-4 py-3">
             <button
-              key={cat.key}
-              onClick={() => setCategory(cat.key)}
-              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                category === cat.key
-                  ? 'bg-gray-900 text-white'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              type="button"
+              onClick={() => setActiveTab('connected')}
+              className={`rounded-md px-3 py-1.5 text-sm font-medium ${
+                activeTab === 'connected' ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
             >
-              {cat.label}
+              Connected
             </button>
-          ))}
+            <button
+              type="button"
+              onClick={() => setActiveTab('ready')}
+              className={`rounded-md px-3 py-1.5 text-sm font-medium ${
+                activeTab === 'ready' ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              Ready to Connect
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('all')}
+              className={`rounded-md px-3 py-1.5 text-sm font-medium ${
+                activeTab === 'all' ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              All Profiles
+            </button>
+          </div>
+
+          <div className="min-h-[calc(100vh-340px)]">
+            <div className="h-full overflow-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                  <tr>
+                    <th className="px-4 py-3">Profile</th>
+                    <th className="px-4 py-3">Provider</th>
+                    <th className="px-4 py-3">Alias</th>
+                    <th className="px-4 py-3">Auth</th>
+                    <th className="px-4 py-3">Status</th>
+                    <th className="px-4 py-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {tableLoading && (
+                    <tr>
+                      <td colSpan={6} className="px-4 py-8 text-center text-sm text-gray-500">
+                        <span className="inline-flex items-center gap-2">
+                          <Loader2 size={14} className="animate-spin text-gray-400" />
+                          Loading profiles...
+                        </span>
+                      </td>
+                    </tr>
+                  )}
+                  {!tableLoading && profileRows.length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="px-4 py-8 text-center text-sm text-gray-500">
+                        No profiles in this tab.
+                      </td>
+                    </tr>
+                  )}
+                  {!tableLoading && profileRows.map((row) => (
+                    <tr key={row.id} className="hover:bg-gray-50">
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          {row.providerLogoURL ? (
+                            <img src={row.providerLogoURL} alt={row.providerName} className="h-6 w-6 shrink-0 object-contain" />
+                          ) : (
+                            <Plug size={14} className="shrink-0 text-gray-400" />
+                          )}
+                          <div className="min-w-0">
+                            <p className="truncate font-medium text-gray-900">{row.profileName}</p>
+                            {row.isDefault && <p className="text-xs text-gray-500">Default</p>}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-gray-700">{row.providerName}</td>
+                      <td className="px-4 py-3 font-mono text-xs text-gray-600">{row.alias}</td>
+                      <td className="px-4 py-3 text-gray-600">{row.providerAuthMode}</td>
+                      <td className="px-4 py-3">
+                        {row.status === 'connected' ? (
+                          <span className="inline-flex items-center gap-1 text-green-600">
+                            <CheckCircle2 size={13} />
+                            Connected
+                          </span>
+                        ) : (
+                          <span className="text-blue-600">Ready</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex justify-end gap-1.5">
+                          {row.status === 'connected' ? (
+                            <button
+                              onClick={() => handleDisconnect(row)}
+                              disabled={busy?.startsWith(`${row.providerKey}::${row.alias}`) ?? false}
+                              className="rounded-md border border-gray-200 px-2.5 py-1 text-xs text-gray-700 hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+                            >
+                              Disconnect
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => handleConnect(row)}
+                              disabled={busy?.startsWith(`${row.providerKey}::${row.alias}`) ?? false}
+                              className="rounded-md bg-gray-900 px-2.5 py-1 text-xs text-white hover:bg-gray-800 disabled:opacity-50"
+                            >
+                              Connect
+                            </button>
+                          )}
+                          <button
+                            onClick={() => {
+                              const provider = providerByKey.get(row.providerKey)
+                              if (provider) openConfigureProvider(provider, row.config)
+                            }}
+                            disabled={busy?.startsWith(`${row.providerKey}::${row.alias}`) ?? false}
+                            className="rounded-md border border-gray-200 px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => handleRemove(row)}
+                            disabled={busy?.startsWith(`${row.providerKey}::${row.alias}`) ?? false}
+                            className="rounded-md border border-gray-200 px-2.5 py-1 text-xs text-gray-700 hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between border-t border-gray-200 px-4 py-3 text-sm">
+            <p className="text-gray-500">
+              Page {activePage}
+            </p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setCurrentPageByTab[activeTab](Math.max(1, activePage - 1))}
+                disabled={tableLoading || activePage <= 1}
+                className="rounded-md border border-gray-200 px-3 py-1 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Previous
+              </button>
+              <button
+                type="button"
+                onClick={() => setCurrentPageByTab[activeTab](activePage + 1)}
+                disabled={tableLoading || !hasNextPage}
+                className="rounded-md border border-gray-200 px-3 py-1 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Next
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
-
-      {/* Connected */}
-      {connected.length > 0 && (
-        <Section title={`Connected (${connected.length})`}>
-          {connected.map(p => (
-            <ProviderCard key={p.unique_key} provider={p} status="connected"
-              connectingOrBusy={busy === p.unique_key} onAction={handleAction} />
-          ))}
-        </Section>
       )}
 
-      {/* Configured (ready to connect, not yet connected) */}
-      {configured.length > 0 && (
-        <Section title={`Ready to connect (${configured.length})`}>
-          {configured.map(p => (
-            <ProviderCard key={p.unique_key} provider={p} status="configured"
-              connectingOrBusy={busy === p.unique_key} onAction={handleAction} />
-          ))}
-        </Section>
+      {showAddModal && (
+        <AddIntegrationModal
+          providers={providers}
+          onSelectProvider={(provider) => {
+            setShowAddModal(false)
+            openConfigureProvider(provider)
+          }}
+          onClose={() => setShowAddModal(false)}
+        />
       )}
 
-      {/* Available */}
-      <Section title={`Available (${available.length})`}>
-        {available.length === 0 ? (
-          <p className="col-span-full text-sm text-gray-400">No providers match your search.</p>
-        ) : (
-          <>
-            {visibleAvailable.map(p => (
-              <ProviderCard key={p.unique_key} provider={p} status="available"
-                connectingOrBusy={busy === p.unique_key} onAction={handleAction} />
-            ))}
-            {available.length > 24 && (
-              <div className="col-span-full flex justify-center">
-                <button
-                  onClick={() => setShowAllAvail(v => !v)}
-                  className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-800"
-                >
-                  {showAllAvail
-                    ? <><ChevronUp size={14} /> Show less</>
-                    : <><ChevronDown size={14} /> Show all {available.length} providers</>
-                  }
-                </button>
-              </div>
-            )}
-          </>
-        )}
-      </Section>
-
-      {/* Configure modal */}
       {configModal && (
         <ConfigureModal
-          provider={configModal}
-          existing={configs.find(c => c.provider === configModal.unique_key && c.is_default) ?? configs.find(c => c.provider === configModal.unique_key)}
+          provider={configModal.provider}
+          existing={configModal.existing}
           callbackUrl={callbackUrl}
           onClose={() => setConfigModal(null)}
           onSaved={async () => {
@@ -738,16 +981,5 @@ export default function IntegrationsPage() {
         />
       )}
     </div>
-  )
-}
-
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <section className="mb-8">
-      <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">{title}</h2>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
-        {children}
-      </div>
-    </section>
   )
 }

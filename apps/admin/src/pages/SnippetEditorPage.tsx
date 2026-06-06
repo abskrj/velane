@@ -201,9 +201,8 @@ export default function SnippetEditorPage() {
   const isReadOnly = !!selectedVersion
   const hasDraft = versions.some((v) => v.status === 'draft')
 
-  const tenantSlug = localStorage.getItem('tenantSlug') ?? 'your-tenant'
   const invokeUrl = snippet
-    ? `${window.location.origin}/api/v1/invoke/${tenantSlug}/${snippet.slug}`
+    ? `${window.location.origin}/api/v1/invoke/${snippet.slug}`
     : ''
   function copyToClipboard(text: string, key: string) {
     navigator.clipboard.writeText(text)

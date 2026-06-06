@@ -143,6 +143,7 @@ export interface IntegrationConfig {
   is_default: boolean
   provider: string
   oauth_scopes?: string
+  connected?: boolean
   created_at: string
   updated_at: string
 }

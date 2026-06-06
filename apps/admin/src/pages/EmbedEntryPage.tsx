@@ -21,9 +21,8 @@ export default function EmbedEntryPage() {
         if (!res.ok) {
           throw new Error('Invalid or expired embed token')
         }
-        const data = await res.json()
+        await res.json()
         localStorage.setItem('apiKey', token!)
-        localStorage.setItem('tenantSlug', data.tenant.slug)
         navigate('/dashboard/snippets?embed=true', { replace: true })
       } catch (err) {
         setError(String(err))

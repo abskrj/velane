@@ -16,7 +16,7 @@ This document tracks the phased implementation plan for Velane. Each phase deliv
 - Snippet CRUD — create, list, get, delete
 - Versioned deployments — each publish creates an immutable numbered version
 - `dev` and `prod` environments per snippet
-- Sync invocation: `POST /v1/invoke/{tenant}/{snippet}` → blocks until result
+- Sync invocation: `POST /v1/invoke/{snippet}` → blocks until result
 - ProcessExecutor — HTTP bridge to per-language executor containers (Bun, Python)
 - Executor runtimes — Bun (`runner.ts`) and Python (`runner.py`) as persistent HTTP servers
 - Tenant isolation enforced on every read and invocation
@@ -48,7 +48,7 @@ This document tracks the phased implementation plan for Velane. Each phase deliv
 ### New API surface
 
 ```
-POST /v1/invoke/{tenant}/{snippet}
+POST /v1/invoke/{snippet}
   X-Invoke-Mode: async    → 202 { invocation_id, status_url }
   X-Invoke-Mode: stream   → 200 text/event-stream
   Body: { ..., callback_url?: string }  (async only)
@@ -84,8 +84,8 @@ DELETE /v1/secrets/{id}              → delete secret
 POST   /v1/snippets/{id}/canary       → set canary { version_id, percent }
 DELETE /v1/snippets/{id}/canary       → remove canary (full traffic to active)
 
-GET    /v1/tenants/{slug}/egress      → get egress policy
-PUT    /v1/tenants/{slug}/egress      → update egress policy (admin scope)
+GET    /v1/tenant/egress              → get egress policy
+PUT    /v1/tenant/egress              → update egress policy (admin scope)
 ```
 
 ### New data model
@@ -248,7 +248,7 @@ snippet_environments.canary_pct
 - **Invite flow** — admins generate a signed invite token (72h TTL) and share a `/register?invite=xxx` link; invitee registers and is auto-added as tenant member
 - **Team member management API** — list, invite, remove members; list pending invites
 - **Branding API** — GET/PUT branding config per tenant (logo, accent color, font family, custom domain, hide-branding toggle); extends existing `branding` JSONB column on tenants
-- **Usage aggregation API** — `GET /v1/tenants/{slug}/usage?window=24h|7d|30d` aggregates invocations across all tenant snippets
+- **Usage aggregation API** — `GET /v1/tenant/usage?window=24h|7d|30d` aggregates invocations across all tenant snippets
 - **API key management API** — `GET` and `DELETE` endpoints for API keys (create already existed)
 - **Migration 007** — `users`, `user_sessions`, `tenant_members`, `invite_tokens` tables
 - **Admin SPA** (`apps/admin/`) — Vite + React + TypeScript + Tailwind:
@@ -280,18 +280,18 @@ POST /v1/admin/auth/login             → email/password login → session token
 POST /v1/admin/auth/logout            → invalidate session
 GET  /v1/admin/auth/me                → current user (session auth)
 
-GET  /v1/tenants/{slug}/branding      → get branding config (invoke scope)
-PUT  /v1/tenants/{slug}/branding      → update branding (admin scope)
+GET  /v1/tenant/branding              → get branding config (invoke scope)
+PUT  /v1/tenant/branding              → update branding (admin scope)
 
-GET    /v1/tenants/{slug}/members              → list members (admin scope)
-POST   /v1/tenants/{slug}/members/invite       → invite by email (admin scope)
-DELETE /v1/tenants/{slug}/members/{userID}     → remove member (admin scope)
-GET    /v1/tenants/{slug}/members/invites      → list pending invites (admin scope)
+GET    /v1/tenant/members                      → list members (admin scope)
+POST   /v1/tenant/members/invite               → invite by email (admin scope)
+DELETE /v1/tenant/members/{userID}             → remove member (admin scope)
+GET    /v1/tenant/members/invites              → list pending invites (admin scope)
 
-GET /v1/tenants/{slug}/usage           → usage summary (admin scope)
+GET /v1/tenant/usage                    → usage summary (admin scope)
 
-GET    /v1/tenants/{slug}/api-keys     → list keys without raw values (admin scope)
-DELETE /v1/tenants/{slug}/api-keys/{id} → revoke key (admin scope)
+GET    /v1/tenant/api-keys              → list keys without raw values (admin scope)
+DELETE /v1/tenant/api-keys/{id}         → revoke key (admin scope)
 ```
 
 ### New services
@@ -300,7 +300,7 @@ DELETE /v1/tenants/{slug}/api-keys/{id} → revoke key (admin scope)
 
 ### Relationship to Phase 7 embed
 
-Phase 7 builds the embed app and accepts branding config as URL params. Phase 8 adds the admin UI where orgs configure that branding through a proper form — the embed app fetches it from `GET /v1/tenants/{slug}/branding` on load. No changes to the embed app itself.
+Phase 7 builds the embed app and accepts branding config as URL params. Phase 8 adds the admin UI where orgs configure that branding through a proper form — the embed app fetches it from `GET /v1/tenant/branding` on load. No changes to the embed app itself.
 
 ---
 
@@ -313,7 +313,7 @@ Phase 7 builds the embed app and accepts branding config as URL params. Phase 8 
 - **JWT auth (RS256)** — replaces Postgres session tokens with stateless RS256 JWTs; access token 15min, refresh token 7d stored in Postgres with rotation; JWKS endpoint at `GET /.well-known/jwks.json`; ephemeral key generated with warning if `JWT_PRIVATE_KEY` not set
 - **Firecracker executor plugin** — optional `Executor` interface implementation via `EXECUTOR_TYPE=firecracker`; requires `/dev/kvm`; full interface with documented VM lifecycle (jailer → kernel boot → vsock → result); stub implementation compiles and is interface-complete; real Firecracker binary + rootfs images needed for bare-metal deployment
 - **Seccomp profile for executor containers** — `services/executor-runtime/seccomp-executor.json`; blocks `ptrace`, `mount`, `CLONE_NEWUSER`, `pevl_event_open`, `kexec`, `settimeofday`, kernel module ops, and more; applied to `bun-executor` and `python-executor` in `docker-compose.yml`
-- **Audit log** — append-only Postgres table (`audit_log`); all management actions logged (publish, secret_create, secret_delete, egress_update, member_invite, member_remove, api_key_create, api_key_revoke, branding_update, canary_set, canary_clear); fire-and-forget logger; queryable via `GET /v1/tenants/{slug}/audit-log` (admin scope)
+- **Audit log** — append-only Postgres table (`audit_log`); all management actions logged (publish, secret_create, secret_delete, egress_update, member_invite, member_remove, api_key_create, api_key_revoke, branding_update, canary_set, canary_clear); fire-and-forget logger; queryable via `GET /v1/tenant/audit-log` (admin scope)
 - **OpenAPI generation**: deferred
 
 ### New API surface
@@ -321,7 +321,7 @@ Phase 7 builds the embed app and accepts branding config as URL params. Phase 8 
 ```
 GET  /.well-known/jwks.json              → JWKS public key (no auth)
 POST /v1/admin/auth/refresh              → exchange refresh token for new pair (no auth)
-GET  /v1/tenants/{slug}/audit-log        → list audit log entries (admin scope)
+GET  /v1/tenant/audit-log                → list audit log entries (admin scope)
 ```
 
 ### New data model (migration 008)

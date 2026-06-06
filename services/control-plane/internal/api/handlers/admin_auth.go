@@ -25,7 +25,6 @@ type AdminAuthStore interface {
 	GetInviteByTokenHash(ctx context.Context, hash string) (*models.InviteToken, error)
 	AcceptInvite(ctx context.Context, id string) error
 	AddMember(ctx context.Context, tenantID, userID, role string) (*models.TenantMember, error)
-	GetUserPrimaryTenantSlug(ctx context.Context, userID string) (string, error)
 	CreateTenant(ctx context.Context, name, slug string) (*models.Tenant, error)
 	ListUserTenantMemberships(ctx context.Context, userID string) ([]*models.UserTenantMembership, error)
 }
@@ -116,14 +115,12 @@ func (h *AdminAuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantSlug, _ := h.store.GetUserPrimaryTenantSlug(r.Context(), sess.UserID)
 	writeSessionCookie(w, r, sess)
 
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"user":          user,
 		"session_token": sess.Token,
 		"expires_at":    sess.ExpiresAt,
-		"tenant_slug":   tenantSlug,
 	})
 }
 
@@ -145,13 +142,11 @@ func (h *AdminAuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantSlug, _ := h.store.GetUserPrimaryTenantSlug(r.Context(), sess.UserID)
 	writeSessionCookie(w, r, sess)
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"session_token": sess.Token,
 		"expires_at":    sess.ExpiresAt,
-		"tenant_slug":   tenantSlug,
 	})
 }
 
@@ -163,6 +158,7 @@ func (h *AdminAuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	clearSessionCookie(w, r)
+	clearActiveOrgCookie(w, r)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -234,6 +230,79 @@ func (h *AdminAuthHandler) CreateMyTenant(w http.ResponseWriter, r *http.Request
 		Name:     tenant.Name,
 		Role:     "admin",
 	})
+}
+
+// GetActiveTenant handles GET /v1/admin/auth/orgs/active.
+// Returns the currently active org membership for this session user.
+func (h *AdminAuthHandler) GetActiveTenant(w http.ResponseWriter, r *http.Request) {
+	user := middleware.SessionUserFromContext(r.Context())
+	if user == nil {
+		writeError(w, http.StatusUnauthorized, "unauthenticated")
+		return
+	}
+
+	memberships, err := h.store.ListUserTenantMemberships(r.Context(), user.ID)
+	if err != nil {
+		h.log.Error("list user tenants failed", zap.String("user_id", user.ID), zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "failed to list orgs")
+		return
+	}
+	if len(memberships) == 0 {
+		writeError(w, http.StatusNotFound, "no org memberships")
+		return
+	}
+
+	selected := memberships[0]
+	if cookie, err := r.Cookie(middleware.ActiveOrgCookieName); err == nil {
+		slug := strings.TrimSpace(cookie.Value)
+		for _, membership := range memberships {
+			if membership.Slug == slug {
+				selected = membership
+				break
+			}
+		}
+	}
+	writeActiveOrgCookie(w, r, selected.Slug)
+	writeJSON(w, http.StatusOK, selected)
+}
+
+// SetActiveTenant handles POST /v1/admin/auth/orgs/active.
+// Body: { "slug": "myorg" } and sets the active org cookie for session requests.
+func (h *AdminAuthHandler) SetActiveTenant(w http.ResponseWriter, r *http.Request) {
+	user := middleware.SessionUserFromContext(r.Context())
+	if user == nil {
+		writeError(w, http.StatusUnauthorized, "unauthenticated")
+		return
+	}
+
+	var req struct {
+		Slug string `json:"slug"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if strings.TrimSpace(req.Slug) == "" {
+		writeError(w, http.StatusBadRequest, "slug is required")
+		return
+	}
+
+	memberships, err := h.store.ListUserTenantMemberships(r.Context(), user.ID)
+	if err != nil {
+		h.log.Error("list user tenants failed", zap.String("user_id", user.ID), zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "failed to list orgs")
+		return
+	}
+
+	for _, membership := range memberships {
+		if membership.Slug == req.Slug {
+			writeActiveOrgCookie(w, r, membership.Slug)
+			writeJSON(w, http.StatusOK, membership)
+			return
+		}
+	}
+
+	writeError(w, http.StatusNotFound, "org not found")
 }
 
 // JWKS handles GET /.well-known/jwks.json.
@@ -341,6 +410,30 @@ func clearSessionCookie(w http.ResponseWriter, r *http.Request) {
 		Secure:   isHTTPSRequest(r),
 		MaxAge:   -1,
 		Expires:  time.Unix(0, 0),
+	})
+}
+
+func clearActiveOrgCookie(w http.ResponseWriter, r *http.Request) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     middleware.ActiveOrgCookieName,
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   isHTTPSRequest(r),
+		MaxAge:   -1,
+		Expires:  time.Unix(0, 0),
+	})
+}
+
+func writeActiveOrgCookie(w http.ResponseWriter, r *http.Request, slug string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     middleware.ActiveOrgCookieName,
+		Value:    strings.TrimSpace(slug),
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   isHTTPSRequest(r),
 	})
 }
 

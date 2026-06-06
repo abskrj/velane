@@ -31,22 +31,15 @@ func (m *mockSessionProvider) InvalidateSession(ctx context.Context, rawToken st
 }
 
 type mockSessionStore struct {
-	getTenantBySlugFn func(ctx context.Context, slug string) (*models.Tenant, error)
-	getMemberRoleFn   func(ctx context.Context, tenantID, userID string) (string, error)
+	listUserTenantMembershipsFn func(ctx context.Context, userID string) ([]*models.UserTenantMembership, error)
 }
 
-func (m *mockSessionStore) GetTenantBySlug(ctx context.Context, slug string) (*models.Tenant, error) {
-	return m.getTenantBySlugFn(ctx, slug)
-}
-
-func (m *mockSessionStore) GetMemberRole(ctx context.Context, tenantID, userID string) (string, error) {
-	return m.getMemberRoleFn(ctx, tenantID, userID)
+func (m *mockSessionStore) ListUserTenantMemberships(ctx context.Context, userID string) ([]*models.UserTenantMembership, error) {
+	return m.listUserTenantMembershipsFn(ctx, userID)
 }
 
 func TestSessionAuth_UsesCookieAndAttachesTenantRole(t *testing.T) {
 	user := &models.User{ID: "u1", Email: "alice@example.com"}
-	tenant := &models.Tenant{ID: "t1", Slug: "acme"}
-
 	mw := middleware.SessionAuth(&mockSessionProvider{
 		validateFn: func(_ context.Context, rawToken string) (*models.User, error) {
 			if rawToken != "cookie-token" {
@@ -55,17 +48,16 @@ func TestSessionAuth_UsesCookieAndAttachesTenantRole(t *testing.T) {
 			return user, nil
 		},
 	}, &mockSessionStore{
-		getTenantBySlugFn: func(_ context.Context, slug string) (*models.Tenant, error) {
-			if slug != "acme" {
-				t.Fatalf("slug = %q; want acme", slug)
+		listUserTenantMembershipsFn: func(_ context.Context, userID string) ([]*models.UserTenantMembership, error) {
+			if userID != "u1" {
+				t.Fatalf("userID = %q; want u1", userID)
 			}
-			return tenant, nil
-		},
-		getMemberRoleFn: func(_ context.Context, tenantID, userID string) (string, error) {
-			if tenantID != "t1" || userID != "u1" {
-				t.Fatalf("tenantID/userID = %q/%q; want t1/u1", tenantID, userID)
-			}
-			return "admin", nil
+			return []*models.UserTenantMembership{{
+				TenantID: "t1",
+				Slug:     "acme",
+				Name:     "Acme",
+				Role:     "admin",
+			}}, nil
 		},
 	}, nopLog)
 
@@ -81,7 +73,6 @@ func TestSessionAuth_UsesCookieAndAttachesTenantRole(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.AddCookie(&http.Cookie{Name: middleware.SessionCookieName, Value: "cookie-token"})
-	req.Header.Set("X-Tenant", "acme")
 	rec := httptest.NewRecorder()
 
 	h.ServeHTTP(rec, req)

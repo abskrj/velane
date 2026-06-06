@@ -8,13 +8,11 @@ import (
 	"github.com/abskrj/velane/services/control-plane/internal/api/middleware"
 	"github.com/abskrj/velane/services/control-plane/internal/models"
 	"github.com/abskrj/velane/services/control-plane/internal/store/postgres"
-	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 )
 
 // UsageStore is the subset of *postgres.Store that the usage handler needs.
 type UsageStore interface {
-	GetTenantBySlug(ctx context.Context, slug string) (*models.Tenant, error)
 	ListSnippets(ctx context.Context, tenantID string) ([]*models.Snippet, error)
 	GetSnippetMetrics(ctx context.Context, snippetID, window string, since time.Time) (*postgres.SnippetMetrics, error)
 }
@@ -37,17 +35,10 @@ type topSnippet struct {
 	P95Ms       float64 `json:"p95_ms"`
 }
 
-// GetUsage handles GET /v1/tenants/{slug}/usage?window=24h|7d|30d.
+// GetUsage handles GET /v1/tenant/usage?window=24h|7d|30d.
 func (h *UsageHandler) GetUsage(w http.ResponseWriter, r *http.Request) {
-	slug := chi.URLParam(r, "tenantSlug")
-	tenant, err := h.store.GetTenantBySlug(r.Context(), slug)
-	if err != nil {
-		writeError(w, http.StatusNotFound, "tenant not found")
-		return
-	}
-
 	authTenant := middleware.TenantFromContext(r.Context())
-	if authTenant == nil || authTenant.ID != tenant.ID {
+	if authTenant == nil {
 		writeError(w, http.StatusForbidden, "access denied")
 		return
 	}
@@ -67,7 +58,7 @@ func (h *UsageHandler) GetUsage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	snippets, err := h.store.ListSnippets(r.Context(), tenant.ID)
+	snippets, err := h.store.ListSnippets(r.Context(), authTenant.ID)
 	if err != nil {
 		h.log.Error("list snippets for usage failed", zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "failed to query usage")
@@ -129,7 +120,7 @@ func (h *UsageHandler) GetUsage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"tenant_id":         tenant.ID,
+		"tenant_id":         authTenant.ID,
 		"window":            window,
 		"total_invocations": totalInvocations,
 		"error_rate":        errorRate,

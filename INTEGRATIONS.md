@@ -162,18 +162,18 @@ control-plane:
 New handler: `internal/api/handlers/connections.go`
 
 ```
-POST   /v1/tenants/{slug}/connections/session
+POST   /v1/tenant/connections/session
          → create a Nango Connect session token for the OAuth popup
          → body: { provider: "github" }
          → returns: { session_token: "...", expires_at: "..." }
          → scope: manage
 
-GET    /v1/tenants/{slug}/connections
+GET    /v1/tenant/connections
          → list all connections for the tenant (from local DB)
          → returns: [{ provider, display_name, connected, created_at }]
          → scope: invoke
 
-DELETE /v1/tenants/{slug}/connections/{provider}
+DELETE /v1/tenant/connections/{provider}
          → disconnect: deletes from local DB + calls Nango to delete the connection
          → scope: manage
          → audited: connection_disconnect
@@ -429,14 +429,14 @@ Replaces `LibrariesPage.tsx` and `LibraryEditorPage.tsx`. New file: `apps/admin/
 ```typescript
 async function handleConnect(provider: string) {
   // 1. get session token from backend
-  const { session_token } = await api.post(`/v1/tenants/${tenantSlug}/connections/session`, { provider })
+  const { session_token } = await api.post('/v1/tenant/connections/session', { provider })
 
   // 2. open Nango Connect popup
   const nango = new Nango({ connectSessionToken: session_token })
   await nango.openConnectUI()
 
   // 3. record connection in DB
-  await api.post(`/v1/tenants/${tenantSlug}/connections`, { provider })
+  await api.post('/v1/tenant/connections', { provider })
 
   // 4. refresh connection list
   refetch()
@@ -445,7 +445,7 @@ async function handleConnect(provider: string) {
 
 **Data sources:**
 - Provider catalog: `GET /v1/integrations` (from Nango `/providers`, cached 1h) — 800+ entries
-- Connected status: `GET /v1/tenants/{slug}/connections` (from Velane DB) — fast, no Nango call
+- Connected status: `GET /v1/tenant/connections` (from Velane DB) — fast, no Nango call
 - Search + category filter: client-side against the cached catalog
 
 ---
@@ -631,10 +631,10 @@ For all other providers from Nango's catalog: base URL and docs URL are returned
 - **Migration 012** — `connections` table, drop `libraries` + `library_versions`
 - **Nango client** — `internal/nango/client.go`, thin Go HTTP client wrapping Nango REST API (connect session, get connection, delete connection, list providers, proxy)
 - **ConnectionsHandler** — `internal/api/handlers/connections.go`:
-  - `POST /v1/tenants/{slug}/connections/session`
-  - `GET /v1/tenants/{slug}/connections`
-  - `POST /v1/tenants/{slug}/connections` (record after OAuth completes)
-  - `DELETE /v1/tenants/{slug}/connections/{provider}`
+  - `POST /v1/tenant/connections/session`
+  - `GET /v1/tenant/connections`
+  - `POST /v1/tenant/connections` (record after OAuth completes)
+  - `DELETE /v1/tenant/connections/{provider}`
 - **IntegrationsHandler** — `internal/api/handlers/integrations.go`:
   - `GET /v1/integrations` — proxies Nango `/providers`, cached 1h in memory
 - **Router** — wire new handlers, remove library routes
@@ -680,10 +680,10 @@ CREATE INDEX idx_connections_tenant ON connections(tenant_id);
 ### New API surface
 
 ```
-POST   /v1/tenants/{slug}/connections/session   manage scope
-GET    /v1/tenants/{slug}/connections           invoke scope
-POST   /v1/tenants/{slug}/connections           manage scope
-DELETE /v1/tenants/{slug}/connections/{provider} manage scope
+POST   /v1/tenant/connections/session           manage scope
+GET    /v1/tenant/connections                   invoke scope
+POST   /v1/tenant/connections                   manage scope
+DELETE /v1/tenant/connections/{provider}        manage scope
 GET    /v1/integrations                         no auth (public catalog)
 ```
 

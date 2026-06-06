@@ -99,10 +99,25 @@ func (s *Store) ListConnections(ctx context.Context, tenantID string) ([]*models
 	return conns, rows.Err()
 }
 
-// GetConnection returns the connection for (tenant, provider) with alias 'default'.
+// GetConnection returns a connection for (tenant, provider), preferring alias
+// 'default' when present and otherwise falling back to any existing alias.
 // For targeted alias lookups use GetConnectionByAlias.
 func (s *Store) GetConnection(ctx context.Context, tenantID, provider string) (*models.Connection, error) {
-	return s.GetConnectionByAlias(ctx, tenantID, provider, "default")
+	row := s.pool.QueryRow(ctx,
+		`SELECT id, tenant_id, provider, alias, provider_config_key, credential_profile_id,
+		        COALESCE(nango_connection_id, ''), display_name, created_at, updated_at
+		 FROM connections
+		 WHERE tenant_id = $1 AND provider = $2
+		 ORDER BY CASE WHEN alias = 'default' THEN 0 ELSE 1 END, created_at ASC
+		 LIMIT 1`,
+		tenantID, provider,
+	)
+	var c models.Connection
+	if err := row.Scan(&c.ID, &c.TenantID, &c.Provider, &c.Alias, &c.ProviderConfigKey, &c.CredentialProfileID,
+		&c.NangoConnectionID, &c.DisplayName, &c.CreatedAt, &c.UpdatedAt); err != nil {
+		return nil, fmt.Errorf("GetConnection: %w", err)
+	}
+	return &c, nil
 }
 
 // GetConnectionByAlias returns a specific connection by (tenant, provider, alias).

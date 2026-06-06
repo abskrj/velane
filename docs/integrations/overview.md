@@ -63,4 +63,3 @@ If you are using Cursor or Claude Code, continue to [MCP Overview](../mcp/overvi
 
 - [Embed Mode vs Embed Dashboard](./embed-mode-vs-dashboard.md)
 - [Credentials and Scopes](../auth-tenancy/credentials-and-scopes.md)
-- [Generated References Plan](../reference-plan.md)

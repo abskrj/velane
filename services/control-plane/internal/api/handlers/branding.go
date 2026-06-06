@@ -8,13 +8,11 @@ import (
 	"github.com/abskrj/velane/services/control-plane/internal/api/middleware"
 	"github.com/abskrj/velane/services/control-plane/internal/audit"
 	"github.com/abskrj/velane/services/control-plane/internal/models"
-	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 )
 
 // BrandingStore is the subset of *postgres.Store that branding handlers need.
 type BrandingStore interface {
-	GetTenantBySlug(ctx context.Context, slug string) (*models.Tenant, error)
 	GetBranding(ctx context.Context, tenantID string) (*models.Branding, error)
 	UpdateBranding(ctx context.Context, tenantID string, b models.Branding) error
 }
@@ -37,22 +35,15 @@ func (h *BrandingHandler) WithAuditor(a *audit.Logger) *BrandingHandler {
 	return h
 }
 
-// GetBranding handles GET /v1/tenants/{slug}/branding.
+// GetBranding handles GET /v1/tenant/branding.
 func (h *BrandingHandler) GetBranding(w http.ResponseWriter, r *http.Request) {
-	slug := chi.URLParam(r, "tenantSlug")
-	tenant, err := h.store.GetTenantBySlug(r.Context(), slug)
-	if err != nil {
-		writeError(w, http.StatusNotFound, "tenant not found")
-		return
-	}
-
 	authTenant := middleware.TenantFromContext(r.Context())
-	if authTenant == nil || authTenant.ID != tenant.ID {
+	if authTenant == nil {
 		writeError(w, http.StatusForbidden, "access denied")
 		return
 	}
 
-	branding, err := h.store.GetBranding(r.Context(), tenant.ID)
+	branding, err := h.store.GetBranding(r.Context(), authTenant.ID)
 	if err != nil {
 		h.log.Error("get branding failed", zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "failed to get branding")
@@ -62,17 +53,10 @@ func (h *BrandingHandler) GetBranding(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, branding)
 }
 
-// UpdateBranding handles PUT /v1/tenants/{slug}/branding.
+// UpdateBranding handles PUT /v1/tenant/branding.
 func (h *BrandingHandler) UpdateBranding(w http.ResponseWriter, r *http.Request) {
-	slug := chi.URLParam(r, "tenantSlug")
-	tenant, err := h.store.GetTenantBySlug(r.Context(), slug)
-	if err != nil {
-		writeError(w, http.StatusNotFound, "tenant not found")
-		return
-	}
-
 	authTenant := middleware.TenantFromContext(r.Context())
-	if authTenant == nil || authTenant.ID != tenant.ID {
+	if authTenant == nil {
 		writeError(w, http.StatusForbidden, "access denied")
 		return
 	}
@@ -83,7 +67,7 @@ func (h *BrandingHandler) UpdateBranding(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if err := h.store.UpdateBranding(r.Context(), tenant.ID, b); err != nil {
+	if err := h.store.UpdateBranding(r.Context(), authTenant.ID, b); err != nil {
 		h.log.Error("update branding failed", zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "failed to update branding")
 		return
@@ -92,11 +76,11 @@ func (h *BrandingHandler) UpdateBranding(w http.ResponseWriter, r *http.Request)
 	if h.auditor != nil {
 		actorID, actorType := resolveActor(r)
 		h.auditor.Log(r.Context(), models.AuditEntry{
-			TenantID:   tenant.ID,
+			TenantID:   authTenant.ID,
 			ActorID:    actorID,
 			ActorType:  actorType,
 			Action:     "branding_update",
-			ResourceID: tenant.ID,
+			ResourceID: authTenant.ID,
 		})
 	}
 

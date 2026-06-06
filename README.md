@@ -9,7 +9,7 @@ Velane is an open-source, multi-tenant platform that lets AI agents deploy code 
 ## Features
 
 - **800+ integrations** — connect Salesforce, GitHub, Slack, HubSpot, Stripe, Notion, Linear, Zendesk, Airtable, and hundreds more via OAuth. Snippet code calls any provider's native API through a unified `integration()` client — no credentials in code, no SDK installs
-- **Snippet runtime** — execute Bun (TypeScript) or Python snippets via `POST /v1/invoke/{tenant}/{snippet}`
+- **Snippet runtime** — execute Bun (TypeScript) or Python snippets via `POST /v1/invoke/{snippet}`
 - **Sync, async, and streaming** — synchronous blocking, background async with webhook callbacks, and `text/event-stream` streaming
 - **Three environments** — `dev` → `staging` → `prod` promotion flow
 - **Versioned deployments** — each publish creates an immutable version; instant rollback to any prior version
@@ -161,28 +161,25 @@ Log into the admin portal at http://localhost:8092 with the credentials from the
 
 ```bash
 KEY=vl_xxxx   # your API key
-TENANT=myorg
 
 # Create a snippet
 SNIPPET=$(curl -s -X POST http://localhost:8080/v1/snippets \
   -H "Authorization: Bearer $KEY" \
-  -H "X-Tenant: $TENANT" \
   -H "Content-Type: application/json" \
   -d '{"name":"hello","language":"bun"}' | jq -r .id)
 
 # Push code as a new version
 VER=$(curl -s -X POST http://localhost:8080/v1/snippets/$SNIPPET/versions \
   -H "Authorization: Bearer $KEY" \
-  -H "X-Tenant: $TENANT" \
   -H "Content-Type: application/json" \
   -d '{"code":"export default async (req) => ({ hello: req.name })"}' | jq -r .version_number)
 
 # Publish to dev
 curl -s -X POST "http://localhost:8080/v1/snippets/$SNIPPET/versions/$VER/publish?env=dev" \
-  -H "Authorization: Bearer $KEY" -H "X-Tenant: $TENANT"
+  -H "Authorization: Bearer $KEY"
 
 # Invoke it
-curl -s -X POST http://localhost:8080/v1/invoke/$TENANT/$SNIPPET \
+curl -s -X POST http://localhost:8080/v1/invoke/$SNIPPET \
   -H "Authorization: Bearer $KEY" \
   -H "Content-Type: application/json" \
   -d '{"name":"world"}' | jq
@@ -226,23 +223,23 @@ export default async function handler(input: { caseId: string }) {
 
 ```bash
 # Synchronous (default) — blocks until result
-curl -X POST http://localhost:8080/v1/invoke/myorg/$SNIPPET \
+curl -X POST http://localhost:8080/v1/invoke/$SNIPPET \
   -H "Authorization: Bearer $KEY" -d '{"name":"world"}'
 
 # Async — returns 202 immediately, fires webhook on completion
-curl -X POST http://localhost:8080/v1/invoke/myorg/$SNIPPET \
+curl -X POST http://localhost:8080/v1/invoke/$SNIPPET \
   -H "Authorization: Bearer $KEY" \
   -H "X-Invoke-Mode: async" \
   -d '{"name":"world","callback_url":"https://yourserver.com/webhook"}'
 
 # Streaming — text/event-stream
-curl -X POST http://localhost:8080/v1/invoke/myorg/$SNIPPET \
+curl -X POST http://localhost:8080/v1/invoke/$SNIPPET \
   -H "Authorization: Bearer $KEY" \
   -H "X-Invoke-Mode: stream" \
   -d '{}'
 
 # Pinned version
-curl -X POST "http://localhost:8080/v1/invoke/myorg/$SNIPPET?version=v2" \
+curl -X POST "http://localhost:8080/v1/invoke/$SNIPPET?version=v2" \
   -H "Authorization: Bearer $KEY" -d '{}'
 ```
 
@@ -297,7 +294,7 @@ Connect a snippet to a GitHub repo:
 
 ```bash
 curl -s -X POST http://localhost:8080/v1/snippets/$SNIPPET/git-integration \
-  -H "Authorization: Bearer $KEY" -H "X-Tenant: $TENANT" \
+  -H "Authorization: Bearer $KEY" \
   -H "Content-Type: application/json" \
   -d '{"provider":"github","repo_url":"https://github.com/you/repo"}' | jq
 # returns { "secret": "whsec_..." } — add as a GitHub webhook secret
@@ -323,7 +320,7 @@ Configure your GitHub webhook to point at `http://your-host:8080/v1/webhooks/git
 | JWT access token | `Authorization: Bearer <jwt>` | Admin portal sessions |
 | Embed token | `Authorization: Bearer et_xxxx` | Embed endpoints only |
 
-Tenant context: `X-Tenant: myorg` header (required for snippet and invocation endpoints).
+Tenant context is resolved server-side from your authenticated API key/session (and active org for session auth).
 
 ### Endpoints
 
@@ -340,7 +337,7 @@ GET    /v1/snippets/{id}/versions
 POST   /v1/snippets/{id}/versions/{n}/publish   ?env=dev|staging|prod
 
 # Invocation
-POST   /v1/invoke/{tenant}/{snippet}             X-Invoke-Mode: sync|async|stream
+POST   /v1/invoke/{snippet}                      X-Invoke-Mode: sync|async|stream
 GET    /v1/invocations/{id}                      poll async result
 POST   /v1/invocations/{id}/replay
 
@@ -360,10 +357,10 @@ POST   /v1/integrations/configured               configure a provider (OAuth cre
 DELETE /v1/integrations/configured/{key}
 GET    /v1/integrations/{provider}/docs          endpoints + code example for a provider
 GET    /v1/connect/info                          OAuth redirect URL to register with providers
-GET    /v1/tenants/{slug}/connections            connected accounts
-POST   /v1/tenants/{slug}/connections/session    open OAuth Connect UI
-POST   /v1/tenants/{slug}/connections            record a completed connection
-DELETE /v1/tenants/{slug}/connections/{provider}
+GET    /v1/tenant/connections                    connected accounts
+POST   /v1/tenant/connections/session            open OAuth Connect UI
+POST   /v1/tenant/connections                    record a completed connection
+DELETE /v1/tenant/connections/{provider}
 
 # Observability
 GET    /v1/logs/snippets/{id}                    ?limit&env&status
@@ -371,18 +368,18 @@ GET    /v1/metrics/snippets/{id}                 ?window=1h|24h|7d
 
 # Tenants
 POST   /v1/tenants
-GET    /v1/tenants/{slug}/egress
-PUT    /v1/tenants/{slug}/egress
-GET    /v1/tenants/{slug}/branding
-PUT    /v1/tenants/{slug}/branding
-GET    /v1/tenants/{slug}/members
-POST   /v1/tenants/{slug}/members/invite
-DELETE /v1/tenants/{slug}/members/{userID}
-GET    /v1/tenants/{slug}/usage                  ?window=24h|7d|30d
-GET    /v1/tenants/{slug}/audit-log              ?limit&action&before (admin scope)
-GET    /v1/tenants/{slug}/api-keys
-POST   /v1/tenants/{slug}/api-keys
-DELETE /v1/tenants/{slug}/api-keys/{id}
+GET    /v1/tenant/egress
+PUT    /v1/tenant/egress
+GET    /v1/tenant/branding
+PUT    /v1/tenant/branding
+GET    /v1/tenant/members
+POST   /v1/tenant/members/invite
+DELETE /v1/tenant/members/{userID}
+GET    /v1/tenant/usage                          ?window=24h|7d|30d
+GET    /v1/tenant/audit-log                      ?limit&action&before (admin scope)
+GET    /v1/tenant/api-keys
+POST   /v1/tenant/api-keys
+DELETE /v1/tenant/api-keys/{id}
 
 # Embed
 POST   /v1/embed/tokens

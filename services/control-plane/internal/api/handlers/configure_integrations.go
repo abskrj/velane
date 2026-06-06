@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/abskrj/velane/services/control-plane/internal/api/middleware"
+	"github.com/abskrj/velane/services/control-plane/internal/models"
 	"github.com/abskrj/velane/services/control-plane/internal/nango"
 	"github.com/abskrj/velane/services/control-plane/internal/store/postgres"
 	"github.com/go-chi/chi/v5"
@@ -18,6 +20,11 @@ type ConfigureIntegrationsHandler struct {
 	log    *zap.Logger
 	store  *postgres.Store
 	encKey []byte
+}
+
+type configuredProfileResponse struct {
+	models.IntegrationCredentialProfileView
+	Connected bool `json:"connected"`
 }
 
 func NewConfigureIntegrationsHandler(store *postgres.Store, nangoClient *nango.Client, log *zap.Logger, encKey []byte) *ConfigureIntegrationsHandler {
@@ -43,7 +50,88 @@ func (h *ConfigureIntegrationsHandler) ListConfigured(w http.ResponseWriter, r *
 		writeJSON(w, http.StatusOK, []any{})
 		return
 	}
-	writeJSON(w, http.StatusOK, configs)
+
+	searchQuery := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
+	statusFilter := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("status")))
+	limit := parsePositiveInt(r.URL.Query().Get("limit"), 100)
+	offset := parseOffset(r.URL.Query().Get("offset"))
+
+	connections, err := h.store.ListConnections(r.Context(), tenant.ID)
+	if err != nil {
+		h.log.Error("list connections for configured integrations", zap.Error(err))
+		writeError(w, http.StatusBadGateway, "failed to list configured integrations")
+		return
+	}
+	connectedProfiles := make(map[string]struct{}, len(connections))
+	for _, conn := range connections {
+		connectedProfiles[strings.ToLower(conn.Provider)+"::"+strings.ToLower(conn.Alias)] = struct{}{}
+	}
+
+	filtered := make([]configuredProfileResponse, 0, len(configs))
+	for _, c := range configs {
+		if c == nil {
+			continue
+		}
+		key := strings.ToLower(c.Provider) + "::" + strings.ToLower(c.Alias)
+		_, isConnected := connectedProfiles[key]
+
+		if statusFilter == "connected" && !isConnected {
+			continue
+		}
+		if (statusFilter == "configured" || statusFilter == "ready") && isConnected {
+			continue
+		}
+		if searchQuery != "" &&
+			!strings.Contains(strings.ToLower(c.Provider), searchQuery) &&
+			!strings.Contains(strings.ToLower(c.Alias), searchQuery) &&
+			!strings.Contains(strings.ToLower(c.Name), searchQuery) &&
+			!strings.Contains(strings.ToLower(c.NangoProviderConfigKey), searchQuery) {
+			continue
+		}
+
+		filtered = append(filtered, configuredProfileResponse{
+			IntegrationCredentialProfileView: *c,
+			Connected:                        isConnected,
+		})
+	}
+
+	if offset > 0 {
+		if offset >= len(filtered) {
+			filtered = filtered[:0]
+		} else {
+			filtered = filtered[offset:]
+		}
+	}
+	if limit > 0 && len(filtered) > limit {
+		filtered = filtered[:limit]
+	}
+
+	writeJSON(w, http.StatusOK, filtered)
+}
+
+func parsePositiveInt(raw string, max int) int {
+	if strings.TrimSpace(raw) == "" {
+		return 0
+	}
+	v, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || v <= 0 {
+		return 0
+	}
+	if max > 0 && v > max {
+		return max
+	}
+	return v
+}
+
+func parseOffset(raw string) int {
+	if strings.TrimSpace(raw) == "" {
+		return 0
+	}
+	v, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || v < 0 {
+		return 0
+	}
+	return v
 }
 
 // Configure handles POST /v1/integrations/configured.
@@ -80,9 +168,9 @@ func (h *ConfigureIntegrationsHandler) Configure(w http.ResponseWriter, r *http.
 		req.Name = req.Alias
 	}
 
-	credType := strings.ToUpper(strings.TrimSpace(req.CredentialsType))
+	credType := normalizeCredentialType(strings.ToUpper(strings.TrimSpace(req.CredentialsType)))
 	if np, err := h.nango.GetProvider(r.Context(), req.Provider); err == nil {
-		if providerMode := strings.ToUpper(strings.TrimSpace(np.AuthMode)); providerMode != "" {
+		if providerMode := normalizeCredentialType(strings.ToUpper(strings.TrimSpace(np.AuthMode))); providerMode != "" {
 			if credType != "" && credType != providerMode {
 				h.log.Warn("credentials_type overridden by provider auth_mode",
 					zap.String("provider", req.Provider),
@@ -104,10 +192,21 @@ func (h *ConfigureIntegrationsHandler) Configure(w http.ResponseWriter, r *http.
 
 	plainFields := map[string]string{}
 	for k, v := range req.Credentials {
-		if strings.TrimSpace(k) == "" || strings.TrimSpace(v) == "" {
+		trimmedKey := strings.TrimSpace(k)
+		trimmedValue := strings.TrimSpace(v)
+		if trimmedKey == "" || trimmedValue == "" {
 			continue
 		}
-		plainFields[k] = v
+		// `type` is controlled by the backend to avoid invalid/unsupported unions.
+		if strings.EqualFold(trimmedKey, "type") {
+			continue
+		}
+		normalizedKey := normalizeCredentialFieldKey(trimmedKey)
+		if normalizedKey == "installation_id" {
+			// Nango's GitHub App credential unions reject installation_id on setup.
+			continue
+		}
+		plainFields[normalizedKey] = trimmedValue
 	}
 	if req.OAuthClientID != "" {
 		plainFields["oauth_client_id"] = req.OAuthClientID
@@ -126,7 +225,10 @@ func (h *ConfigureIntegrationsHandler) Configure(w http.ResponseWriter, r *http.
 		providerConfigKey = existing.NangoProviderConfigKey
 	}
 
-	nangoCreds := map[string]any{"type": credType}
+	nangoCreds := map[string]any{}
+	if shouldSendCredentialsType(credType) {
+		nangoCreds["type"] = credType
+	}
 	switch credType {
 	case "OAUTH2":
 		clientID := firstNonEmpty(plainFields["oauth_client_id"], plainFields["client_id"])
@@ -150,9 +252,36 @@ func (h *ConfigureIntegrationsHandler) Configure(w http.ResponseWriter, r *http.
 		// Nango expects OAUTH2_CC providers to be created without credentials in
 		// /integrations; tenant credentials are still securely stored in Velane.
 		nangoCreds = map[string]any{}
+	case "OAUTH1":
+		clientID := firstNonEmpty(
+			plainFields["oauth_client_id"],
+			plainFields["client_id"],
+			plainFields["consumer_key"],
+		)
+		clientSecret := firstNonEmpty(
+			plainFields["oauth_client_secret"],
+			plainFields["client_secret"],
+			plainFields["consumer_secret"],
+		)
+		if clientID == "" || clientSecret == "" {
+			writeError(w, http.StatusBadRequest, "client_id and client_secret are required")
+			return
+		}
+		nangoCreds["client_id"] = clientID
+		nangoCreds["client_secret"] = clientSecret
+	case "MCP_OAUTH2", "MCP_OAUTH2_GENERIC":
+		// Nango MCP providers are configured without credentials on /integrations.
+		// End-user authorization handles provider credentials during connect.
+		nangoCreds = map[string]any{}
 	default:
-		for k, v := range plainFields {
-			nangoCreds[k] = v
+		if shouldPassThroughCredentials(credType) {
+			for k, v := range plainFields {
+				nangoCreds[k] = v
+			}
+		} else {
+			// For most non-OAuth integration modes, Nango validates credentials on the
+			// end-user connection step (nango.auth), not on /integrations setup.
+			nangoCreds = map[string]any{}
 		}
 	}
 
@@ -207,7 +336,7 @@ func (h *ConfigureIntegrationsHandler) DeleteConfigured(w http.ResponseWriter, r
 	id := chi.URLParam(r, "providerConfigKey")
 	profile, err := h.store.SoftDeleteIntegrationCredentialProfile(r.Context(), tenant.ID, id)
 	if err != nil {
-		h.log.Error("soft delete integration credential profile", zap.String("id", id), zap.Error(err))
+		h.log.Error("delete integration credential profile", zap.String("id", id), zap.Error(err))
 		writeError(w, http.StatusNotFound, "integration credential profile not found")
 		return
 	}
@@ -274,4 +403,43 @@ func parseScopes(raw string) []string {
 		out = append(out, scope)
 	}
 	return out
+}
+
+func normalizeCredentialType(mode string) string {
+	return mode
+}
+
+func shouldSendCredentialsType(mode string) bool {
+	switch mode {
+	case "OAUTH2", "OAUTH1", "APP", "CUSTOM":
+		return true
+	default:
+		return false
+	}
+}
+
+func shouldPassThroughCredentials(mode string) bool {
+	switch mode {
+	case "OAUTH1", "APP", "CUSTOM":
+		return true
+	default:
+		return false
+	}
+}
+
+func normalizeCredentialFieldKey(key string) string {
+	switch key {
+	case "clientId":
+		return "client_id"
+	case "clientSecret":
+		return "client_secret"
+	case "appId":
+		return "app_id"
+	case "appPublicLink":
+		return "app_link"
+	case "privateKey":
+		return "private_key"
+	default:
+		return key
+	}
 }

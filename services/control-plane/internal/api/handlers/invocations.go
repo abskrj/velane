@@ -42,170 +42,16 @@ type invokeBody struct {
 	CallbackURL string `json:"callback_url"`
 }
 
-// Invoke handles POST /v1/invoke/{tenantSlug}/{snippetSlug}.
-//
-// The invoke endpoint performs its own API key authentication inline rather
-// than relying on the global auth middleware. This is because the tenant is
-// identified via the URL path, allowing external callers to use a key scoped
-// to a specific tenant without needing a separate header.
-//
-// Invoke mode is controlled by the X-Invoke-Mode header (default: sync):
-//
-//	sync   — execute immediately, return full result (200)
-//	async  — enqueue for background execution, return pending info (202)
-//	stream — stream execution output as text/event-stream
-//
-// Response headers (sync/stream):
-//
-//	X-Invocation-Id  — the persisted invocation ID
-//	X-Duration-Ms    — execution wall-clock time in milliseconds (sync only)
+// Invoke is kept as a compatibility shim and delegates to InvokeByToken.
 func (h *InvocationsHandler) Invoke(w http.ResponseWriter, r *http.Request) {
-	tenantSlug := chi.URLParam(r, "tenantSlug")
-	snippetSlug := chi.URLParam(r, "snippetSlug")
-
-	// --- Inline auth: session JWT first (Bearer header or session cookie), then API key ---
-	// The admin portal sends session cookies (no Authorization header) because it relies on
-	// the browser session established at login. External callers use a Bearer API key.
-	var token string
-	if authHdr := r.Header.Get("Authorization"); authHdr != "" {
-		parts := strings.SplitN(authHdr, " ", 2)
-		if len(parts) != 2 || !strings.EqualFold(parts[0], "bearer") {
-			writeError(w, http.StatusUnauthorized, "malformed Authorization header")
-			return
-		}
-		token = strings.TrimSpace(parts[1])
-	} else if cookie, err := r.Cookie(middleware.SessionCookieName); err == nil {
-		token = strings.TrimSpace(cookie.Value)
-	}
-	if token == "" {
-		writeError(w, http.StatusUnauthorized, "missing Authorization header or session cookie")
-		return
-	}
-
-	// Resolve the tenant from the URL path (shared by both auth paths).
-	tenant, err := h.store.GetTenantBySlug(r.Context(), tenantSlug)
-	if err != nil {
-		writeError(w, http.StatusNotFound, "tenant not found")
-		return
-	}
-
-	// Try session JWT auth when an auth provider is configured.
-	if h.provider != nil {
-		if user, err := h.provider.ValidateSession(r.Context(), token); err == nil {
-			// Verify the user is a member of this tenant with at least invoke role.
-			role, err := h.store.GetMemberRole(r.Context(), tenant.ID, user.ID)
-			if err != nil {
-				writeError(w, http.StatusForbidden, "not a member of this tenant")
-				return
-			}
-			if role != "invoke" && role != "manage" && role != "admin" {
-				writeError(w, http.StatusForbidden, "insufficient role for invoke")
-				return
-			}
-			// Session auth OK — fall through to invocation.
-			goto authOK
-		}
-	}
-
-	// Fall back to API key auth.
-	{
-		key, err := h.store.ValidateAPIKey(r.Context(), token)
-		if err != nil {
-			h.log.Debug("invoke: invalid api key", zap.Error(err))
-			writeError(w, http.StatusUnauthorized, "invalid api key")
-			return
-		}
-		if !key.HasScope("invoke") {
-			writeError(w, http.StatusForbidden, "api key missing 'invoke' scope")
-			return
-		}
-		if key.TenantID != tenant.ID {
-			writeError(w, http.StatusForbidden, "api key does not belong to this tenant")
-			return
-		}
-	}
-
-authOK:
-
-	// --- Read the input payload ---
-	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20)) // 1 MiB limit
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "failed to read request body")
-		return
-	}
-
-	// Try to unmarshal as invokeBody to extract optional fields.
-	var ib invokeBody
-	if len(body) > 0 {
-		// Best-effort unmarshal — we'll still use the raw body as input payload.
-		_ = json.Unmarshal(body, &ib)
-	}
-
-	inputPayload := string(body)
-	if inputPayload == "" {
-		inputPayload = "{}"
-	}
-
-	// Validate that the body is valid JSON (we store it raw).
-	if !json.Valid([]byte(inputPayload)) {
-		writeError(w, http.StatusBadRequest, "request body must be valid JSON")
-		return
-	}
-
-	// --- Resolve env from query param, default to prod ---
-	env := r.URL.Query().Get("env")
-	if env == "" {
-		env = "prod"
-	}
-	if env != "dev" && env != "staging" && env != "prod" {
-		writeError(w, http.StatusBadRequest, "env must be 'dev', 'staging', or 'prod'")
-		return
-	}
-
-	// --- Resolve pinned version from query param ---
-	var pinnedVersion int
-	if vStr := r.URL.Query().Get("version"); vStr != "" {
-		// Accept "v3" or "3".
-		vStr = strings.TrimPrefix(vStr, "v")
-		n, err := strconv.Atoi(vStr)
-		if err != nil || n <= 0 {
-			writeError(w, http.StatusBadRequest, "version must be a positive integer, e.g. ?version=3 or ?version=v3")
-			return
-		}
-		pinnedVersion = n
-	}
-
-	invokeReq := scheduler.InvokeRequest{
-		TenantID:      tenant.ID,
-		SnippetSlug:   snippetSlug,
-		Env:           env,
-		Input:         inputPayload,
-		PinnedVersion: pinnedVersion,
-	}
-
-	// --- Invoke mode ---
-	mode := strings.ToLower(r.Header.Get("X-Invoke-Mode"))
-	if mode == "" {
-		mode = "sync"
-	}
-
-	switch mode {
-	case "sync":
-		h.invokeSyncMode(w, r, invokeReq)
-	case "async":
-		h.invokeAsyncMode(w, r, invokeReq, ib.CallbackURL)
-	case "stream":
-		h.invokeStreamMode(w, r, invokeReq)
-	default:
-		writeError(w, http.StatusBadRequest, "X-Invoke-Mode must be 'sync', 'async', or 'stream'")
-	}
+	h.InvokeByToken(w, r)
 }
 
 // InvokeByToken handles POST /v1/invoke/{snippetSlug} (tenant-slug-free variant).
 //
 // The tenant is resolved from the authenticated credential rather than the URL:
 //   - API key (vl_…): tenant comes from the key's TenantID.
-//   - Session JWT: tenant is identified via the X-Tenant header (slug).
+//   - Session JWT: tenant is identified from the user's active membership.
 //
 // All other behaviour (invoke modes, query params, body) is identical to Invoke.
 func (h *InvocationsHandler) InvokeByToken(w http.ResponseWriter, r *http.Request) {
@@ -233,24 +79,19 @@ func (h *InvocationsHandler) InvokeByToken(w http.ResponseWriter, r *http.Reques
 	// Try session JWT auth when an auth provider is configured.
 	if h.provider != nil {
 		if user, err := h.provider.ValidateSession(r.Context(), token); err == nil {
-			// Session JWT does not encode a tenant; require X-Tenant header.
-			slug := r.Header.Get("X-Tenant")
-			if slug == "" {
-				writeError(w, http.StatusBadRequest, "session auth requires X-Tenant header when tenant_slug is omitted from URL")
+			memberships, err := h.store.ListUserTenantMemberships(r.Context(), user.ID)
+			if err != nil || len(memberships) == 0 {
+				writeError(w, http.StatusForbidden, "no tenant membership found")
 				return
 			}
-			t, err := h.store.GetTenantBySlug(r.Context(), slug)
+			activeMembership := memberships[0]
+			if role := activeMembership.Role; role != "invoke" && role != "manage" && role != "admin" {
+				writeError(w, http.StatusForbidden, "insufficient role for invoke")
+				return
+			}
+			t, err := h.store.GetTenantByID(r.Context(), activeMembership.TenantID)
 			if err != nil {
 				writeError(w, http.StatusNotFound, "tenant not found")
-				return
-			}
-			role, err := h.store.GetMemberRole(r.Context(), t.ID, user.ID)
-			if err != nil {
-				writeError(w, http.StatusForbidden, "not a member of this tenant")
-				return
-			}
-			if role != "invoke" && role != "manage" && role != "admin" {
-				writeError(w, http.StatusForbidden, "insufficient role for invoke")
 				return
 			}
 			tenant = t

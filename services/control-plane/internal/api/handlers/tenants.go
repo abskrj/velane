@@ -9,7 +9,6 @@ import (
 	"github.com/abskrj/velane/services/control-plane/internal/audit"
 	"github.com/abskrj/velane/services/control-plane/internal/models"
 	"github.com/abskrj/velane/services/control-plane/internal/store/postgres"
-	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 )
 
@@ -76,14 +75,12 @@ type createAPIKeyRequest struct {
 	Scopes []string `json:"scopes"`
 }
 
-// CreateAPIKey handles POST /v1/tenants/{tenantSlug}/api-keys.
+// CreateAPIKey handles POST /v1/tenant/api-keys.
 // Requires "admin" scope on the calling key.
 func (h *TenantsHandler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
-	tenantSlug := chi.URLParam(r, "tenantSlug")
-
-	tenant, err := h.store.GetTenantBySlug(r.Context(), tenantSlug)
-	if err != nil {
-		writeError(w, http.StatusNotFound, "tenant not found")
+	tenant := middleware.TenantFromContext(r.Context())
+	if tenant == nil {
+		writeError(w, http.StatusUnauthorized, "unauthenticated")
 		return
 	}
 
@@ -126,49 +123,22 @@ type updateEgressPolicyRequest struct {
 	BlockedDomains []string `json:"blocked_domains"`
 }
 
-// GetEgressPolicy handles GET /v1/tenants/{tenantSlug}/egress.
+// GetEgressPolicy handles GET /v1/tenant/egress.
 func (h *TenantsHandler) GetEgressPolicy(w http.ResponseWriter, r *http.Request) {
-	tenantSlug := chi.URLParam(r, "tenantSlug")
-
-	tenant, err := h.store.GetTenantBySlug(r.Context(), tenantSlug)
-	if err != nil {
-		writeError(w, http.StatusNotFound, "tenant not found")
-		return
-	}
-
-	// Enforce tenant isolation: the authenticated tenant must match.
 	authTenant := middleware.TenantFromContext(r.Context())
 	if authTenant == nil {
 		writeError(w, http.StatusUnauthorized, "unauthenticated")
 		return
 	}
-	if authTenant.ID != tenant.ID {
-		writeError(w, http.StatusForbidden, "access denied")
-		return
-	}
-
-	writeJSON(w, http.StatusOK, tenant.EgressPolicy)
+	writeJSON(w, http.StatusOK, authTenant.EgressPolicy)
 }
 
-// UpdateEgressPolicy handles PUT /v1/tenants/{tenantSlug}/egress.
+// UpdateEgressPolicy handles PUT /v1/tenant/egress.
 // Requires admin scope.
 func (h *TenantsHandler) UpdateEgressPolicy(w http.ResponseWriter, r *http.Request) {
-	tenantSlug := chi.URLParam(r, "tenantSlug")
-
-	tenant, err := h.store.GetTenantBySlug(r.Context(), tenantSlug)
-	if err != nil {
-		writeError(w, http.StatusNotFound, "tenant not found")
-		return
-	}
-
-	// Enforce tenant isolation.
 	authTenant := middleware.TenantFromContext(r.Context())
 	if authTenant == nil {
 		writeError(w, http.StatusUnauthorized, "unauthenticated")
-		return
-	}
-	if authTenant.ID != tenant.ID {
-		writeError(w, http.StatusForbidden, "access denied")
 		return
 	}
 
@@ -190,7 +160,7 @@ func (h *TenantsHandler) UpdateEgressPolicy(w http.ResponseWriter, r *http.Reque
 		BlockedDomains: req.BlockedDomains,
 	}
 
-	updated, err := h.store.UpdateEgressPolicy(r.Context(), tenant.ID, policy)
+	updated, err := h.store.UpdateEgressPolicy(r.Context(), authTenant.ID, policy)
 	if err != nil {
 		h.log.Error("update egress policy failed", zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "failed to update egress policy")
@@ -200,11 +170,11 @@ func (h *TenantsHandler) UpdateEgressPolicy(w http.ResponseWriter, r *http.Reque
 	if h.auditor != nil {
 		actorID, actorType := resolveActor(r)
 		h.auditor.Log(r.Context(), models.AuditEntry{
-			TenantID:   tenant.ID,
+			TenantID:   authTenant.ID,
 			ActorID:    actorID,
 			ActorType:  actorType,
 			Action:     "egress_update",
-			ResourceID: tenant.ID,
+			ResourceID: authTenant.ID,
 			Metadata: auditMeta(map[string]any{
 				"blocked_cidrs":   req.BlockedCIDRs,
 				"blocked_domains": req.BlockedDomains,

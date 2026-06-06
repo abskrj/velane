@@ -14,13 +14,8 @@ export default function LoginPage() {
     setError('')
     setLoading(true)
     try {
-      const res = await api.login(email, password)
+      await api.login(email, password)
       localStorage.removeItem('apiKey')
-      if (res.tenant_slug) {
-        api.setActiveTenantSlug(res.tenant_slug)
-      } else {
-        api.clearActiveTenantSlug()
-      }
       navigate('/dashboard/overview')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed')

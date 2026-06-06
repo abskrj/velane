@@ -54,7 +54,7 @@ export default function DashboardLayout() {
   const [orgs, setOrgs] = useState<OrgMembership[]>([])
   const [orgsLoading, setOrgsLoading] = useState(!isEmbedMode)
   const [orgsError, setOrgsError] = useState('')
-  const [activeOrgSlug, setActiveOrgSlug] = useState(() => api.getActiveTenantSlug())
+  const [activeOrgSlug, setActiveOrgSlug] = useState('')
   const [showOrgSwitcher, setShowOrgSwitcher] = useState(false)
   const [orgName, setOrgName] = useState('')
   const [orgSlug, setOrgSlug] = useState('')
@@ -92,18 +92,19 @@ export default function DashboardLayout() {
 
         setOrgs(memberships)
         if (memberships.length === 0) {
-          api.clearActiveTenantSlug()
           setActiveOrgSlug('')
           return
         }
 
-        const storedSlug = api.getActiveTenantSlug()
-        const nextSlug = memberships.some(org => org.slug === storedSlug)
-          ? storedSlug
-          : memberships[0].slug
-
-        api.setActiveTenantSlug(nextSlug)
-        setActiveOrgSlug(nextSlug)
+        try {
+          const activeOrg = await api.getActiveOrg()
+          const nextSlug = memberships.some(org => org.slug === activeOrg.slug)
+            ? activeOrg.slug
+            : memberships[0].slug
+          setActiveOrgSlug(nextSlug)
+        } catch {
+          setActiveOrgSlug(memberships[0].slug)
+        }
       } catch (err) {
         if (cancelled) return
         setOrgsError(err instanceof Error ? err.message : 'Failed to load orgs')
@@ -124,15 +125,17 @@ export default function DashboardLayout() {
     } catch {
       // ignore — proceed with local logout
     }
-    api.clearActiveTenantSlug()
     localStorage.removeItem('apiKey')
     navigate('/login')
   }
 
-  const handleOrgSwitch = (slug: string) => {
-    api.setActiveTenantSlug(slug)
-    setActiveOrgSlug(slug)
-    setShowOrgSwitcher(false)
+  const handleOrgSwitch = async (slug: string) => {
+    try {
+      await api.setActiveOrg(slug)
+      setActiveOrgSlug(slug)
+    } finally {
+      setShowOrgSwitcher(false)
+    }
   }
 
   const handleOrgNameChange = (value: string) => {
@@ -150,7 +153,7 @@ export default function DashboardLayout() {
     try {
       const createdOrg = await api.createOrg(orgName.trim(), orgSlug.trim())
       setOrgs([createdOrg])
-      api.setActiveTenantSlug(createdOrg.slug)
+      await api.setActiveOrg(createdOrg.slug)
       setActiveOrgSlug(createdOrg.slug)
       setOrgName('')
       setOrgSlug('')

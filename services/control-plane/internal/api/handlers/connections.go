@@ -45,23 +45,13 @@ func (h *ConnectionsHandler) WithAuditor(a *audit.Logger) *ConnectionsHandler {
 	return h
 }
 
-// CreateSession handles POST /v1/tenants/{slug}/connections/session.
+// CreateSession handles POST /v1/tenant/connections/session.
 // Returns a short-lived Nango Connect session token the frontend uses to open
 // the OAuth popup for a specific provider.
 func (h *ConnectionsHandler) CreateSession(w http.ResponseWriter, r *http.Request) {
 	tenant := middleware.TenantFromContext(r.Context())
 	if tenant == nil {
 		writeError(w, http.StatusUnauthorized, "unauthenticated")
-		return
-	}
-
-	authTenant, err := h.store.GetTenantBySlug(r.Context(), chi.URLParam(r, "tenantSlug"))
-	if err != nil {
-		writeError(w, http.StatusNotFound, "tenant not found")
-		return
-	}
-	if authTenant.ID != tenant.ID {
-		writeError(w, http.StatusForbidden, "access denied")
 		return
 	}
 
@@ -115,22 +105,12 @@ func (h *ConnectionsHandler) CreateSession(w http.ResponseWriter, r *http.Reques
 	})
 }
 
-// RecordConnection handles POST /v1/tenants/{slug}/connections.
+// RecordConnection handles POST /v1/tenant/connections.
 // Called by the frontend after the Nango OAuth popup completes successfully.
 func (h *ConnectionsHandler) RecordConnection(w http.ResponseWriter, r *http.Request) {
 	tenant := middleware.TenantFromContext(r.Context())
 	if tenant == nil {
 		writeError(w, http.StatusUnauthorized, "unauthenticated")
-		return
-	}
-
-	authTenant, err := h.store.GetTenantBySlug(r.Context(), chi.URLParam(r, "tenantSlug"))
-	if err != nil {
-		writeError(w, http.StatusNotFound, "tenant not found")
-		return
-	}
-	if authTenant.ID != tenant.ID {
-		writeError(w, http.StatusForbidden, "access denied")
 		return
 	}
 
@@ -181,21 +161,11 @@ func (h *ConnectionsHandler) RecordConnection(w http.ResponseWriter, r *http.Req
 	writeJSON(w, http.StatusCreated, conn)
 }
 
-// ListConnections handles GET /v1/tenants/{slug}/connections.
+// ListConnections handles GET /v1/tenant/connections.
 func (h *ConnectionsHandler) ListConnections(w http.ResponseWriter, r *http.Request) {
 	tenant := middleware.TenantFromContext(r.Context())
 	if tenant == nil {
 		writeError(w, http.StatusUnauthorized, "unauthenticated")
-		return
-	}
-
-	authTenant, err := h.store.GetTenantBySlug(r.Context(), chi.URLParam(r, "tenantSlug"))
-	if err != nil {
-		writeError(w, http.StatusNotFound, "tenant not found")
-		return
-	}
-	if authTenant.ID != tenant.ID {
-		writeError(w, http.StatusForbidden, "access denied")
 		return
 	}
 
@@ -210,24 +180,15 @@ func (h *ConnectionsHandler) ListConnections(w http.ResponseWriter, r *http.Requ
 		writeJSON(w, http.StatusOK, []any{})
 		return
 	}
-	writeJSON(w, http.StatusOK, conns)
+
+	writeJSON(w, http.StatusOK, filterAndPaginateConnections(conns, r))
 }
 
-// DisconnectProvider handles DELETE /v1/tenants/{slug}/connections/{provider}.
+// DisconnectProvider handles DELETE /v1/tenant/connections/{provider}.
 func (h *ConnectionsHandler) DisconnectProvider(w http.ResponseWriter, r *http.Request) {
 	tenant := middleware.TenantFromContext(r.Context())
 	if tenant == nil {
 		writeError(w, http.StatusUnauthorized, "unauthenticated")
-		return
-	}
-
-	authTenant, err := h.store.GetTenantBySlug(r.Context(), chi.URLParam(r, "tenantSlug"))
-	if err != nil {
-		writeError(w, http.StatusNotFound, "tenant not found")
-		return
-	}
-	if authTenant.ID != tenant.ID {
-		writeError(w, http.StatusForbidden, "access denied")
 		return
 	}
 
@@ -286,7 +247,39 @@ func (h *ConnectionsHandler) ListConnectionsForToken(w http.ResponseWriter, r *h
 		writeJSON(w, http.StatusOK, []any{})
 		return
 	}
-	writeJSON(w, http.StatusOK, conns)
+	writeJSON(w, http.StatusOK, filterAndPaginateConnections(conns, r))
+}
+
+func filterAndPaginateConnections(conns []*models.Connection, r *http.Request) []*models.Connection {
+	searchQuery := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
+	limit := parsePositiveInt(r.URL.Query().Get("limit"), 100)
+	offset := parseOffset(r.URL.Query().Get("offset"))
+
+	filtered := conns[:0]
+	if searchQuery == "" {
+		filtered = append(filtered, conns...)
+	} else {
+		for _, c := range conns {
+			if strings.Contains(strings.ToLower(c.Provider), searchQuery) ||
+				strings.Contains(strings.ToLower(c.Alias), searchQuery) ||
+				strings.Contains(strings.ToLower(c.DisplayName), searchQuery) ||
+				strings.Contains(strings.ToLower(c.ProviderConfigKey), searchQuery) {
+				filtered = append(filtered, c)
+			}
+		}
+	}
+
+	if offset > 0 {
+		if offset >= len(filtered) {
+			filtered = filtered[:0]
+		} else {
+			filtered = filtered[offset:]
+		}
+	}
+	if limit > 0 && len(filtered) > limit {
+		filtered = filtered[:limit]
+	}
+	return filtered
 }
 
 // Proxy handles all methods on /v1/proxy/{provider}/*.

@@ -55,7 +55,7 @@ setup-nango:
 ## seed: create a demo tenant (no auth required — bootstrap endpoint)
 ##
 ## After seeding, create an API key with:
-##   curl -s -X POST http://localhost:8080/v1/tenants/demo/api-keys \
+##   curl -s -X POST http://localhost:8080/v1/tenant/api-keys \
 ##     -H "Authorization: Bearer <admin-key>" \
 ##     -H "Content-Type: application/json" \
 ##     -d '{"name":"default","scopes":["admin","manage","invoke"]}' | jq .

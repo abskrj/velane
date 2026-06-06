@@ -89,6 +89,8 @@ func newRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logge
 		r.Get("/v1/admin/auth/me", adminAuthH.Me)
 		r.Get("/v1/admin/auth/orgs", adminAuthH.ListMyTenants)
 		r.Post("/v1/admin/auth/orgs", adminAuthH.CreateMyTenant)
+		r.Get("/v1/admin/auth/orgs/active", adminAuthH.GetActiveTenant)
+		r.Post("/v1/admin/auth/orgs/active", adminAuthH.SetActiveTenant)
 	})
 
 	// Provider catalog and connect info — public, no auth.
@@ -113,50 +115,50 @@ func newRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logge
 
 		// API key management.
 		r.With(middleware.RequireScope("admin", log)).
-			Post("/v1/tenants/{tenantSlug}/api-keys", tenantsH.CreateAPIKey)
+			Post("/v1/tenant/api-keys", tenantsH.CreateAPIKey)
 		r.With(middleware.RequireScope("admin", log)).
-			Get("/v1/tenants/{tenantSlug}/api-keys", apikeysH.ListAPIKeys)
+			Get("/v1/tenant/api-keys", apikeysH.ListAPIKeys)
 		r.With(middleware.RequireScope("admin", log)).
-			Delete("/v1/tenants/{tenantSlug}/api-keys/{keyID}", apikeysH.DeleteAPIKey)
+			Delete("/v1/tenant/api-keys/{keyID}", apikeysH.DeleteAPIKey)
 
 		// Egress policy.
-		r.Get("/v1/tenants/{tenantSlug}/egress", tenantsH.GetEgressPolicy)
+		r.Get("/v1/tenant/egress", tenantsH.GetEgressPolicy)
 		r.With(middleware.RequireScope("admin", log)).
-			Put("/v1/tenants/{tenantSlug}/egress", tenantsH.UpdateEgressPolicy)
+			Put("/v1/tenant/egress", tenantsH.UpdateEgressPolicy)
 
 		// Branding.
 		r.With(middleware.RequireScope("invoke", log)).
-			Get("/v1/tenants/{tenantSlug}/branding", brandingH.GetBranding)
+			Get("/v1/tenant/branding", brandingH.GetBranding)
 		r.With(middleware.RequireScope("admin", log)).
-			Put("/v1/tenants/{tenantSlug}/branding", brandingH.UpdateBranding)
+			Put("/v1/tenant/branding", brandingH.UpdateBranding)
 
 		// Team members and invites.
 		r.With(middleware.RequireScope("admin", log)).
-			Get("/v1/tenants/{tenantSlug}/members", membersH.ListMembers)
+			Get("/v1/tenant/members", membersH.ListMembers)
 		r.With(middleware.RequireScope("admin", log)).
-			Post("/v1/tenants/{tenantSlug}/members/invite", membersH.InviteMember)
+			Post("/v1/tenant/members/invite", membersH.InviteMember)
 		r.With(middleware.RequireScope("admin", log)).
-			Delete("/v1/tenants/{tenantSlug}/members/{userID}", membersH.RemoveMember)
+			Delete("/v1/tenant/members/{userID}", membersH.RemoveMember)
 		r.With(middleware.RequireScope("admin", log)).
-			Get("/v1/tenants/{tenantSlug}/members/invites", membersH.ListInvites)
+			Get("/v1/tenant/members/invites", membersH.ListInvites)
 
 		// Usage aggregation.
 		r.With(middleware.RequireScope("admin", log)).
-			Get("/v1/tenants/{tenantSlug}/usage", usageH.GetUsage)
+			Get("/v1/tenant/usage", usageH.GetUsage)
 
 		// Audit log.
 		r.With(middleware.RequireScope("admin", log)).
-			Get("/v1/tenants/{slug}/audit-log", auditH.ListAuditLog)
+			Get("/v1/tenant/audit-log", auditH.ListAuditLog)
 
 		// Connections (OAuth integrations).
 		r.With(middleware.RequireScope("invoke", log)).
-			Get("/v1/tenants/{tenantSlug}/connections", connectionsH.ListConnections)
+			Get("/v1/tenant/connections", connectionsH.ListConnections)
 		r.With(middleware.RequireScope("manage", log)).
-			Post("/v1/tenants/{tenantSlug}/connections/session", connectionsH.CreateSession)
+			Post("/v1/tenant/connections/session", connectionsH.CreateSession)
 		r.With(middleware.RequireScope("manage", log)).
-			Post("/v1/tenants/{tenantSlug}/connections", connectionsH.RecordConnection)
+			Post("/v1/tenant/connections", connectionsH.RecordConnection)
 		r.With(middleware.RequireScope("manage", log)).
-			Delete("/v1/tenants/{tenantSlug}/connections/{provider}", connectionsH.DisconnectProvider)
+			Delete("/v1/tenant/connections/{provider}", connectionsH.DisconnectProvider)
 
 		// Provider docs.
 		r.With(middleware.RequireScope("invoke", log)).
@@ -236,10 +238,8 @@ func newRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logge
 	})
 
 	// Invoke endpoints perform their own auth inline.
-	// Slug-free variant: tenant is resolved from the authenticated API key.
+	// Tenant is resolved from the authenticated API key/session.
 	r.Post("/v1/invoke/{snippetSlug}", invocationsH.InvokeByToken)
-	// Legacy variant with explicit tenant slug — kept for backwards compatibility.
-	r.Post("/v1/invoke/{tenantSlug}/{snippetSlug}", invocationsH.Invoke)
 
 	// Git webhook endpoint — HMAC signature verified inline.
 	r.Post("/v1/webhooks/git/{snippetID}", webhookH.GitWebhook)

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/abskrj/velane/services/control-plane/internal/api/middleware"
 	"github.com/abskrj/velane/services/control-plane/internal/audit"
 	"github.com/abskrj/velane/services/control-plane/internal/models"
 	"github.com/go-chi/chi/v5"
@@ -13,7 +14,6 @@ import (
 
 // APIKeysStore is the subset of *postgres.Store that API key management handlers need.
 type APIKeysStore interface {
-	GetTenantBySlug(ctx context.Context, slug string) (*models.Tenant, error)
 	ListAPIKeys(ctx context.Context, tenantID string) ([]*models.APIKey, error)
 	DeleteAPIKey(ctx context.Context, tenantID, id string) error
 }
@@ -46,13 +46,12 @@ type safeAPIKey struct {
 	CreatedAt  time.Time  `json:"created_at"`
 }
 
-// ListAPIKeys handles GET /v1/tenants/{slug}/api-keys.
+// ListAPIKeys handles GET /v1/tenant/api-keys.
 // Returns key metadata only — no raw key values.
 func (h *APIKeysHandler) ListAPIKeys(w http.ResponseWriter, r *http.Request) {
-	slug := chi.URLParam(r, "tenantSlug")
-	tenant, err := h.store.GetTenantBySlug(r.Context(), slug)
-	if err != nil {
-		writeError(w, http.StatusNotFound, "tenant not found")
+	tenant := middleware.TenantFromContext(r.Context())
+	if tenant == nil {
+		writeError(w, http.StatusUnauthorized, "unauthenticated")
 		return
 	}
 
@@ -78,14 +77,12 @@ func (h *APIKeysHandler) ListAPIKeys(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
-// DeleteAPIKey handles DELETE /v1/tenants/{slug}/api-keys/{id}.
+// DeleteAPIKey handles DELETE /v1/tenant/api-keys/{id}.
 func (h *APIKeysHandler) DeleteAPIKey(w http.ResponseWriter, r *http.Request) {
-	slug := chi.URLParam(r, "tenantSlug")
 	keyID := chi.URLParam(r, "keyID")
-
-	tenant, err := h.store.GetTenantBySlug(r.Context(), slug)
-	if err != nil {
-		writeError(w, http.StatusNotFound, "tenant not found")
+	tenant := middleware.TenantFromContext(r.Context())
+	if tenant == nil {
+		writeError(w, http.StatusUnauthorized, "unauthenticated")
 		return
 	}
 

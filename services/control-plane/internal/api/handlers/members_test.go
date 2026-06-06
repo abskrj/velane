@@ -70,8 +70,7 @@ func TestInvite_CreatesToken(t *testing.T) {
 	h := handlers.NewMembersHandler(store, zap.NewNop())
 
 	body, _ := json.Marshal(map[string]string{"email": "newuser@example.com", "role": "manage"})
-	req := httptest.NewRequest(http.MethodPost, "/v1/tenants/acme/members/invite", bytes.NewReader(body))
-	req = withChiParam(req, "tenantSlug", "acme")
+	req := httptest.NewRequest(http.MethodPost, "/v1/tenant/members/invite", bytes.NewReader(body))
 	req = withAuthTenant(req, fakeTenant())
 	req.Header.Set("Content-Type", "application/json")
 	rr := httptest.NewRecorder()
@@ -104,8 +103,7 @@ func TestListMembers(t *testing.T) {
 	}
 	h := handlers.NewMembersHandler(store, zap.NewNop())
 
-	req := httptest.NewRequest(http.MethodGet, "/v1/tenants/acme/members", nil)
-	req = withChiParam(req, "tenantSlug", "acme")
+	req := httptest.NewRequest(http.MethodGet, "/v1/tenant/members", nil)
 	req = withAuthTenant(req, fakeTenant())
 	rr := httptest.NewRecorder()
 
@@ -132,8 +130,7 @@ func TestRemoveMember(t *testing.T) {
 	}
 	h := handlers.NewMembersHandler(store, zap.NewNop())
 
-	req := httptest.NewRequest(http.MethodDelete, "/v1/tenants/acme/members/u1", nil)
-	req = withChiParam(req, "tenantSlug", "acme")
+	req := httptest.NewRequest(http.MethodDelete, "/v1/tenant/members/u1", nil)
 	req = withChiParam(req, "userID", "u1")
 	req = withAuthTenant(req, fakeTenant())
 	rr := httptest.NewRecorder()

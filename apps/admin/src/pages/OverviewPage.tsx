@@ -11,7 +11,6 @@ interface Stats {
 }
 
 export default function OverviewPage() {
-  const slug = localStorage.getItem('tenantSlug') ?? '—'
   const [stats, setStats] = useState<Stats>({
     apiKeyCount: 0,
     memberCount: 0,
@@ -49,7 +48,7 @@ export default function OverviewPage() {
   return (
     <div>
       <h1 className="mb-1 text-2xl font-bold text-gray-900">Overview</h1>
-      <p className="mb-8 text-sm text-gray-500">Tenant: <span className="font-medium">{slug}</span></p>
+      <p className="mb-8 text-sm text-gray-500">Tenant is resolved from your authenticated session/API key.</p>
 
       {stats.error && (
         <div className="mb-6 rounded-md bg-red-50 p-3 text-sm text-red-700">{stats.error}</div>

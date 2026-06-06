@@ -18,7 +18,6 @@ import (
 
 // MembersStore is the subset of *postgres.Store that member handlers need.
 type MembersStore interface {
-	GetTenantBySlug(ctx context.Context, slug string) (*models.Tenant, error)
 	ListMembers(ctx context.Context, tenantID string) ([]*models.TenantMember, error)
 	RemoveMember(ctx context.Context, tenantID, userID string) error
 	CreateInvite(ctx context.Context, tenantID, email, role, tokenHash string, expiresAt time.Time) (*models.InviteToken, error)
@@ -43,22 +42,15 @@ func (h *MembersHandler) WithAuditor(a *audit.Logger) *MembersHandler {
 	return h
 }
 
-// ListMembers handles GET /v1/tenants/{slug}/members.
+// ListMembers handles GET /v1/tenant/members.
 func (h *MembersHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
-	slug := chi.URLParam(r, "tenantSlug")
-	tenant, err := h.store.GetTenantBySlug(r.Context(), slug)
-	if err != nil {
-		writeError(w, http.StatusNotFound, "tenant not found")
-		return
-	}
-
 	authTenant := middleware.TenantFromContext(r.Context())
-	if authTenant == nil || authTenant.ID != tenant.ID {
+	if authTenant == nil {
 		writeError(w, http.StatusForbidden, "access denied")
 		return
 	}
 
-	members, err := h.store.ListMembers(r.Context(), tenant.ID)
+	members, err := h.store.ListMembers(r.Context(), authTenant.ID)
 	if err != nil {
 		h.log.Error("list members failed", zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "failed to list members")
@@ -73,17 +65,10 @@ type inviteMemberRequest struct {
 	Role  string `json:"role"`
 }
 
-// InviteMember handles POST /v1/tenants/{slug}/members/invite.
+// InviteMember handles POST /v1/tenant/members/invite.
 func (h *MembersHandler) InviteMember(w http.ResponseWriter, r *http.Request) {
-	slug := chi.URLParam(r, "tenantSlug")
-	tenant, err := h.store.GetTenantBySlug(r.Context(), slug)
-	if err != nil {
-		writeError(w, http.StatusNotFound, "tenant not found")
-		return
-	}
-
 	authTenant := middleware.TenantFromContext(r.Context())
-	if authTenant == nil || authTenant.ID != tenant.ID {
+	if authTenant == nil {
 		writeError(w, http.StatusForbidden, "access denied")
 		return
 	}
@@ -110,7 +95,7 @@ func (h *MembersHandler) InviteMember(w http.ResponseWriter, r *http.Request) {
 	rawToken, tokenHash := generateInviteToken()
 	expiresAt := time.Now().Add(72 * time.Hour)
 
-	invite, err := h.store.CreateInvite(r.Context(), tenant.ID, req.Email, req.Role, tokenHash, expiresAt)
+	invite, err := h.store.CreateInvite(r.Context(), authTenant.ID, req.Email, req.Role, tokenHash, expiresAt)
 	if err != nil {
 		h.log.Error("create invite failed", zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "failed to create invite")
@@ -120,7 +105,7 @@ func (h *MembersHandler) InviteMember(w http.ResponseWriter, r *http.Request) {
 	if h.auditor != nil {
 		actorID, actorType := resolveActor(r)
 		h.auditor.Log(r.Context(), models.AuditEntry{
-			TenantID:   tenant.ID,
+			TenantID:   authTenant.ID,
 			ActorID:    actorID,
 			ActorType:  actorType,
 			Action:     "member_invite",
@@ -135,24 +120,17 @@ func (h *MembersHandler) InviteMember(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// RemoveMember handles DELETE /v1/tenants/{slug}/members/{userID}.
+// RemoveMember handles DELETE /v1/tenant/members/{userID}.
 func (h *MembersHandler) RemoveMember(w http.ResponseWriter, r *http.Request) {
-	slug := chi.URLParam(r, "tenantSlug")
 	userID := chi.URLParam(r, "userID")
 
-	tenant, err := h.store.GetTenantBySlug(r.Context(), slug)
-	if err != nil {
-		writeError(w, http.StatusNotFound, "tenant not found")
-		return
-	}
-
 	authTenant := middleware.TenantFromContext(r.Context())
-	if authTenant == nil || authTenant.ID != tenant.ID {
+	if authTenant == nil {
 		writeError(w, http.StatusForbidden, "access denied")
 		return
 	}
 
-	if err := h.store.RemoveMember(r.Context(), tenant.ID, userID); err != nil {
+	if err := h.store.RemoveMember(r.Context(), authTenant.ID, userID); err != nil {
 		h.log.Error("remove member failed", zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "failed to remove member")
 		return
@@ -161,7 +139,7 @@ func (h *MembersHandler) RemoveMember(w http.ResponseWriter, r *http.Request) {
 	if h.auditor != nil {
 		actorID, actorType := resolveActor(r)
 		h.auditor.Log(r.Context(), models.AuditEntry{
-			TenantID:   tenant.ID,
+			TenantID:   authTenant.ID,
 			ActorID:    actorID,
 			ActorType:  actorType,
 			Action:     "member_remove",
@@ -172,22 +150,15 @@ func (h *MembersHandler) RemoveMember(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// ListInvites handles GET /v1/tenants/{slug}/members/invites.
+// ListInvites handles GET /v1/tenant/members/invites.
 func (h *MembersHandler) ListInvites(w http.ResponseWriter, r *http.Request) {
-	slug := chi.URLParam(r, "tenantSlug")
-	tenant, err := h.store.GetTenantBySlug(r.Context(), slug)
-	if err != nil {
-		writeError(w, http.StatusNotFound, "tenant not found")
-		return
-	}
-
 	authTenant := middleware.TenantFromContext(r.Context())
-	if authTenant == nil || authTenant.ID != tenant.ID {
+	if authTenant == nil {
 		writeError(w, http.StatusForbidden, "access denied")
 		return
 	}
 
-	invites, err := h.store.ListPendingInvites(r.Context(), tenant.ID)
+	invites, err := h.store.ListPendingInvites(r.Context(), authTenant.ID)
 	if err != nil {
 		h.log.Error("list invites failed", zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "failed to list invites")

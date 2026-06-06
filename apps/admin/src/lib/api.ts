@@ -25,18 +25,6 @@ function getStoredAPIKey(): string {
   return localStorage.getItem('apiKey') ?? ''
 }
 
-function getSlug(): string {
-  return localStorage.getItem('tenantSlug') ?? ''
-}
-
-function setSlug(slug: string) {
-  localStorage.setItem('tenantSlug', slug)
-}
-
-function clearSlug() {
-  localStorage.removeItem('tenantSlug')
-}
-
 async function request<T>(
   method: string,
   path: string,
@@ -50,9 +38,6 @@ async function request<T>(
     const key = getStoredAPIKey()
     if (key) headers['Authorization'] = `Bearer ${key}`
   }
-  // Always send X-Tenant so the backend can resolve session user's membership role.
-  const slug = getSlug()
-  if (slug) headers['X-Tenant'] = slug
 
   const res = await fetch(`${BASE}${path}`, {
     method,
@@ -71,8 +56,6 @@ async function request<T>(
       if (credential.startsWith('et_')) {
         throw new Error('Unauthenticated')
       }
-      // Session cookie expired or invalid — clear org selection and redirect to login.
-      clearSlug()
       window.location.href = '/login'
       throw new Error('Unauthenticated')
     }
@@ -86,20 +69,8 @@ async function request<T>(
 }
 
 export const api = {
-  getActiveTenantSlug(): string {
-    return getSlug()
-  },
-
-  setActiveTenantSlug(slug: string) {
-    setSlug(slug)
-  },
-
-  clearActiveTenantSlug() {
-    clearSlug()
-  },
-
   // Auth
-  async login(email: string, password: string): Promise<{ session_token: string; expires_at: string; tenant_slug: string }> {
+  async login(email: string, password: string): Promise<{ session_token: string; expires_at: string }> {
     return request('POST', '/v1/admin/auth/login', { email, password }, 'none')
   },
 
@@ -107,7 +78,7 @@ export const api = {
     email: string,
     password: string,
     inviteToken?: string,
-  ): Promise<{ user: User; session_token: string; tenant_slug: string }> {
+  ): Promise<{ user: User; session_token: string }> {
     return request('POST', '/v1/admin/auth/register', { email, password, invite_token: inviteToken }, 'none')
   },
 
@@ -123,61 +94,69 @@ export const api = {
     return request('GET', '/v1/admin/auth/orgs', undefined, 'session')
   },
 
+  async getActiveOrg(): Promise<OrgMembership> {
+    return request('GET', '/v1/admin/auth/orgs/active', undefined, 'session')
+  },
+
+  async setActiveOrg(slug: string): Promise<OrgMembership> {
+    return request('POST', '/v1/admin/auth/orgs/active', { slug }, 'session')
+  },
+
   async createOrg(name: string, slug: string): Promise<OrgMembership> {
     return request('POST', '/v1/admin/auth/orgs', { name, slug }, 'session')
   },
 
   // Branding
   async getBranding(): Promise<Branding> {
-    return request('GET', `/v1/tenants/${getSlug()}/branding`, undefined, 'apikey')
+    return request('GET', '/v1/tenant/branding', undefined, 'apikey')
   },
 
   async updateBranding(b: Branding): Promise<Branding> {
-    return request('PUT', `/v1/tenants/${getSlug()}/branding`, b, 'apikey')
+    return request('PUT', '/v1/tenant/branding', b, 'apikey')
   },
 
   // Members
   async listMembers(): Promise<TenantMember[]> {
-    return request('GET', `/v1/tenants/${getSlug()}/members`, undefined, 'apikey')
+    return request('GET', '/v1/tenant/members', undefined, 'apikey')
   },
 
   async inviteMember(email: string, role: string): Promise<{ invite_token: string; expires_at: string }> {
-    return request('POST', `/v1/tenants/${getSlug()}/members/invite`, { email, role }, 'apikey')
+    return request('POST', '/v1/tenant/members/invite', { email, role }, 'apikey')
   },
 
   async removeMember(userID: string): Promise<void> {
-    return request('DELETE', `/v1/tenants/${getSlug()}/members/${userID}`, undefined, 'apikey')
+    return request('DELETE', `/v1/tenant/members/${userID}`, undefined, 'apikey')
   },
 
   async listInvites(): Promise<InviteToken[]> {
-    return request('GET', `/v1/tenants/${getSlug()}/members/invites`, undefined, 'apikey')
+    return request('GET', '/v1/tenant/members/invites', undefined, 'apikey')
   },
 
   // Usage
   async getUsage(window: string): Promise<UsageSummary> {
-    return request('GET', `/v1/tenants/${getSlug()}/usage?window=${window}`, undefined, 'apikey')
+    return request('GET', `/v1/tenant/usage?window=${window}`, undefined, 'apikey')
   },
 
   // API Keys
   async listAPIKeys(): Promise<APIKey[]> {
-    return request('GET', `/v1/tenants/${getSlug()}/api-keys`, undefined, 'apikey')
+    return request('GET', '/v1/tenant/api-keys', undefined, 'apikey')
   },
 
   async createAPIKey(name: string, scopes: string[]): Promise<APIKey> {
-    return request('POST', `/v1/tenants/${getSlug()}/api-keys`, { name, scopes }, 'apikey')
+    return request('POST', '/v1/tenant/api-keys', { name, scopes }, 'apikey')
   },
 
   async deleteAPIKey(id: string): Promise<void> {
-    return request('DELETE', `/v1/tenants/${getSlug()}/api-keys/${id}`, undefined, 'apikey')
+    return request('DELETE', `/v1/tenant/api-keys/${id}`, undefined, 'apikey')
   },
 
   // Egress
   async getEgressPolicy(): Promise<EgressPolicy> {
-    return request('GET', `/v1/tenants/${getSlug()}/egress`, undefined, 'apikey')
+    return request('GET', '/v1/tenant/egress', undefined, 'apikey')
   },
 
   async updateEgressPolicy(p: EgressPolicy): Promise<EgressPolicy> {
-    return request('PUT', `/v1/tenants/${getSlug()}/egress`, p, 'apikey')
+    return request('PUT', '/v1/tenant/egress', p, 'apikey')
   },
 
   // Snippets
@@ -222,10 +201,8 @@ export const api = {
   // Returns a cleanup function. Calls onVersion whenever a new draft is created for snippetId.
   watchSnippet(snippetId: string, onVersion: (v: SnippetVersion) => void): () => void {
     const apiKey = getStoredAPIKey()
-    const slug = getSlug()
     const headers: Record<string, string> = {}
     if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`
-    if (slug) headers['X-Tenant'] = slug
 
     const controller = new AbortController()
 
@@ -274,8 +251,14 @@ export const api = {
   },
 
   // Integrations (Nango-backed OAuth connections)
-  async listProviders(): Promise<NangoProvider[]> {
-    return request('GET', '/v1/integrations', undefined, 'none')
+  async listProviders(query?: string, limit?: number, offset?: number): Promise<NangoProvider[]> {
+    const params = new URLSearchParams()
+    const trimmedQuery = query?.trim()
+    if (trimmedQuery) params.set('q', trimmedQuery)
+    if (limit && limit > 0) params.set('limit', String(Math.floor(limit)))
+    if (offset !== undefined && offset >= 0) params.set('offset', String(Math.floor(offset)))
+    const qs = params.toString()
+    return request('GET', `/v1/integrations${qs ? `?${qs}` : ''}`, undefined, 'none')
   },
 
   async getConnectInfo(): Promise<{ oauth_callback_url: string }> {
@@ -286,8 +269,20 @@ export const api = {
     return request('GET', '/v1/mcp/info', undefined, 'none')
   },
 
-  async listConfigured(): Promise<IntegrationConfig[]> {
-    return request('GET', '/v1/integrations/configured', undefined, 'apikey')
+  async listConfigured(
+    query?: string,
+    limit?: number,
+    offset?: number,
+    status?: 'connected' | 'configured' | 'all',
+  ): Promise<IntegrationConfig[]> {
+    const params = new URLSearchParams()
+    const trimmedQuery = query?.trim()
+    if (trimmedQuery) params.set('q', trimmedQuery)
+    if (status && status !== 'all') params.set('status', status)
+    if (limit && limit > 0) params.set('limit', String(Math.floor(limit)))
+    if (offset !== undefined && offset >= 0) params.set('offset', String(Math.floor(offset)))
+    const qs = params.toString()
+    return request('GET', `/v1/integrations/configured${qs ? `?${qs}` : ''}`, undefined, 'apikey')
   },
 
   async configureIntegration(data: {
@@ -308,8 +303,14 @@ export const api = {
     return request('DELETE', `/v1/integrations/configured/${providerConfigKey}`, undefined, 'apikey')
   },
 
-  async listConnections(): Promise<Connection[]> {
-    return request('GET', `/v1/tenants/${getSlug()}/connections`, undefined, 'apikey')
+  async listConnections(query?: string, limit?: number, offset?: number): Promise<Connection[]> {
+    const params = new URLSearchParams()
+    const trimmedQuery = query?.trim()
+    if (trimmedQuery) params.set('q', trimmedQuery)
+    if (limit && limit > 0) params.set('limit', String(Math.floor(limit)))
+    if (offset !== undefined && offset >= 0) params.set('offset', String(Math.floor(offset)))
+    const qs = params.toString()
+    return request('GET', `/v1/tenant/connections${qs ? `?${qs}` : ''}`, undefined, 'apikey')
   },
 
   async createConnectionSession(
@@ -319,7 +320,7 @@ export const api = {
   ): Promise<{ session_token: string; connect_url: string; api_url: string; credential_profile_id: string; alias: string }> {
     return request(
       'POST',
-      `/v1/tenants/${getSlug()}/connections/session`,
+      '/v1/tenant/connections/session',
       { provider, alias, credential_profile_id: credentialProfileID },
       'apikey',
     )
@@ -333,14 +334,14 @@ export const api = {
   ): Promise<Connection> {
     return request(
       'POST',
-      `/v1/tenants/${getSlug()}/connections`,
+      '/v1/tenant/connections',
       { provider, display_name: displayName, alias, credential_profile_id: credentialProfileID },
       'apikey',
     )
   },
 
   async disconnectProvider(provider: string): Promise<void> {
-    return request('DELETE', `/v1/tenants/${getSlug()}/connections/${provider}`, undefined, 'apikey')
+    return request('DELETE', `/v1/tenant/connections/${provider}`, undefined, 'apikey')
   },
 
   // Variables & Credentials (secrets)
@@ -375,7 +376,6 @@ export const api = {
 
   // Invocation
   async invokeSnippet(snippetSlug: string, input: string, env = 'dev'): Promise<InvocationResult> {
-    const tenantSlug = getSlug()
-    return request('POST', `/v1/invoke/${tenantSlug}/${snippetSlug}?env=${env}`, JSON.parse(input || '{}'), 'apikey')
+    return request('POST', `/v1/invoke/${snippetSlug}?env=${env}`, JSON.parse(input || '{}'), 'apikey')
   },
 }

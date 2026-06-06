@@ -756,6 +756,11 @@ resource "kubernetes_deployment_v1" "nango" {
           }
 
           env {
+            name  = "FLAG_API_RATE_LIMIT_ENABLED"
+            value = "false"
+          }
+
+          env {
             name  = "NANGO_CONNECT_UI_PORT"
             value = "3009"
           }

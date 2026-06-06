@@ -164,7 +164,7 @@ func TestCreateTenant(t *testing.T) {
 
 func TestCreateAPIKey(t *testing.T) {
 	env := setup(t)
-	path := fmt.Sprintf("/v1/tenants/%s/api-keys", env.tenant.Slug)
+	path := "/v1/tenant/api-keys"
 	rec := env.do(t, http.MethodPost, path, env.manageKey, map[string]any{
 		"name":   "new-key",
 		"scopes": []string{"invoke"},
@@ -180,7 +180,7 @@ func TestCreateAPIKey(t *testing.T) {
 
 func TestCreateAPIKey_RequiresAdminScope(t *testing.T) {
 	env := setup(t)
-	path := fmt.Sprintf("/v1/tenants/%s/api-keys", env.tenant.Slug)
+	path := "/v1/tenant/api-keys"
 	rec := env.do(t, http.MethodPost, path, env.invokeKey, map[string]any{
 		"name":   "bad-key",
 		"scopes": []string{"invoke"},
@@ -371,8 +371,8 @@ func TestListVersions(t *testing.T) {
 // --- Invocations ---
 
 // publishSnippetForInvoke creates a snippet, creates a version, and publishes
-// it to prod. Returns the tenant slug and snippet slug for the invoke URL.
-func publishSnippetForInvoke(t *testing.T, env *testEnv) (tenantSlug, snippetSlug string) {
+// it to prod. Returns the snippet slug for the invoke URL.
+func publishSnippetForInvoke(t *testing.T, env *testEnv) (snippetSlug string) {
 	t.Helper()
 	snippetSlug = fmt.Sprintf("invoke-sn-%d", time.Now().UnixNano())
 	rec := env.do(t, http.MethodPost, "/v1/snippets", env.manageKey, map[string]any{
@@ -399,14 +399,14 @@ func publishSnippetForInvoke(t *testing.T, env *testEnv) (tenantSlug, snippetSlu
 		t.Fatalf("publish: %d\nbody: %s", rec3.Code, rec3.Body.String())
 	}
 
-	return env.tenant.Slug, snippetSlug
+	return snippetSlug
 }
 
 func TestInvoke_Success(t *testing.T) {
 	env := setup(t)
-	tenantSlug, snippetSlug := publishSnippetForInvoke(t, env)
+	snippetSlug := publishSnippetForInvoke(t, env)
 
-	path := fmt.Sprintf("/v1/invoke/%s/%s?env=prod", tenantSlug, snippetSlug)
+	path := fmt.Sprintf("/v1/invoke/%s?env=prod", snippetSlug)
 
 	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"prompt":"hello"}`))
 	req.Header.Set("Content-Type", "application/json")
@@ -436,12 +436,12 @@ func TestInvoke_Success(t *testing.T) {
 
 func TestInvoke_RequiresInvokeScope(t *testing.T) {
 	env := setup(t)
-	tenantSlug, snippetSlug := publishSnippetForInvoke(t, env)
+	snippetSlug := publishSnippetForInvoke(t, env)
 
 	// Create a manage-only key (no invoke scope).
 	_, manageOnly, _ := env.store.CreateAPIKeyWithPlain(context.Background(), env.tenant.ID, "manage-only", []string{"manage"})
 
-	path := fmt.Sprintf("/v1/invoke/%s/%s", tenantSlug, snippetSlug)
+	path := fmt.Sprintf("/v1/invoke/%s", snippetSlug)
 	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+manageOnly)
@@ -455,9 +455,9 @@ func TestInvoke_RequiresInvokeScope(t *testing.T) {
 
 func TestInvoke_InvalidJSON(t *testing.T) {
 	env := setup(t)
-	tenantSlug, snippetSlug := publishSnippetForInvoke(t, env)
+	snippetSlug := publishSnippetForInvoke(t, env)
 
-	path := fmt.Sprintf("/v1/invoke/%s/%s", tenantSlug, snippetSlug)
+	path := fmt.Sprintf("/v1/invoke/%s", snippetSlug)
 	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`not json`))
 	req.Header.Set("Authorization", "Bearer "+env.invokeKey)
 	rec := httptest.NewRecorder()
@@ -475,7 +475,7 @@ func TestInvoke_NoPublishedVersion(t *testing.T) {
 		"name": "No Pub", "slug": slug, "language": "bun",
 	})
 
-	path := fmt.Sprintf("/v1/invoke/%s/%s", env.tenant.Slug, slug)
+	path := fmt.Sprintf("/v1/invoke/%s", slug)
 	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+env.invokeKey)
@@ -489,14 +489,14 @@ func TestInvoke_NoPublishedVersion(t *testing.T) {
 
 func TestInvoke_CrossTenantKeyRejected(t *testing.T) {
 	env := setup(t)
-	tenantSlug, snippetSlug := publishSnippetForInvoke(t, env)
+	snippetSlug := publishSnippetForInvoke(t, env)
 
 	// A key from a different tenant.
 	slug2 := fmt.Sprintf("tenant2-%d", time.Now().UnixNano())
 	tenant2, _ := env.store.CreateTenant(context.Background(), "T2", slug2)
 	_, key2, _ := env.store.CreateAPIKeyWithPlain(context.Background(), tenant2.ID, "k2", []string{"invoke"})
 
-	path := fmt.Sprintf("/v1/invoke/%s/%s", tenantSlug, snippetSlug)
+	path := fmt.Sprintf("/v1/invoke/%s", snippetSlug)
 	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+key2)
@@ -510,10 +510,10 @@ func TestInvoke_CrossTenantKeyRejected(t *testing.T) {
 
 func TestGetInvocation(t *testing.T) {
 	env := setup(t)
-	tenantSlug, snippetSlug := publishSnippetForInvoke(t, env)
+	snippetSlug := publishSnippetForInvoke(t, env)
 
 	// Invoke to get an invocation ID.
-	path := fmt.Sprintf("/v1/invoke/%s/%s", tenantSlug, snippetSlug)
+	path := fmt.Sprintf("/v1/invoke/%s", snippetSlug)
 	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+env.invokeKey)
@@ -538,9 +538,9 @@ func TestGetInvocation(t *testing.T) {
 
 func TestGetInvocation_TenantIsolation(t *testing.T) {
 	env := setup(t)
-	tenantSlug, snippetSlug := publishSnippetForInvoke(t, env)
+	snippetSlug := publishSnippetForInvoke(t, env)
 
-	path := fmt.Sprintf("/v1/invoke/%s/%s", tenantSlug, snippetSlug)
+	path := fmt.Sprintf("/v1/invoke/%s", snippetSlug)
 	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+env.invokeKey)
@@ -710,9 +710,9 @@ func setupWithRedis(t *testing.T) (*testEnv, *redisstore.Client) {
 
 func TestInvoke_AsyncMode(t *testing.T) {
 	env, _ := setupWithRedis(t)
-	tenantSlug, snippetSlug := publishSnippetForInvoke(t, env)
+	snippetSlug := publishSnippetForInvoke(t, env)
 
-	path := fmt.Sprintf("/v1/invoke/%s/%s?env=prod", tenantSlug, snippetSlug)
+	path := fmt.Sprintf("/v1/invoke/%s?env=prod", snippetSlug)
 	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+env.invokeKey)
@@ -791,7 +791,7 @@ func TestInvoke_VersionPinning(t *testing.T) {
 	env.do(t, http.MethodPost, pub2Path, env.manageKey, nil)
 
 	// Invoke with ?version=v1 — should use version 1 (pinned).
-	invPath := fmt.Sprintf("/v1/invoke/%s/%s?env=prod&version=v%d", env.tenant.Slug, snippetSlug, v1Num)
+	invPath := fmt.Sprintf("/v1/invoke/%s?env=prod&version=v%d", snippetSlug, v1Num)
 	req := httptest.NewRequest(http.MethodPost, invPath, strings.NewReader(`{}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+env.invokeKey)
@@ -822,9 +822,9 @@ func TestInvoke_VersionPinning(t *testing.T) {
 
 func TestInvoke_StreamMode(t *testing.T) {
 	env := setupWithStreaming(t)
-	tenantSlug, snippetSlug := publishSnippetForInvoke(t, env)
+	snippetSlug := publishSnippetForInvoke(t, env)
 
-	path := fmt.Sprintf("/v1/invoke/%s/%s?env=prod", tenantSlug, snippetSlug)
+	path := fmt.Sprintf("/v1/invoke/%s?env=prod", snippetSlug)
 	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+env.invokeKey)
@@ -1051,7 +1051,7 @@ func TestUpdateEgressPolicy(t *testing.T) {
 
 	// GET current policy.
 	recGet := env.do(t, http.MethodGet,
-		"/v1/tenants/"+env.tenant.Slug+"/egress",
+		"/v1/tenant/egress",
 		env.manageKey, nil)
 	if recGet.Code != http.StatusOK {
 		t.Fatalf("GET egress status = %d; want 200\nbody: %s", recGet.Code, recGet.Body.String())
@@ -1064,7 +1064,7 @@ func TestUpdateEgressPolicy(t *testing.T) {
 
 	// PUT a new policy.
 	recPut := env.do(t, http.MethodPut,
-		"/v1/tenants/"+env.tenant.Slug+"/egress",
+		"/v1/tenant/egress",
 		env.manageKey,
 		map[string]any{
 			"blocked_cidrs":   []string{"192.168.1.0/24"},
@@ -1087,7 +1087,7 @@ func TestUpdateEgressPolicy(t *testing.T) {
 
 	// GET again and verify persistence.
 	recGet2 := env.do(t, http.MethodGet,
-		"/v1/tenants/"+env.tenant.Slug+"/egress",
+		"/v1/tenant/egress",
 		env.manageKey, nil)
 	if recGet2.Code != http.StatusOK {
 		t.Fatalf("GET egress after update status = %d", recGet2.Code)
@@ -1113,7 +1113,7 @@ func TestGetSnippetLogs(t *testing.T) {
 	env.do(t, http.MethodPost, fmt.Sprintf("/v1/snippets/%s/versions/%d/publish?env=prod", snippetID, vNum), env.manageKey, nil)
 	snippet := env.do(t, http.MethodGet, "/v1/snippets/"+snippetID, env.manageKey, nil)
 	slug := decodeJSON(t, snippet)["slug"].(string)
-	invokePath := fmt.Sprintf("/v1/invoke/%s/%s?env=prod", env.tenant.Slug, slug)
+	invokePath := fmt.Sprintf("/v1/invoke/%s?env=prod", slug)
 	req := httptest.NewRequest(http.MethodPost, invokePath, strings.NewReader(`{"a":1}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+env.invokeKey)
@@ -1149,7 +1149,7 @@ func TestGetSnippetMetrics(t *testing.T) {
 	env.do(t, http.MethodPost, fmt.Sprintf("/v1/snippets/%s/versions/%d/publish?env=prod", snippetID, vNum), env.manageKey, nil)
 	snippet := env.do(t, http.MethodGet, "/v1/snippets/"+snippetID, env.manageKey, nil)
 	slug := decodeJSON(t, snippet)["slug"].(string)
-	invokePath := fmt.Sprintf("/v1/invoke/%s/%s?env=prod", env.tenant.Slug, slug)
+	invokePath := fmt.Sprintf("/v1/invoke/%s?env=prod", slug)
 	req := httptest.NewRequest(http.MethodPost, invokePath, strings.NewReader(`{"a":1}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+env.invokeKey)
@@ -1171,10 +1171,10 @@ func TestGetSnippetMetrics(t *testing.T) {
 
 func TestReplayInvocation(t *testing.T) {
 	env := setup(t)
-	tenantSlug, snippetSlug := publishSnippetForInvoke(t, env)
+	snippetSlug := publishSnippetForInvoke(t, env)
 
 	// Create an invocation so replay route can resolve the ID.
-	path := fmt.Sprintf("/v1/invoke/%s/%s", tenantSlug, snippetSlug)
+	path := fmt.Sprintf("/v1/invoke/%s", snippetSlug)
 	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+env.invokeKey)
@@ -1205,9 +1205,9 @@ func TestReplayInvocation(t *testing.T) {
 
 func TestReplayInvocation_RequiresManageScope(t *testing.T) {
 	env := setup(t)
-	tenantSlug, snippetSlug := publishSnippetForInvoke(t, env)
+	snippetSlug := publishSnippetForInvoke(t, env)
 
-	path := fmt.Sprintf("/v1/invoke/%s/%s", tenantSlug, snippetSlug)
+	path := fmt.Sprintf("/v1/invoke/%s", snippetSlug)
 	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+env.invokeKey)

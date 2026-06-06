@@ -1,10 +1,10 @@
 ---
 title: Credentials and Scopes
-description: Understand authentication credentials, scopes, and tenant context.
+description: Understand authentication credentials, scopes, and active org context.
 sidebar_position: 1
 ---
 
-# Credentials, Scopes, and Tenant Context
+# Credentials, Scopes, and Active Org Context
 
 Velane supports three credential types. Use the right one for each surface.
 
@@ -33,15 +33,13 @@ As a rule:
 - writes require `manage`
 - sensitive tenant administration requires `admin`
 
-## Tenant context (`X-Tenant`)
+## Tenant context
 
 Velane is multi-tenant. Many API requests are resolved in tenant context.
 
-When you call APIs directly, include your tenant context where required:
-
-```http
-X-Tenant: myorg
-```
+Tenant resolution is server-side:
+- API key requests resolve tenant directly from the key.
+- Session requests resolve tenant from your active org membership.
 
 ## Practical defaults
 

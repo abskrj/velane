@@ -206,31 +206,32 @@ func (s *Store) SoftDeleteIntegrationCredentialProfile(ctx context.Context, tena
 	defer tx.Rollback(ctx) //nolint:errcheck
 
 	row := tx.QueryRow(ctx,
-		`UPDATE integration_credential_profiles
-		 SET deleted_at = NOW(), is_default = FALSE, updated_at = NOW()
-		 WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL
+		`DELETE FROM integration_credential_profiles
+		 WHERE tenant_id = $1 AND id = $2
 		 RETURNING id, tenant_id, provider, alias, name, nango_provider_config_key, config_json, is_default, created_by, created_at, updated_at`,
 		tenantID, id,
 	)
 	profile, err := scanCredentialProfile(row)
 	if err != nil {
-		return nil, fmt.Errorf("SoftDeleteIntegrationCredentialProfile: %w", err)
+		return nil, fmt.Errorf("SoftDeleteIntegrationCredentialProfile hard delete: %w", err)
 	}
 
-	var nextDefaultID string
-	err = tx.QueryRow(ctx,
-		`SELECT id FROM integration_credential_profiles
-		 WHERE tenant_id = $1 AND provider = $2 AND deleted_at IS NULL
-		 ORDER BY created_at ASC
-		 LIMIT 1`,
-		tenantID, profile.Provider,
-	).Scan(&nextDefaultID)
-	if err == nil && nextDefaultID != "" {
-		if _, err := tx.Exec(ctx,
-			`UPDATE integration_credential_profiles SET is_default = TRUE, updated_at = NOW() WHERE id = $1`,
-			nextDefaultID,
-		); err != nil {
-			return nil, fmt.Errorf("set next default profile: %w", err)
+	if profile.IsDefault {
+		var nextDefaultID string
+		err = tx.QueryRow(ctx,
+			`SELECT id FROM integration_credential_profiles
+			 WHERE tenant_id = $1 AND provider = $2 AND deleted_at IS NULL
+			 ORDER BY created_at ASC
+			 LIMIT 1`,
+			tenantID, profile.Provider,
+		).Scan(&nextDefaultID)
+		if err == nil && nextDefaultID != "" {
+			if _, err := tx.Exec(ctx,
+				`UPDATE integration_credential_profiles SET is_default = TRUE, updated_at = NOW() WHERE id = $1`,
+				nextDefaultID,
+			); err != nil {
+				return nil, fmt.Errorf("set next default profile: %w", err)
+			}
 		}
 	}
 

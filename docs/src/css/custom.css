@@ -1,4 +1,38 @@
 :root {
+  --ifm-footer-background-color: #111827;
+  --ifm-footer-color: #9ca3af;
+  --ifm-footer-link-color: #d1d5db;
+  --ifm-footer-link-hover-color: #ffffff;
+  --ifm-footer-title-color: #f9fafb;
+}
+
+.footer {
+  padding-top: 3rem;
+  padding-bottom: 2rem;
+}
+
+.footer__links {
+  margin-bottom: 2rem;
+}
+
+.footer__title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.footer__link-item {
+  font-size: 0.9rem;
+  line-height: 1.8;
+}
+
+.footer__copyright {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  color: #6b7280;
+  font-size: 0.85rem;
+  margin-top: 0;
+  padding-top: 1.5rem;
 }
 
 .header-github-link::before {

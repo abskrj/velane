@@ -65,8 +65,45 @@ const config: Config = {
     },
     footer: {
       style: 'dark',
-      links: [],
-      copyright: `Copyright ${new Date().getFullYear()} Velane`
+      links: [
+        {
+          title: 'Get started',
+          items: [
+            {label: 'Documentation home', to: '/'},
+            {label: 'Local quickstart', to: '/getting-started/local-quickstart'},
+            {label: 'Your first snippet', to: '/getting-started/first-snippet'},
+            {label: 'CLI installation', to: '/cli/installation-and-auth'}
+          ]
+        },
+        {
+          title: 'Guides',
+          items: [
+            {label: 'Invocation modes', to: '/invoke/invocation-modes'},
+            {label: 'Integrations', to: '/integrations/overview'},
+            {label: 'MCP overview', to: '/mcp/overview'},
+            {label: 'Auth and request flow', to: '/auth-tenancy/auth-and-request-flow'}
+          ]
+        },
+        {
+          title: 'Operations',
+          items: [
+            {label: 'Production checklist', to: '/operations/production-checklist'},
+            {label: 'Environment variables', to: '/operations/environment-variables'},
+            {label: 'Security non-negotiables', to: '/security/non-negotiables'},
+            {label: 'Contributing', to: '/contributing/dev-workflow'}
+          ]
+        },
+        {
+          title: 'Project',
+          items: [
+            {label: 'GitHub', href: 'https://github.com/abskrj/velane'},
+            {label: 'Issues', href: 'https://github.com/abskrj/velane/issues'},
+            {label: 'Admin dashboard', href: 'https://admin.velane.sh'},
+            {label: 'License', href: 'https://github.com/abskrj/velane/blob/main/LICENSE'}
+          ]
+        }
+      ],
+      copyright: `Copyright © ${new Date().getFullYear()} Velane. Dual-licensed under AGPL-3.0 and commercial terms.`
     },
     prism: {
       theme: prismThemes.github,

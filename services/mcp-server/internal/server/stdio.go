@@ -34,6 +34,11 @@ func RunStdio(ctx context.Context, srv *Server, in io.Reader, out io.Writer, aut
 			continue
 		}
 
+		if isNotification(req) {
+			_ = srv.HandleRequest(ctx, authHeader, req)
+			continue
+		}
+
 		resp := srv.HandleRequest(ctx, authHeader, req)
 		if err := encoder.Encode(resp); err != nil {
 			return err

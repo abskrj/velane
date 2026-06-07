@@ -28,3 +28,16 @@ func TestRunStdio(t *testing.T) {
 		t.Fatalf("expected result in stdio response: %s", out.String())
 	}
 }
+
+func TestRunStdioSkipsInitializedNotification(t *testing.T) {
+	srv := server.New(tools.NewRegistry(controlplane.New("http://localhost:1")))
+	in := bytes.NewBufferString(`{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}` + "\n")
+	out := &bytes.Buffer{}
+
+	if err := server.RunStdio(context.Background(), srv, in, out, "Bearer test"); err != nil {
+		t.Fatalf("RunStdio failed: %v", err)
+	}
+	if out.Len() != 0 {
+		t.Fatalf("expected no response for notification, got: %s", out.String())
+	}
+}

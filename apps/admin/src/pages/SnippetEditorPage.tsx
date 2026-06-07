@@ -282,7 +282,7 @@ export default function SnippetEditorPage() {
     <div className="flex h-full flex-col">
       {toast && <Toast message={toast.message} type={toast.type} onDismiss={dismissToast} />}
 
-      <header className="flex shrink-0 items-center justify-between border-b border-gray-200 bg-white px-4 py-2">
+      <header className="flex h-14 shrink-0 items-center justify-between border-b border-gray-200 bg-white px-4">
         <div className="flex items-center gap-3">
           <button
             className="text-sm text-gray-500 hover:text-gray-900"

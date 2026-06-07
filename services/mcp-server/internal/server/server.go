@@ -8,17 +8,27 @@ import (
 	"strings"
 	"time"
 
+	"github.com/abskrj/velane/services/mcp-server/internal/prompts"
 	"github.com/abskrj/velane/services/mcp-server/internal/protocol"
+	"github.com/abskrj/velane/services/mcp-server/internal/resources"
 	"github.com/abskrj/velane/services/mcp-server/internal/tools"
 	"github.com/go-chi/chi/v5"
 )
 
+const defaultProtocolVersion = "2024-11-05"
+
 type Server struct {
-	registry *tools.Registry
+	registry  *tools.Registry
+	resources *resources.Registry
+	prompts   *prompts.Registry
 }
 
 func New(registry *tools.Registry) *Server {
-	return &Server{registry: registry}
+	return &Server{
+		registry:  registry,
+		resources: resources.NewRegistry(registry.Client()),
+		prompts:   prompts.NewRegistry(),
+	}
 }
 
 func (s *Server) Router() http.Handler {
@@ -38,7 +48,17 @@ func (s *Server) HandleRequest(ctx context.Context, authHeader string, req proto
 	}
 	switch req.Method {
 	case "initialize":
+		protocolVersion := defaultProtocolVersion
+		if len(req.Params) > 0 {
+			var params struct {
+				ProtocolVersion string `json:"protocolVersion"`
+			}
+			if err := json.Unmarshal(req.Params, &params); err == nil && strings.TrimSpace(params.ProtocolVersion) != "" {
+				protocolVersion = params.ProtocolVersion
+			}
+		}
 		return protocol.Success(req.ID, map[string]any{
+			"protocolVersion": protocolVersion,
 			"serverInfo": map[string]any{
 				"name":    "velane-mcp-server",
 				"version": "0.1.0",
@@ -47,8 +67,16 @@ func (s *Server) HandleRequest(ctx context.Context, authHeader string, req proto
 				"tools": map[string]any{
 					"listChanged": false,
 				},
+				"resources": map[string]any{
+					"listChanged": false,
+				},
+				"prompts": map[string]any{
+					"listChanged": false,
+				},
 			},
 		})
+	case "notifications/initialized":
+		return protocol.Success(req.ID, nil)
 	case "ping":
 		return protocol.Success(req.ID, map[string]any{"ok": true})
 	case "tools/list":
@@ -57,6 +85,14 @@ func (s *Server) HandleRequest(ctx context.Context, authHeader string, req proto
 		})
 	case "tools/call":
 		return s.handleToolsCall(ctx, authHeader, req)
+	case "resources/list":
+		return protocol.Success(req.ID, map[string]any{"resources": s.resources.List()})
+	case "resources/read":
+		return s.handleResourcesRead(ctx, authHeader, req)
+	case "prompts/list":
+		return protocol.Success(req.ID, map[string]any{"prompts": s.prompts.List()})
+	case "prompts/get":
+		return s.handlePromptsGet(req)
 	default:
 		return protocol.Error(req.ID, -32601, "method not found", map[string]any{"method": req.Method})
 	}
@@ -103,10 +139,62 @@ func (s *Server) handleToolsCall(ctx context.Context, authHeader string, req pro
 	})
 }
 
+func (s *Server) handleResourcesRead(ctx context.Context, authHeader string, req protocol.Request) protocol.Response {
+	if strings.TrimSpace(authHeader) == "" {
+		return protocol.Error(req.ID, -32001, "authorization header is required", nil)
+	}
+
+	var params struct {
+		URI string `json:"uri"`
+	}
+	if err := json.Unmarshal(req.Params, &params); err != nil {
+		return protocol.Error(req.ID, -32602, "invalid resources/read params", err.Error())
+	}
+	if strings.TrimSpace(params.URI) == "" {
+		return protocol.Error(req.ID, -32602, "resource uri is required", nil)
+	}
+
+	contents, err := s.resources.Read(ctx, authHeader, params.URI)
+	if err != nil {
+		return protocol.Error(req.ID, -32002, err.Error(), nil)
+	}
+	return protocol.Success(req.ID, map[string]any{"contents": contents})
+}
+
+func (s *Server) handlePromptsGet(req protocol.Request) protocol.Response {
+	var params struct {
+		Name      string         `json:"name"`
+		Arguments map[string]any `json:"arguments"`
+	}
+	if err := json.Unmarshal(req.Params, &params); err != nil {
+		return protocol.Error(req.ID, -32602, "invalid prompts/get params", err.Error())
+	}
+	if strings.TrimSpace(params.Name) == "" {
+		return protocol.Error(req.ID, -32602, "prompt name is required", nil)
+	}
+	if params.Arguments == nil {
+		params.Arguments = map[string]any{}
+	}
+
+	prompt, messages, err := s.prompts.Get(params.Name, params.Arguments)
+	if err != nil {
+		return protocol.Error(req.ID, -32003, err.Error(), nil)
+	}
+	return protocol.Success(req.ID, map[string]any{
+		"description": prompt.Description,
+		"messages":    messages,
+	})
+}
+
 func (s *Server) handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 	var req protocol.Request
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, protocol.Error(nil, -32700, "parse error", err.Error()))
+		return
+	}
+	if isNotification(req) {
+		_ = s.HandleRequest(r.Context(), r.Header.Get("Authorization"), req)
+		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 	resp := s.HandleRequest(r.Context(), r.Header.Get("Authorization"), req)
@@ -143,4 +231,8 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(body)
+}
+
+func isNotification(req protocol.Request) bool {
+	return req.ID == nil && strings.HasPrefix(req.Method, "notifications/")
 }

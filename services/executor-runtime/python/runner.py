@@ -210,6 +210,39 @@ import urllib.request
 
 sys.path.insert(0, {snippet_dir!r})
 
+# ---------------------------------------------------------------------------
+# Protocol channel: the real stdout carries typed JSON events, one per line.
+# User stdout/stderr (print, logging) are redirected to "log" events so they
+# never corrupt the protocol stream and can be dev-gated downstream.
+# ---------------------------------------------------------------------------
+_protocol = sys.stdout
+
+def _emit(event):
+    _protocol.write(json.dumps(event) + "\\n")
+    _protocol.flush()
+
+class _LogWriter:
+    def __init__(self, stream_name):
+        self._stream = stream_name
+        self._buf = ""
+
+    def write(self, s):
+        if not isinstance(s, str):
+            s = str(s)
+        self._buf += s
+        while "\\n" in self._buf:
+            line, self._buf = self._buf.split("\\n", 1)
+            _emit({{"type": "log", "stream": self._stream, "text": line}})
+        return len(s)
+
+    def flush(self):
+        if self._buf:
+            _emit({{"type": "log", "stream": self._stream, "text": self._buf}})
+            self._buf = ""
+
+sys.stdout = _LogWriter("stdout")
+sys.stderr = _LogWriter("stderr")
+
 import snippet as _snippet
 
 # ---------------------------------------------------------------------------
@@ -260,16 +293,18 @@ async def _main():
 
     handler = getattr(_snippet, "handler", None)
     if handler is None:
-        sys.stdout.write(json.dumps({{"chunk": "", "done": True, "error": "snippet has no handler function"}}) + "\\n")
-        sys.exit(1)
+        _emit({{"type": "error", "message": "snippet has no handler function", "exit_code": 1}})
+        _emit({{"type": "done", "done": True}})
+        return
 
     Input = getattr(_snippet, "Input", None)
     if Input is not None:
         try:
             req = Input.model_validate_json(raw)
         except Exception as e:
-            sys.stdout.write(json.dumps({{"chunk": "", "done": True, "error": f"input validation: {{e}}"}}) + "\\n")
-            sys.exit(1)
+            _emit({{"type": "error", "message": f"input validation: {{e}}", "exit_code": 1}})
+            _emit({{"type": "done", "done": True}})
+            return
     else:
         try:
             req = json.loads(raw)
@@ -279,7 +314,7 @@ async def _main():
     try:
         result = handler(req)
 
-        # Check if the result is an async generator.
+        # Async generator → emit each yield as a typed chunk event.
         if inspect.isasyncgen(result):
             async for item in result:
                 if hasattr(item, "model_dump_json"):
@@ -288,23 +323,24 @@ async def _main():
                     chunk = json.dumps(item)
                 else:
                     chunk = json.dumps(item)
-                sys.stdout.write(json.dumps({{"chunk": chunk, "done": False}}) + "\\n")
-                sys.stdout.flush()
-            sys.stdout.write(json.dumps({{"chunk": "", "done": True}}) + "\\n")
+                _emit({{"type": "chunk", "data": chunk}})
         else:
-            # Plain coroutine / sync call — await and emit as single chunk.
+            # Plain coroutine / sync call — await and emit a single result event.
             if asyncio.iscoroutine(result):
                 result = await result
             if hasattr(result, "model_dump_json"):
-                chunk = result.model_dump_json()
+                out = result.model_dump_json()
             elif isinstance(result, (dict, list)):
-                chunk = json.dumps(result)
+                out = json.dumps(result)
             else:
-                chunk = json.dumps(result)
-            sys.stdout.write(json.dumps({{"chunk": chunk, "done": True}}) + "\\n")
+                out = json.dumps(result)
+            _emit({{"type": "result", "output": out, "exit_code": 0}})
     except Exception as e:
-        sys.stdout.write(json.dumps({{"chunk": "", "done": True, "error": f"handler raised: {{e}}"}}) + "\\n")
-        sys.exit(1)
+        _emit({{"type": "error", "message": f"handler raised: {{e}}", "exit_code": 1}})
+        _emit({{"type": "done", "done": True}})
+        return
+
+    _emit({{"type": "done", "done": True}})
 
 asyncio.run(_main())
 '''

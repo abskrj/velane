@@ -25,6 +25,20 @@ func (rw *responseWriter) Write(b []byte) (int, error) {
 	return n, err
 }
 
+// Flush forwards to the underlying writer so SSE / streaming handlers can push
+// data incrementally. Without this, the wrapper would mask the ResponseWriter's
+// http.Flusher implementation and break streaming endpoints.
+func (rw *responseWriter) Flush() {
+	if f, ok := rw.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+// Unwrap exposes the underlying ResponseWriter to http.ResponseController.
+func (rw *responseWriter) Unwrap() http.ResponseWriter {
+	return rw.ResponseWriter
+}
+
 // Logger returns a middleware that logs each request with method, path,
 // status code, duration, and bytes written using a zap.Logger.
 func Logger(log *zap.Logger) func(http.Handler) http.Handler {

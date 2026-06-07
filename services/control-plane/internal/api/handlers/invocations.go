@@ -1,12 +1,14 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/abskrj/velane/services/control-plane/internal/api/middleware"
 	"github.com/abskrj/velane/services/control-plane/internal/auth"
@@ -182,14 +184,34 @@ authOKByToken:
 
 	switch mode {
 	case "sync":
+		// When a live event stream is configured, route sync through the queue:
+		// the worker streams output and we present it as SSE (Accept negotiation)
+		// or a buffered JSON body. Otherwise fall back to inline execution.
+		if h.scheduler.HasEventStream() {
+			h.invokeQueuedMode(w, r, invokeReq, wantsSSE(r))
+			return
+		}
 		h.invokeSyncMode(w, r, invokeReq)
 	case "async":
 		h.invokeAsyncMode(w, r, invokeReq, ib.CallbackURL)
 	case "stream":
+		// Stream mode routes through the queue when available. Transport is
+		// chosen by Accept: SSE for text/event-stream callers, buffered JSON
+		// otherwise (e.g. MCP, which cannot consume SSE — it gets the final
+		// aggregated result).
+		if h.scheduler.HasEventStream() {
+			h.invokeQueuedMode(w, r, invokeReq, wantsSSE(r))
+			return
+		}
 		h.invokeStreamMode(w, r, invokeReq)
 	default:
 		writeError(w, http.StatusBadRequest, "X-Invoke-Mode must be 'sync', 'async', or 'stream'")
 	}
+}
+
+// wantsSSE reports whether the caller asked for a Server-Sent Events stream.
+func wantsSSE(r *http.Request) bool {
+	return strings.Contains(strings.ToLower(r.Header.Get("Accept")), "text/event-stream")
 }
 
 func (h *InvocationsHandler) invokeSyncMode(w http.ResponseWriter, r *http.Request, req scheduler.InvokeRequest) {
@@ -217,6 +239,157 @@ func (h *InvocationsHandler) invokeSyncMode(w http.ResponseWriter, r *http.Reque
 		"error":         invocation.Error,
 		"stderr":        invocation.Stderr,
 	})
+}
+
+// eventView is the minimal projection of a stream event payload the handler
+// needs to relay or aggregate.
+type eventView struct {
+	Type   string `json:"type"`
+	Stream string `json:"stream"`
+	Text   string `json:"text"`
+	Done   bool   `json:"done"`
+}
+
+// Tuning for the queued read loop.
+const (
+	queuedBlockFor    = 5 * time.Second
+	queuedIdleTimeout = 90 * time.Second
+	queuedMaxWait     = 5 * time.Minute
+)
+
+// invokeQueuedMode enqueues the invocation, then relays the worker's live event
+// stream. When sse is true the events are forwarded as Server-Sent Events;
+// otherwise they are aggregated and a single JSON body is returned once the
+// worker finalizes the invocation. Reads start at "0" — Redis Streams retain
+// events, so there is no subscribe-before-enqueue race.
+func (h *InvocationsHandler) invokeQueuedMode(w http.ResponseWriter, r *http.Request, req scheduler.InvokeRequest, sse bool) {
+	invocation, err := h.scheduler.InvokeQueued(r.Context(), req)
+	if err != nil {
+		h.log.Error("invoke queued failed", zap.String("slug", req.SnippetSlug), zap.Error(err))
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	ctx := r.Context()
+	deadline := time.Now().Add(queuedMaxWait)
+	lastActivity := time.Now()
+	lastID := "0"
+
+	if sse {
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			writeError(w, http.StatusInternalServerError, "streaming not supported by this server")
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("X-Accel-Buffering", "no")
+		w.Header().Set("X-Invocation-Id", invocation.ID)
+		w.WriteHeader(http.StatusOK)
+		flusher.Flush()
+
+		for {
+			if ctx.Err() != nil {
+				return // client disconnected; worker continues and finalizes the DB
+			}
+			events, next, rerr := h.scheduler.ReadEvents(ctx, invocation.ID, lastID, queuedBlockFor)
+			if rerr != nil {
+				if ctx.Err() != nil {
+					return
+				}
+				h.log.Error("queued: read events", zap.Error(rerr))
+				_, _ = fmt.Fprint(w, "data: {\"type\":\"error\",\"message\":\"stream read error\",\"done\":true}\n\n")
+				flusher.Flush()
+				return
+			}
+			lastID = next
+			if len(events) == 0 {
+				if time.Since(lastActivity) > queuedIdleTimeout || time.Now().After(deadline) {
+					_, _ = fmt.Fprint(w, "data: {\"type\":\"done\",\"done\":true,\"error\":\"timeout\"}\n\n")
+					flusher.Flush()
+					return
+				}
+				continue
+			}
+			lastActivity = time.Now()
+			for _, ev := range events {
+				_, _ = fmt.Fprintf(w, "id: %s\ndata: %s\n\n", ev.ID, ev.Payload)
+				flusher.Flush()
+				var v eventView
+				_ = json.Unmarshal(ev.Payload, &v)
+				if v.Done || v.Type == "done" {
+					return
+				}
+			}
+		}
+	}
+
+	// --- Buffered JSON path: aggregate logs, then return the finalized row. ---
+	var logs []map[string]string
+	for {
+		if ctx.Err() != nil {
+			return
+		}
+		events, next, rerr := h.scheduler.ReadEvents(ctx, invocation.ID, lastID, queuedBlockFor)
+		if rerr != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			break
+		}
+		lastID = next
+		if len(events) == 0 {
+			if time.Since(lastActivity) > queuedIdleTimeout || time.Now().After(deadline) {
+				break
+			}
+			continue
+		}
+		lastActivity = time.Now()
+		done := false
+		for _, ev := range events {
+			var v eventView
+			_ = json.Unmarshal(ev.Payload, &v)
+			if v.Type == "log" {
+				logs = append(logs, map[string]string{"stream": v.Stream, "text": v.Text})
+			}
+			if v.Done || v.Type == "done" {
+				done = true
+			}
+		}
+		if done {
+			break
+		}
+	}
+
+	// The worker finalizes the DB before emitting "done", so the row is
+	// authoritative here. Use a fresh context so a client disconnect mid-read
+	// does not abort the final lookup.
+	final, gerr := h.store.GetInvocation(context.Background(), invocation.ID)
+	if gerr != nil {
+		final = invocation
+	}
+
+	var outputVal any
+	if err := json.Unmarshal([]byte(final.Output), &outputVal); err != nil {
+		outputVal = final.Output
+	}
+
+	w.Header().Set("X-Invocation-Id", final.ID)
+	w.Header().Set("X-Duration-Ms", fmt.Sprintf("%d", final.DurationMs))
+
+	resp := map[string]any{
+		"output":        outputVal,
+		"invocation_id": final.ID,
+		"duration_ms":   final.DurationMs,
+		"status":        final.Status,
+		"error":         final.Error,
+		"stderr":        final.Stderr,
+	}
+	// Debug logs are surfaced only for dev invocations.
+	if req.Env == "dev" {
+		resp["logs"] = logs
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (h *InvocationsHandler) invokeAsyncMode(w http.ResponseWriter, r *http.Request, req scheduler.InvokeRequest, callbackURL string) {

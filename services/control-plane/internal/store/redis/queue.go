@@ -33,6 +33,11 @@ type Job struct {
 	SecretEnvVars map[string]string `json:"secret_env_vars,omitempty"`
 	Libraries     map[string]string `json:"libraries,omitempty"`
 	EgressPolicy  *EgressPolicyJob  `json:"egress_policy,omitempty"`
+
+	// Stream signals the worker to execute via the streaming path and publish
+	// typed events to the per-invocation event stream (used by queued sync and
+	// stream invocations). When false the worker uses the buffered path.
+	Stream bool `json:"stream,omitempty"`
 }
 
 // Enqueue serialises job as JSON and pushes it to the left of the job list.

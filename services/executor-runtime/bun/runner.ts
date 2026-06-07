@@ -157,6 +157,23 @@ function buildStreamHarnessCode(snippetPath: string, input: string, egressPolicy
   return `
 import * as snippetModule from ${safePath};
 
+// Protocol channel: the real stdout carries typed JSON events, one per line.
+// User console output is redirected to typed "log" events so it never corrupts
+// the protocol stream and can be dev-gated downstream.
+const _origStdoutWrite = process.stdout.write.bind(process.stdout);
+function _emit(event) {
+  _origStdoutWrite(JSON.stringify(event) + '\\n');
+}
+function _fmt(a) {
+  if (typeof a === 'string') return a;
+  try { return JSON.stringify(a); } catch { return String(a); }
+}
+console.log = (...args) => _emit({ type: 'log', stream: 'stdout', text: args.map(_fmt).join(' ') });
+console.info = console.log;
+console.debug = console.log;
+console.warn = (...args) => _emit({ type: 'log', stream: 'stderr', text: args.map(_fmt).join(' ') });
+console.error = console.warn;
+
 const handler = typeof snippetModule.default === 'function'
   ? snippetModule.default
   : typeof snippetModule.handler === 'function'
@@ -164,7 +181,8 @@ const handler = typeof snippetModule.default === 'function'
   : null;
 
 if (typeof handler !== 'function') {
-  console.error(JSON.stringify({ chunk: '', error: 'Snippet must export a default function (export default async function handler) or a named "handler" export', done: true }));
+  _emit({ type: 'error', message: 'Snippet must export a default function (export default async function handler) or a named "handler" export', exit_code: 1 });
+  _emit({ type: 'done', done: true });
   process.exit(1);
 }
 
@@ -196,22 +214,23 @@ try {
   try {
     const result = await handler(parsedInput);
 
-    // Check if the result is an async generator.
+    // Async generator → emit each yield as a typed chunk event.
     if (result !== null && typeof result === 'object' && typeof result[Symbol.asyncIterator] === 'function') {
       for await (const item of result) {
         const chunk = typeof item === 'string' ? item : JSON.stringify(item);
-        process.stdout.write(JSON.stringify({ chunk, done: false }) + '\\n');
+        _emit({ type: 'chunk', data: chunk });
       }
-      process.stdout.write(JSON.stringify({ chunk: '', done: true }) + '\\n');
     } else {
-      // Plain return value — emit as a single chunk.
-      const chunk = typeof result === 'string' ? result : JSON.stringify(result);
-      process.stdout.write(JSON.stringify({ chunk, done: true }) + '\\n');
+      // Plain return value — emit a single result event.
+      const out = typeof result === 'string' ? result : JSON.stringify(result);
+      _emit({ type: 'result', output: out, exit_code: 0 });
     }
+    _emit({ type: 'done', done: true });
     process.exit(0);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    process.stdout.write(JSON.stringify({ chunk: '', error: msg, done: true }) + '\\n');
+    _emit({ type: 'error', message: msg, exit_code: 1 });
+    _emit({ type: 'done', done: true });
     process.exit(1);
   }
 })();

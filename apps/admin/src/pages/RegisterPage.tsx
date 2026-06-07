@@ -1,8 +1,10 @@
 import { useState, type FormEvent } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { api } from '../lib/api'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 
 export default function RegisterPage() {
+  useDocumentTitle('Create account')
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const [email, setEmail] = useState('')

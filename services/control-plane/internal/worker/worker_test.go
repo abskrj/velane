@@ -2,6 +2,7 @@ package worker_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync"
 	"testing"
@@ -106,6 +107,147 @@ func (m *mockExecutor) RunStream(ctx context.Context, spec executor.RunSpec) (<-
 	ch := make(chan executor.StreamChunk)
 	close(ch)
 	return ch, nil
+}
+
+// mockPublisher captures events published to invocation event streams.
+type mockPublisher struct {
+	mu     sync.Mutex
+	events map[string][]string
+}
+
+func newMockPublisher() *mockPublisher {
+	return &mockPublisher{events: make(map[string][]string)}
+}
+
+func (m *mockPublisher) PublishEvent(_ context.Context, invocationID string, payload []byte) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.events[invocationID] = append(m.events[invocationID], string(payload))
+	return nil
+}
+
+func (m *mockPublisher) forID(id string) []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]string, len(m.events[id]))
+	copy(out, m.events[id])
+	return out
+}
+
+// runStreamWorker runs a single streaming job to completion.
+func runStreamWorker(t *testing.T, deq *mockDequeuer, store *mockWorkerStore, exec executor.Executor, pub worker.EventPublisher) {
+	t.Helper()
+	log := zap.NewNop()
+	w := worker.New(deq, store, exec, log, 1)
+	w.SetEventPublisher(pub)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		w.Run(ctx)
+	}()
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if store.count() >= 1 {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Error("worker did not stop within 2s after cancel")
+	}
+}
+
+func streamExecutor(events []executor.StreamChunk) *mockExecutor {
+	return &mockExecutor{
+		runStream: func(_ context.Context, _ executor.RunSpec) (<-chan executor.StreamChunk, error) {
+			ch := make(chan executor.StreamChunk, len(events))
+			for _, e := range events {
+				ch <- e
+			}
+			close(ch)
+			return ch, nil
+		},
+	}
+}
+
+func countEventType(events []string, typ string) int {
+	n := 0
+	for _, e := range events {
+		var v struct {
+			Type string `json:"type"`
+		}
+		_ = json.Unmarshal([]byte(e), &v)
+		if v.Type == typ {
+			n++
+		}
+	}
+	return n
+}
+
+func TestWorker_StreamJob_DevForwardsLogs(t *testing.T) {
+	job := makeJob("inv-stream-dev")
+	job.Stream = true
+	job.Env = "dev"
+
+	exec := streamExecutor([]executor.StreamChunk{
+		{Type: "log", Stream: "stdout", Text: "hello"},
+		{Type: "result", Output: `{"ok":true}`},
+		{Type: "done", Done: true},
+	})
+	store := &mockWorkerStore{}
+	pub := newMockPublisher()
+
+	runStreamWorker(t, newMockDequeuer(job), store, exec, pub)
+
+	res := store.latest()
+	if res == nil || res.status != models.InvocationCompleted {
+		t.Fatalf("expected completed status, got %+v", res)
+	}
+	if res.output != `{"ok":true}` {
+		t.Errorf("output = %q; want %q", res.output, `{"ok":true}`)
+	}
+
+	events := pub.forID(job.InvocationID)
+	if countEventType(events, "log") != 1 {
+		t.Errorf("expected 1 log event in dev, got %d (events=%v)", countEventType(events, "log"), events)
+	}
+	if countEventType(events, "done") != 1 {
+		t.Errorf("expected exactly 1 terminal done event, got %d", countEventType(events, "done"))
+	}
+}
+
+func TestWorker_StreamJob_ProdDropsLogs(t *testing.T) {
+	job := makeJob("inv-stream-prod")
+	job.Stream = true
+	job.Env = "prod"
+
+	exec := streamExecutor([]executor.StreamChunk{
+		{Type: "log", Stream: "stdout", Text: "secret debug line"},
+		{Type: "result", Output: `{"ok":true}`},
+		{Type: "done", Done: true},
+	})
+	store := &mockWorkerStore{}
+	pub := newMockPublisher()
+
+	runStreamWorker(t, newMockDequeuer(job), store, exec, pub)
+
+	if res := store.latest(); res == nil || res.status != models.InvocationCompleted {
+		t.Fatalf("expected completed status, got %+v", res)
+	}
+
+	events := pub.forID(job.InvocationID)
+	if got := countEventType(events, "log"); got != 0 {
+		t.Errorf("expected 0 log events in prod (dev-gated), got %d (events=%v)", got, events)
+	}
+	if countEventType(events, "result") != 1 {
+		t.Errorf("expected result event to still be forwarded in prod, got %d", countEventType(events, "result"))
+	}
 }
 
 // --- Helpers ---

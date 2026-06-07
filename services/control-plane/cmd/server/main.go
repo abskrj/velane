@@ -115,6 +115,7 @@ func main() {
 		redisClient = rc
 		log.Info("redis connected", zap.String("redis_url", cfg.RedisURL))
 		sched = scheduler.NewWithQueue(store, exec, redisClient, encKey, platLibs)
+		sched.SetEventStream(redisClient)
 	}
 	sched.WithInternalProxyURL(cfg.InternalProxyURL)
 	sched.SetObserver(observer)
@@ -123,8 +124,13 @@ func main() {
 	if redisClient != nil {
 		w := worker.New(redisClient, store, exec, log, cfg.WorkerCount)
 		w.SetObserver(observer)
+		w.SetEventPublisher(redisClient)
 		go w.Run(ctx)
 		log.Info("background worker started", zap.Int("workers", cfg.WorkerCount))
+
+		// Reaper: mark invocations stuck in pending/running (worker never
+		// picked them up or crashed mid-run) as timed out.
+		go runStaleInvocationReaper(ctx, store, log)
 	}
 
 	// --- Router ---
@@ -170,6 +176,33 @@ func main() {
 	}
 
 	log.Info("server stopped")
+}
+
+// runStaleInvocationReaper periodically fails invocations stuck in
+// pending/running longer than the staleness threshold. The threshold is set
+// well above the maximum streaming wait so it never races a live invocation.
+func runStaleInvocationReaper(ctx context.Context, store *postgres.Store, log *zap.Logger) {
+	const (
+		interval   = 1 * time.Minute
+		staleAfter = 10 * time.Minute
+	)
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			n, err := store.FailStaleInvocations(ctx, staleAfter)
+			if err != nil {
+				log.Warn("reaper: fail stale invocations", zap.Error(err))
+				continue
+			}
+			if n > 0 {
+				log.Info("reaper: marked stale invocations as timed out", zap.Int64("count", n))
+			}
+		}
+	}
 }
 
 // connectWithRetry attempts to open a Postgres connection up to maxAttempts

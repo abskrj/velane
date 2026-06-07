@@ -31,11 +31,31 @@ type RunResult struct {
 	Error        string // "timeout" | "oom" | "" for other errors, or error message
 }
 
-// StreamChunk is one piece of output emitted by a streaming snippet.
+// StreamChunk is one typed event emitted by a streaming snippet.
+//
+// The runtime emits a stream of these as NDJSON / SSE. The Type field
+// discriminates the event:
+//
+//   - "log":    debug output (print / console.log / stderr). Stream is
+//     "stdout" or "stderr"; Text holds the line. Dev-gated by the worker.
+//   - "chunk":  intentional generator output. Data holds the payload.
+//   - "result": the handler's return value. Output holds the raw JSON.
+//   - "error":  a terminal failure. Message holds the reason.
+//   - "done":   the final sentinel; always last.
+//
+// Legacy producers that emit only {"data","done","error"} (no "type") are
+// still understood: such events are treated as chunk/result by consumers.
 type StreamChunk struct {
-	Data  string // partial JSON or text emitted by the snippet
-	Error string // non-empty on error
-	Done  bool   // true on the final chunk
+	Type       string `json:"type,omitempty"`   // log|chunk|result|error|done
+	Stream     string `json:"stream,omitempty"` // stdout|stderr (for logs)
+	Text       string `json:"text,omitempty"`   // log line text
+	Data       string `json:"data,omitempty"`   // chunk payload (partial output)
+	Output     string `json:"output,omitempty"` // final result raw JSON
+	Message    string `json:"message,omitempty"`
+	ExitCode   int    `json:"exit_code,omitempty"`
+	DurationMs int    `json:"duration_ms,omitempty"`
+	Error      string `json:"error,omitempty"` // legacy/terminal error
+	Done       bool   `json:"done,omitempty"`  // true on the final event
 }
 
 // Executor is the interface that all execution backends must satisfy.

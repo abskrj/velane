@@ -62,6 +62,7 @@ func invokeStream(baseURL, tenant, slug, env, input, key string) error {
 	req.Header.Set("Authorization", "Bearer "+key)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Invoke-Mode", "stream")
+	req.Header.Set("Accept", "text/event-stream")
 	req.Body = http.NoBody
 
 	resp, err := http.DefaultClient.Do(req)

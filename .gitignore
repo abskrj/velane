@@ -21,6 +21,7 @@ Thumbs.db
 *.swp
 
 node_modules/
+dist/
 
 terraform.tfvars
 
@@ -31,3 +32,4 @@ terraform.tfvars
 **/terraform.tfvars
 **/*.tfplan
 infra/terraform/aws-eks/alb-controller-policy.json
+*.lock.hcl

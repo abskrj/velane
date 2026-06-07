@@ -34,6 +34,10 @@ func NewRegistry(client *controlplane.Client) *Registry {
 	return r
 }
 
+func (r *Registry) Client() *controlplane.Client {
+	return r.client
+}
+
 func (r *Registry) List() []Tool {
 	out := make([]Tool, 0, len(r.order))
 	for _, name := range r.order {

@@ -6,7 +6,8 @@ import LanguageBadge from '../components/LanguageBadge'
 import PublishDropdown from '../components/PublishDropdown'
 import { Toast, useToast } from '../components/Toast'
 import { api } from '../lib/api'
-import type { InvocationResult, Snippet, SnippetEnvironment, SnippetVersion } from '../types'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
+import type { InvocationResult, LogLine, Snippet, SnippetEnvironment, SnippetVersion } from '../types'
 
 type ActiveTab = 'test' | 'logs'
 
@@ -46,12 +47,19 @@ export default function SnippetEditorPage() {
   const [testInput, setTestInput] = useState('{}')
   const [testEnv, setTestEnv] = useState<'dev' | 'staging' | 'prod'>('dev')
   const [invokeResult, setInvokeResult] = useState<InvocationResult | null>(null)
+  const [runLogs, setRunLogs] = useState<LogLine[]>([])
   const [invoking, setInvoking] = useState(false)
   const [selectedVersion, setSelectedVersion] = useState<SnippetVersion | null>(null)
 
   const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const isDirty = useRef(false)
+  const ownVersionIds = useRef<Set<string>>(new Set())
   const { toast, showToast, dismissToast } = useToast()
+
+  useDocumentTitle(
+    snippet ? snippet.name || snippet.slug : undefined,
+    snippet ? 'Snippets' : undefined,
+  )
 
   useEffect(() => {
     if (!id) return
@@ -105,6 +113,12 @@ export default function SnippetEditorPage() {
   useEffect(() => {
     if (!id || loading) return
     const stop = api.watchSnippet(id, (incoming) => {
+      // Ignore echoes of versions this client just created (our own autosaves
+      // are broadcast back to us over the same watch stream).
+      if (ownVersionIds.current.has(incoming.id)) {
+        setVersions((prev) => (prev.some((v) => v.id === incoming.id) ? prev : [...prev, incoming]))
+        return
+      }
       if (isDirty.current) {
         showToast('Snippet updated by another editor — your edits take priority', 'error')
         return
@@ -133,7 +147,8 @@ export default function SnippetEditorPage() {
       if (autosaveTimer.current) clearTimeout(autosaveTimer.current)
       autosaveTimer.current = setTimeout(async () => {
         try {
-          await api.createVersion(id, newCode)
+          const created = await api.createVersion(id, newCode)
+          if (created?.id) ownVersionIds.current.add(created.id)
           await reloadVersions()
           isDirty.current = false
           setAutoSaved(true)
@@ -177,9 +192,41 @@ export default function SnippetEditorPage() {
     if (!snippet?.slug) return
     setInvoking(true)
     setInvokeResult(null)
+    setRunLogs([])
+
+    const chunks: string[] = []
+    let resultOutput: string | null = null
+    let errMessage = ''
+
     try {
-      const result = await api.invokeSnippet(snippet.slug, testInput, testEnv)
-      setInvokeResult(result)
+      await api.invokeSnippetStream(snippet.slug, testInput, testEnv, {
+        onLog: (line) => setRunLogs((prev) => [...prev, line]),
+        onChunk: (data) => {
+          chunks.push(data)
+        },
+        onResult: (output) => {
+          resultOutput = output
+        },
+        onError: (message) => {
+          errMessage = message
+        },
+      })
+
+      const rawOutput = resultOutput ?? chunks.join('')
+      let parsedOutput: unknown = rawOutput
+      try {
+        parsedOutput = JSON.parse(rawOutput)
+      } catch {
+        parsedOutput = rawOutput
+      }
+
+      setInvokeResult({
+        output: parsedOutput,
+        error: errMessage,
+        stderr: '',
+        duration_ms: 0,
+        exit_code: errMessage ? 1 : 0,
+      })
     } catch (err) {
       setInvokeResult({
         output: '',
@@ -402,12 +449,39 @@ export default function SnippetEditorPage() {
                   )}
                 </div>
               )}
+              {runLogs.length > 0 && (
+                <div className="rounded-md border border-gray-200 bg-gray-950 p-3">
+                  <p className="mb-1.5 text-xs font-medium text-gray-400">
+                    Logs {testEnv !== 'dev' && <span className="text-gray-600">(dev only)</span>}
+                  </p>
+                  <pre className="max-h-48 overflow-auto font-mono text-xs leading-relaxed">
+                    {runLogs.map((l, i) => (
+                      <div key={i} className={l.stream === 'stderr' ? 'text-amber-300' : 'text-gray-300'}>
+                        {l.text}
+                      </div>
+                    ))}
+                  </pre>
+                </div>
+              )}
             </div>
           )}
 
           {activeTab === 'logs' && (
-            <div className="flex flex-1 items-center justify-center text-sm text-gray-500">
-              Live logs coming soon
+            <div className="flex-1 overflow-auto p-3">
+              {runLogs.length === 0 ? (
+                <div className="flex h-full items-center justify-center text-sm text-gray-500">
+                  Run the snippet in <code className="mx-1 rounded bg-gray-100 px-1">dev</code> to see live logs.
+                </div>
+              ) : (
+                <pre className="font-mono text-xs leading-relaxed">
+                  {runLogs.map((l, i) => (
+                    <div key={i} className={l.stream === 'stderr' ? 'text-amber-600' : 'text-gray-700'}>
+                      <span className="select-none text-gray-400">{l.stream === 'stderr' ? 'E ' : '  '}</span>
+                      {l.text}
+                    </div>
+                  ))}
+                </pre>
+              )}
             </div>
           )}
         </div>

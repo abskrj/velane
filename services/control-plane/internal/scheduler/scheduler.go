@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"time"
 
 	"github.com/abskrj/velane/services/control-plane/internal/executor"
 	"github.com/abskrj/velane/services/control-plane/internal/models"
@@ -11,6 +12,12 @@ import (
 	"github.com/abskrj/velane/services/control-plane/internal/platformlibs"
 	redisstore "github.com/abskrj/velane/services/control-plane/internal/store/redis"
 )
+
+// EventStream reads live invocation events from the per-invocation event stream.
+// Implemented by *redisstore.Client.
+type EventStream interface {
+	ReadEvents(ctx context.Context, invocationID, lastID string, blockFor time.Duration) ([]redisstore.StreamEvent, string, error)
+}
 
 // Store is the subset of *postgres.Store that the Scheduler depends on.
 // Keeping this narrow makes the scheduler straightforward to test with a mock.
@@ -51,6 +58,25 @@ type Scheduler struct {
 	observer         observability.InvocationObserver
 	platLibs         []platformlibs.PlatformLib
 	internalProxyURL string // injected as VELANE_PROXY_URL into every invocation
+	eventStream      EventStream
+}
+
+// SetEventStream wires the live invocation event reader (Redis). When set,
+// queued+streaming invocations become available via InvokeQueued + ReadEvents.
+func (s *Scheduler) SetEventStream(es EventStream) *Scheduler {
+	s.eventStream = es
+	return s
+}
+
+// HasEventStream reports whether a live event stream reader is configured.
+func (s *Scheduler) HasEventStream() bool { return s.eventStream != nil && s.queue != nil }
+
+// ReadEvents reads live events for an invocation. See EventStream.ReadEvents.
+func (s *Scheduler) ReadEvents(ctx context.Context, invocationID, lastID string, blockFor time.Duration) ([]redisstore.StreamEvent, string, error) {
+	if s.eventStream == nil {
+		return nil, lastID, fmt.Errorf("event stream not configured")
+	}
+	return s.eventStream.ReadEvents(ctx, invocationID, lastID, blockFor)
 }
 
 // New creates a Scheduler wired to the given store and executor (sync only, no queue).
@@ -341,6 +367,87 @@ func (s *Scheduler) InvokeAsync(ctx context.Context, req InvokeRequest, callback
 		SecretEnvVars: secrets,
 		Libraries:     libs,
 		EgressPolicy:  jobEgress,
+	}
+
+	if err := s.queue.Enqueue(ctx, job); err != nil {
+		return nil, fmt.Errorf("enqueue job: %w", err)
+	}
+
+	return invocation, nil
+}
+
+// HasQueue reports whether the scheduler has a configured async/stream queue.
+func (s *Scheduler) HasQueue() bool { return s.queue != nil }
+
+// InvokeQueued enqueues the snippet as a streaming job and returns the created
+// invocation (status=running) immediately. The worker executes it via the
+// streaming path and publishes live events to the invocation's event stream;
+// the HTTP handler reads that stream and relays it to the client. This is the
+// primary path for sync/stream invocations when a queue is configured.
+func (s *Scheduler) InvokeQueued(ctx context.Context, req InvokeRequest) (*models.Invocation, error) {
+	if s.queue == nil {
+		return nil, fmt.Errorf("queued invocation requires a configured queue")
+	}
+
+	snippet, version, err := s.resolveVersion(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	input := normaliseInput(req.Input)
+
+	secrets, err := s.store.GetSecretsForInvocation(ctx, req.TenantID, snippet.ID, req.Env, s.encKey)
+	if err != nil {
+		return nil, fmt.Errorf("fetch secrets: %w", err)
+	}
+
+	tenant, err := s.store.GetTenantByID(ctx, req.TenantID)
+	if err != nil {
+		return nil, fmt.Errorf("fetch tenant: %w", err)
+	}
+
+	invocation, err := s.store.CreateInvocationWithMode(
+		ctx,
+		snippet.ID, version.ID, req.Env, req.TenantID, input,
+		"stream", "",
+		models.InvocationRunning,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create invocation: %w", err)
+	}
+
+	// Inject the internal proxy env so @velane/integrations works inside the
+	// snippet, matching the inline sync path.
+	s.injectProxyEnv(secrets, req.TenantID)
+
+	var jobEgress *redisstore.EgressPolicyJob
+	if ep := tenant.EgressPolicy; len(ep.BlockedCIDRs) > 0 || len(ep.BlockedDomains) > 0 {
+		jobEgress = &redisstore.EgressPolicyJob{
+			BlockedCIDRs:   ep.BlockedCIDRs,
+			BlockedDomains: ep.BlockedDomains,
+		}
+	}
+
+	libs, err := s.getLibraries(ctx, req.TenantID, tenant.Slug, string(snippet.Language))
+	if err != nil {
+		return nil, fmt.Errorf("fetch libraries: %w", err)
+	}
+
+	job := redisstore.Job{
+		InvocationID:  invocation.ID,
+		SnippetID:     snippet.ID,
+		VersionID:     version.ID,
+		TenantID:      req.TenantID,
+		Language:      string(snippet.Language),
+		Code:          version.Code,
+		Input:         input,
+		TimeoutMs:     version.TimeoutMs,
+		MaxMemoryMB:   version.MaxMemoryMB,
+		Env:           req.Env,
+		SecretEnvVars: secrets,
+		Libraries:     libs,
+		EgressPolicy:  jobEgress,
+		Stream:        true,
 	}
 
 	if err := s.queue.Enqueue(ctx, job); err != nil {

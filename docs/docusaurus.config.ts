@@ -45,12 +45,14 @@ const config: Config = {
   ],
   plugins: [],
 
+  favicon: 'favicon-32x32.png',
+
   themeConfig: {
     navbar: {
       title: 'Velane',
       logo: {
         alt: 'Velane logo',
-        src: 'velane_sh.jpeg'
+        src: 'velane_sh.png'
       },
       items: [
         {

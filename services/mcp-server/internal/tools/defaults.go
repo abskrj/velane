@@ -37,10 +37,32 @@ Methods: .get(path)  .post(path, body)  .patch(path, body)  .put(path, body)  .d
 All methods return parsed JSON. Paths are the provider's native API paths.
 @velane/integrations is always available — no install, no credentials needed in code.
 Call get_integration_docs(provider) to look up endpoints for any provider.`,
-		InputSchema: map[string]any{"type": "object", "properties": map[string]any{}},
-		Handle: func(ctx context.Context, authHeader string, _ map[string]any) (any, error) {
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"provider": map[string]any{"type": "string", "description": "Filter by provider/alias substring, e.g. 'github'."},
+				"limit":    map[string]any{"type": "integer", "description": "Max results to return (default 50)."},
+				"offset":   map[string]any{"type": "integer", "description": "Number of results to skip for pagination."},
+			},
+		},
+		Handle: func(ctx context.Context, authHeader string, args map[string]any) (any, error) {
+			provider, _ := toString(args, "provider", false)
+			limit, _ := toInt(args, "limit", false)
+			offset, _ := toInt(args, "offset", false)
+			if limit <= 0 {
+				limit = 50
+			}
+
+			query := map[string]string{
+				"q":     provider,
+				"limit": fmt.Sprintf("%d", limit),
+			}
+			if offset > 0 {
+				query["offset"] = fmt.Sprintf("%d", offset)
+			}
+
 			var out []map[string]any
-			if err := r.client.Get(ctx, authHeader, "/v1/connections", &out); err != nil {
+			if err := r.client.Get(ctx, authHeader, "/v1/connections"+controlplane.Query(query), &out); err != nil {
 				return nil, err
 			}
 			if out == nil {
@@ -92,7 +114,7 @@ Call get_integration_docs(provider) to look up endpoints for any provider.`,
 
 	r.add(Tool{
 		Name:        "get_snippet",
-		Description: "Get a snippet by ID.",
+		Description: "Get a snippet by ID, including its version history (with code) and the active version per environment. Use this to read the current code before editing an existing snippet.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"required": []string{
@@ -107,11 +129,38 @@ Call get_integration_docs(provider) to look up endpoints for any provider.`,
 			if err != nil {
 				return nil, err
 			}
-			var out map[string]any
-			if err := r.client.Get(ctx, authHeader, "/v1/snippets/"+url.PathEscape(snippetID), &out); err != nil {
+			esc := url.PathEscape(snippetID)
+
+			var snippet map[string]any
+			if err := r.client.Get(ctx, authHeader, "/v1/snippets/"+esc, &snippet); err != nil {
 				return nil, err
 			}
-			return out, nil
+
+			// Best-effort enrichment: versions (with code) and per-env active
+			// version. Failures here should not fail the whole call.
+			var versions []map[string]any
+			if err := r.client.Get(ctx, authHeader, "/v1/snippets/"+esc+"/versions", &versions); err != nil {
+				versions = nil
+			}
+			var environments []map[string]any
+			if err := r.client.Get(ctx, authHeader, "/v1/snippets/"+esc+"/environments", &environments); err != nil {
+				environments = nil
+			}
+
+			// Surface the latest version's code directly for convenience.
+			var activeCode string
+			if n := len(versions); n > 0 {
+				if code, ok := versions[n-1]["code"].(string); ok {
+					activeCode = code
+				}
+			}
+
+			return map[string]any{
+				"snippet":      snippet,
+				"versions":     versions,
+				"environments": environments,
+				"latest_code":  activeCode,
+			}, nil
 		},
 	})
 
@@ -335,7 +384,7 @@ Call get_integration_docs(provider) for endpoint reference and working code exam
 
 	r.add(Tool{
 		Name:        "get_logs",
-		Description: "Get invocation logs for a snippet.",
+		Description: "List past invocations for a snippet (status, output, error, stderr, duration, mode). Use get_invocation for the full record of a single run by ID. Note: streamed debug logs (console.log/print) are live-only and not stored here.",
 		InputSchema: map[string]any{
 			"type":     "object",
 			"required": []string{"snippet_id"},
@@ -371,6 +420,29 @@ Call get_integration_docs(provider) for endpoint reference and working code exam
 			path := "/v1/logs/snippets/" + url.PathEscape(snippetID) + controlplane.Query(query)
 			var out map[string]any
 			if err := r.client.Get(ctx, authHeader, path, &out); err != nil {
+				return nil, err
+			}
+			return out, nil
+		},
+	})
+
+	r.add(Tool{
+		Name:        "get_invocation",
+		Description: "Get a single invocation by ID, including status, output, error, stderr, and duration. Use this to poll an async invocation (invoke_snippet with invoke_mode=async returns an invocation_id) until status is 'completed', 'failed', 'timeout', or 'oom_killed'.",
+		InputSchema: map[string]any{
+			"type":     "object",
+			"required": []string{"invocation_id"},
+			"properties": map[string]any{
+				"invocation_id": map[string]any{"type": "string"},
+			},
+		},
+		Handle: func(ctx context.Context, authHeader string, args map[string]any) (any, error) {
+			invocationID, err := toString(args, "invocation_id", true)
+			if err != nil {
+				return nil, err
+			}
+			var out map[string]any
+			if err := r.client.Get(ctx, authHeader, "/v1/invocations/"+url.PathEscape(invocationID), &out); err != nil {
 				return nil, err
 			}
 			return out, nil

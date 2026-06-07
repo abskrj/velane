@@ -13,11 +13,12 @@ import {
   Lock,
   Plug,
   Terminal,
-  Layers,
   Check,
   ChevronsUpDown,
 } from 'lucide-react'
 import clsx from 'clsx'
+import velaneLogo from '../assets/velane_sh.png'
+import RouteDocumentTitle from './RouteDocumentTitle'
 import { api } from '../lib/api'
 import { useEmbedMode } from '../hooks/useEmbedMode'
 import type { OrgMembership } from '../types'
@@ -167,12 +168,15 @@ export default function DashboardLayout() {
 
   return (
     <div className="flex h-screen bg-gray-50">
+      <RouteDocumentTitle />
       {/* Sidebar */}
       <aside className="flex w-64 flex-col border-r border-gray-200 bg-white">
         <div className="flex h-14 items-center gap-2.5 border-b border-gray-200 px-5">
-          <div className="flex h-7 w-7 items-center justify-center rounded-md bg-gray-900">
-            <Layers size={14} className="text-white" />
-          </div>
+          <img
+            src={velaneLogo}
+            alt="Velane"
+            className="h-7 w-7 rounded-full object-contain"
+          />
           <span className="text-sm font-semibold text-gray-900">Velane</span>
         </div>
 

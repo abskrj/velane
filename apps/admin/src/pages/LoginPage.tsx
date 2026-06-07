@@ -1,8 +1,10 @@
 import { useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { api } from '../lib/api'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 
 export default function LoginPage() {
+  useDocumentTitle('Sign in')
   const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')

@@ -174,6 +174,11 @@ export interface EmbedToken {
   created_at: string
 }
 
+export interface LogLine {
+  stream: string
+  text: string
+}
+
 export interface InvocationResult {
   output: unknown
   error: string
@@ -182,4 +187,5 @@ export interface InvocationResult {
   exit_code: number
   invocation_id?: string
   status?: string
+  logs?: LogLine[]
 }

@@ -60,6 +60,26 @@ func (s *Store) UpdateInvocationResult(ctx context.Context, id string, status mo
 	return nil
 }
 
+// FailStaleInvocations marks invocations stuck in pending/running past olderThan
+// as timed out. This reaps records whose worker never picked them up or crashed
+// mid-execution before finalizing. Returns the number of rows updated.
+func (s *Store) FailStaleInvocations(ctx context.Context, olderThan time.Duration) (int64, error) {
+	cutoff := time.Now().Add(-olderThan)
+	tag, err := s.pool.Exec(ctx,
+		`UPDATE invocations
+		 SET status       = $1,
+		     error        = COALESCE(NULLIF(error, ''), 'execution did not complete'),
+		     completed_at = now()
+		 WHERE status IN ('pending', 'running')
+		   AND created_at < $2`,
+		string(models.InvocationTimeout), cutoff,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("FailStaleInvocations: %w", err)
+	}
+	return tag.RowsAffected(), nil
+}
+
 // InvocationLogFilters filters invocation log query results.
 type InvocationLogFilters struct {
 	Environment string

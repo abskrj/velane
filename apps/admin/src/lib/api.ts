@@ -11,6 +11,7 @@ import type {
   SnippetVersion,
   SnippetEnvironment,
   InvocationResult,
+  LogLine,
   EmbedToken,
   Secret,
   Connection,
@@ -378,4 +379,94 @@ export const api = {
   async invokeSnippet(snippetSlug: string, input: string, env = 'dev'): Promise<InvocationResult> {
     return request('POST', `/v1/invoke/${snippetSlug}?env=${env}`, JSON.parse(input || '{}'), 'apikey')
   },
+
+  // Streaming invocation: opens an SSE stream and dispatches typed events.
+  // Resolves once the stream completes. Debug logs are only emitted in dev.
+  async invokeSnippetStream(
+    snippetSlug: string,
+    input: string,
+    env: string,
+    handlers: StreamHandlers,
+  ): Promise<void> {
+    const key = getStoredAPIKey()
+    const res = await fetch(`${BASE}/v1/invoke/${snippetSlug}?env=${env}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'text/event-stream',
+        ...(key ? { Authorization: `Bearer ${key}` } : {}),
+      },
+      body: JSON.stringify(JSON.parse(input || '{}')),
+      credentials: 'include',
+    })
+
+    if (!res.ok || !res.body) {
+      const err = await res.json().catch(() => ({ error: res.statusText }))
+      throw new Error(err.error ?? res.statusText)
+    }
+
+    const reader = res.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+
+    const dispatch = (raw: string) => {
+      const dataLines = raw
+        .split('\n')
+        .filter((l) => l.startsWith('data:'))
+        .map((l) => l.slice(5).trim())
+      if (dataLines.length === 0) return
+      let ev: StreamEvent
+      try {
+        ev = JSON.parse(dataLines.join('\n'))
+      } catch {
+        return
+      }
+      switch (ev.type) {
+        case 'log':
+          handlers.onLog?.({ stream: ev.stream ?? 'stdout', text: ev.text ?? '' })
+          break
+        case 'chunk':
+          handlers.onChunk?.(ev.data ?? '')
+          break
+        case 'result':
+          handlers.onResult?.(ev.output ?? '')
+          break
+        case 'error':
+          handlers.onError?.(ev.message ?? ev.error ?? 'error')
+          break
+      }
+    }
+
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      let sep: number
+      while ((sep = buffer.indexOf('\n\n')) !== -1) {
+        const rawEvent = buffer.slice(0, sep)
+        buffer = buffer.slice(sep + 2)
+        dispatch(rawEvent)
+      }
+    }
+    handlers.onDone?.()
+  },
+}
+
+interface StreamEvent {
+  type?: string
+  stream?: string
+  text?: string
+  data?: string
+  output?: string
+  message?: string
+  error?: string
+  done?: boolean
+}
+
+export interface StreamHandlers {
+  onLog?: (line: LogLine) => void
+  onChunk?: (data: string) => void
+  onResult?: (output: string) => void
+  onError?: (message: string) => void
+  onDone?: () => void
 }

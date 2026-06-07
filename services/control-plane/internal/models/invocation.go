@@ -27,7 +27,7 @@ type Invocation struct {
 	Output       string           `json:"output"` // raw JSON
 	OutputRef    string           `json:"output_ref,omitempty"`
 	Error        string           `json:"error,omitempty"`
-	Stderr       string           `json:"stderr,omitempty"`
+	Stderr       string           `json:"stderr"`
 	StderrRef    string           `json:"stderr_ref,omitempty"`
 	DurationMs   int              `json:"duration_ms"`
 	PeakMemoryMB int              `json:"peak_memory_mb"`

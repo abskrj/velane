@@ -81,6 +81,102 @@ func (c *Client) CreateConnectSession(ctx context.Context, tenantID, tenantName,
 	return out.Data.Token, nil
 }
 
+// FindConnectionID returns the newest Nango connection matching Velane's tenant,
+// provider config, and alias tags.
+func (c *Client) FindConnectionID(ctx context.Context, tenantID, providerConfigKey, alias string) (string, error) {
+	if alias == "" {
+		alias = "default"
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/connections", nil)
+	if err != nil {
+		return "", err
+	}
+	c.setAuth(req)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("nango FindConnectionID: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 300 {
+		raw, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("nango FindConnectionID %d: %s", resp.StatusCode, raw)
+	}
+
+	type nangoConnection struct {
+		ConnectionID      string            `json:"connection_id"`
+		ProviderConfigKey string            `json:"provider_config_key"`
+		Tags              map[string]string `json:"tags"`
+		Metadata          map[string]any    `json:"metadata"`
+		Created           string            `json:"created"`
+	}
+	var envelope struct {
+		Connections []nangoConnection `json:"connections"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
+		return "", fmt.Errorf("nango FindConnectionID decode: %w", err)
+	}
+
+	var newest nangoConnection
+	var newestAt time.Time
+	for _, conn := range envelope.Connections {
+		if conn.ConnectionID == "" || conn.ProviderConfigKey != providerConfigKey {
+			continue
+		}
+		if !nangoConnectionMatchesTenant(conn.Tags, conn.Metadata, tenantID) {
+			continue
+		}
+		if !nangoConnectionMatchesAlias(conn.Tags, conn.Metadata, alias) {
+			continue
+		}
+
+		createdAt, err := time.Parse(time.RFC3339Nano, conn.Created)
+		if err != nil {
+			if newest.ConnectionID == "" {
+				newest = conn
+			}
+			continue
+		}
+		if newest.ConnectionID == "" || createdAt.After(newestAt) {
+			newest = conn
+			newestAt = createdAt
+		}
+	}
+	return newest.ConnectionID, nil
+}
+
+func nangoConnectionMatchesTenant(tags map[string]string, metadata map[string]any, tenantID string) bool {
+	if tenantID == "" {
+		return true
+	}
+	if tags["end_user_id"] == tenantID || tags["organization_id"] == tenantID {
+		return true
+	}
+	if metadata != nil {
+		if value, ok := metadata["velane_tenant_id"].(string); ok && value != "" {
+			return value == tenantID
+		}
+	}
+	return tags["end_user_id"] == "" && tags["organization_id"] == ""
+}
+
+func nangoConnectionMatchesAlias(tags map[string]string, metadata map[string]any, alias string) bool {
+	if alias == "" {
+		alias = "default"
+	}
+	if value := tags["velane_alias"]; value != "" {
+		return value == alias
+	}
+	if metadata != nil {
+		if value, ok := metadata["velane_alias"].(string); ok && value != "" {
+			return value == alias
+		}
+	}
+	return true
+}
+
 // PatchConnectionMetadata updates metadata on an existing Nango connection without
 // overwriting fields not included in the patch (PATCH semantics).
 func (c *Client) PatchConnectionMetadata(ctx context.Context, connectionID, providerConfigKey string, metadata map[string]any) error {

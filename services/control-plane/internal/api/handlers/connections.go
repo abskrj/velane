@@ -145,6 +145,44 @@ func (h *ConnectionsHandler) RecordConnection(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusInternalServerError, "failed to record connection")
 		return
 	}
+	if conn.NangoConnectionID == "" && h.nango != nil {
+		nangoConnID, err := h.nango.FindConnectionID(r.Context(), tenant.ID, providerConfigKey, req.Alias)
+		if err != nil {
+			h.log.Warn("record connection: failed to reconcile nango connection id",
+				zap.String("provider", req.Provider),
+				zap.String("provider_config_key", providerConfigKey),
+				zap.String("alias", req.Alias),
+				zap.Error(err),
+			)
+		} else if nangoConnID != "" {
+			if updated, err := h.store.UpdateNangoConnectionIDByProviderConfigKey(r.Context(), tenant.ID, providerConfigKey, nangoConnID); err != nil {
+				h.log.Warn("record connection: failed to store reconciled nango connection id",
+					zap.String("provider", req.Provider),
+					zap.String("provider_config_key", providerConfigKey),
+					zap.String("alias", req.Alias),
+					zap.String("nango_connection_id", nangoConnID),
+					zap.Error(err),
+				)
+			} else {
+				conn = updated
+				if err := h.nango.PatchConnectionMetadata(r.Context(), nangoConnID, providerConfigKey, map[string]any{
+					"velane_alias":     conn.Alias,
+					"velane_tenant_id": tenant.ID,
+				}); err != nil {
+					h.log.Warn("record connection: failed to patch nango connection metadata (non-fatal)",
+						zap.String("nango_connection_id", nangoConnID),
+						zap.Error(err),
+					)
+				}
+			}
+		} else {
+			h.log.Warn("record connection: nango connection id not found during reconciliation",
+				zap.String("provider", req.Provider),
+				zap.String("provider_config_key", providerConfigKey),
+				zap.String("alias", req.Alias),
+			)
+		}
+	}
 
 	if h.auditor != nil {
 		actorID, actorType := resolveActor(r)
@@ -313,6 +351,10 @@ func (h *ConnectionsHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 	providerConfigKey := conn.ProviderConfigKey
 	if providerConfigKey == "" {
 		providerConfigKey = provider
+	}
+	if conn.NangoConnectionID == "" {
+		writeError(w, http.StatusBadRequest, "connection is not fully linked; reconnect provider")
+		return
 	}
 	h.nango.Proxy(w, r, conn.NangoConnectionID, providerConfigKey, path)
 }

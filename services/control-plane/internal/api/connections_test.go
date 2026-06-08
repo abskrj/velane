@@ -144,10 +144,10 @@ func setupWithNango(t *testing.T) *testEnv {
 			_ = json.NewDecoder(r.Body).Decode(&req)
 			if len(req.AllowedIntegrations) > 0 {
 				if _, ok := configuredIntegrations[req.AllowedIntegrations[0]]; !ok {
-				w.WriteHeader(http.StatusBadRequest)
-				_, _ = w.Write([]byte(`{"error":"provider config not found"}`))
-				return
-			}
+					w.WriteHeader(http.StatusBadRequest)
+					_, _ = w.Write([]byte(`{"error":"provider config not found"}`))
+					return
+				}
 			}
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
@@ -156,6 +156,43 @@ func setupWithNango(t *testing.T) *testEnv {
 		// DELETE /connection/{anything} — 204 no body.
 		case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/connection/"):
 			w.WriteHeader(http.StatusNoContent)
+
+		// GET /connections — returns connection records for reconciliation after OAuth.
+		case r.Method == http.MethodGet && r.URL.Path == "/connections":
+			type conn struct {
+				ConnectionID      string            `json:"connection_id"`
+				ProviderConfigKey string            `json:"provider_config_key"`
+				Provider          string            `json:"provider"`
+				Tags              map[string]string `json:"tags"`
+				Created           string            `json:"created"`
+			}
+			connections := []conn{
+				{
+					ConnectionID:      "mock-connection-github",
+					ProviderConfigKey: "github",
+					Provider:          "github",
+					Tags:              map[string]string{"velane_alias": "default"},
+					Created:           "2026-01-01T00:00:00Z",
+				},
+				{
+					ConnectionID:      "mock-connection-figma",
+					ProviderConfigKey: "figma",
+					Provider:          "figma",
+					Tags:              map[string]string{"velane_alias": "default"},
+					Created:           "2026-01-01T00:00:00Z",
+				},
+			}
+			for key, provider := range configuredIntegrations {
+				connections = append(connections, conn{
+					ConnectionID:      "mock-connection-" + key,
+					ProviderConfigKey: key,
+					Provider:          provider,
+					Created:           "2026-01-02T00:00:00Z",
+				})
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(map[string]any{"connections": connections})
 
 		// GET /providers — returns a minimal provider list.
 		case r.Method == http.MethodGet && r.URL.Path == "/providers":
@@ -276,6 +313,26 @@ func TestConnections_Record(t *testing.T) {
 	}
 	if body["id"] == "" {
 		t.Error("id must be set")
+	}
+}
+
+func TestConnections_RecordBackfillsNangoConnectionID(t *testing.T) {
+	env := setupWithNango(t)
+	path := "/v1/tenant/connections"
+	profile := configureProfile(t, env, "github", "default", true)
+
+	rec := env.do(t, http.MethodPost, path, env.manageKey, map[string]any{
+		"provider":              "github",
+		"credential_profile_id": profile["id"],
+	})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d; want 201\nbody: %s", rec.Code, rec.Body.String())
+	}
+
+	body := decodeJSON(t, rec)
+	want := "mock-connection-" + profile["nango_provider_config_key"].(string)
+	if body["nango_connection_id"] != want {
+		t.Errorf("nango_connection_id = %q; want %q", body["nango_connection_id"], want)
 	}
 }
 

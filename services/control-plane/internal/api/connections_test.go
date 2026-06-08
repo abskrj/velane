@@ -41,11 +41,17 @@ func setupWithNango(t *testing.T) *testEnv {
 
 	// Mock Nango server handling the subset of endpoints we need.
 	configuredIntegrations := map[string]string{} // key: unique_key, val: provider
+	importedConnections := map[string]struct {
+		ConnectionID      string
+		ProviderConfigKey string
+		Provider          string
+	}{}
 	providerAuthModes := map[string]string{
-		"github": "OAUTH2",
-		"slack":  "OAUTH2",
-		"figma":  "OAUTH2",
-		"8x8":    "OAUTH2_CC",
+		"github":        "OAUTH2",
+		"slack":         "OAUTH2",
+		"figma":         "OAUTH2",
+		"8x8":           "OAUTH2_CC",
+		"google-gemini": "API_KEY",
 	}
 	mockNango := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
@@ -72,7 +78,7 @@ func setupWithNango(t *testing.T) *testEnv {
 				}
 			}
 			if expectedType, ok := providerAuthModes[req.Provider]; ok {
-				if expectedType == "OAUTH2_CC" {
+				if expectedType == "OAUTH2_CC" || expectedType == "API_KEY" {
 					if len(req.Credentials) > 0 {
 						w.WriteHeader(http.StatusBadRequest)
 						_, _ = w.Write([]byte(`{"error":{"code":"invalid_body","errors":[{"code":"invalid_union","message":"invalid credentials object","path":["credentials","type"]}]}}`))
@@ -157,6 +163,43 @@ func setupWithNango(t *testing.T) *testEnv {
 		case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/connection/"):
 			w.WriteHeader(http.StatusNoContent)
 
+		// POST /connections — import existing credentials for API-key providers.
+		case r.Method == http.MethodPost && r.URL.Path == "/connections":
+			var req struct {
+				ProviderConfigKey string         `json:"provider_config_key"`
+				ConnectionID      string         `json:"connection_id"`
+				Credentials       map[string]any `json:"credentials"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&req)
+			provider := configuredIntegrations[req.ProviderConfigKey]
+			if provider == "" {
+				w.WriteHeader(http.StatusBadRequest)
+				_, _ = w.Write([]byte(`{"error":"provider config not found"}`))
+				return
+			}
+			if providerAuthModes[provider] == "API_KEY" {
+				if req.Credentials["type"] != "API_KEY" || req.Credentials["apiKey"] == "" {
+					w.WriteHeader(http.StatusBadRequest)
+					_, _ = w.Write([]byte(`{"error":"apiKey required"}`))
+					return
+				}
+			}
+			if req.ConnectionID == "" {
+				req.ConnectionID = "mock-connection-" + req.ProviderConfigKey
+			}
+			importedConnections[req.ProviderConfigKey] = struct {
+				ConnectionID      string
+				ProviderConfigKey string
+				Provider          string
+			}{ConnectionID: req.ConnectionID, ProviderConfigKey: req.ProviderConfigKey, Provider: provider}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"connection_id":       req.ConnectionID,
+				"provider_config_key": req.ProviderConfigKey,
+				"provider":            provider,
+			})
+
 		// GET /connections — returns connection records for reconciliation after OAuth.
 		case r.Method == http.MethodGet && r.URL.Path == "/connections":
 			type conn struct {
@@ -190,6 +233,15 @@ func setupWithNango(t *testing.T) *testEnv {
 					Created:           "2026-01-02T00:00:00Z",
 				})
 			}
+			for _, imported := range importedConnections {
+				connections = append(connections, conn{
+					ConnectionID:      imported.ConnectionID,
+					ProviderConfigKey: imported.ProviderConfigKey,
+					Provider:          imported.Provider,
+					Tags:              map[string]string{"velane_alias": "default"},
+					Created:           "2026-01-03T00:00:00Z",
+				})
+			}
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
 			_ = json.NewEncoder(w).Encode(map[string]any{"connections": connections})
@@ -199,10 +251,11 @@ func setupWithNango(t *testing.T) *testEnv {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"data":[` +
-				`{"unique_key":"github","name":"GitHub","auth_mode":"OAUTH2","categories":["developer-tools"]},` +
-				`{"unique_key":"slack","name":"Slack","auth_mode":"OAUTH2","categories":["communication"]},` +
-				`{"unique_key":"figma","name":"Figma","auth_mode":"OAUTH2","categories":["design"]},` +
-				`{"unique_key":"8x8","name":"8x8","auth_mode":"OAUTH2_CC","categories":["communication"]}` +
+				`{"name":"github","display_name":"GitHub","auth_mode":"OAUTH2","categories":["developer-tools"]},` +
+				`{"name":"slack","display_name":"Slack","auth_mode":"OAUTH2","categories":["communication"]},` +
+				`{"name":"figma","display_name":"Figma","auth_mode":"OAUTH2","categories":["design"]},` +
+				`{"name":"8x8","display_name":"8x8","auth_mode":"OAUTH2_CC","categories":["communication"]},` +
+				`{"name":"google-gemini","display_name":"Google Gemini","auth_mode":"API_KEY","categories":["dev-tools"],"credentials":{"apiKey":{"type":"string","title":"API Key"}}}` +
 				`]}`))
 
 		// GET /proxy/* — forward as a JSON response from the mock provider.
@@ -491,6 +544,33 @@ func TestConnections_CreateSessionRequiresConfiguredProfile(t *testing.T) {
 	})
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d; want 400\nbody: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestConnections_CreateSessionRejectsAPIKeyProfile(t *testing.T) {
+	env := setupWithNango(t)
+	recConfigure := env.do(t, http.MethodPost, "/v1/integrations/configured", env.manageKey, map[string]any{
+		"provider":         "google-gemini",
+		"alias":            "default",
+		"name":             "Gemini",
+		"credentials_type": "API_KEY",
+		"credentials": map[string]string{
+			"apiKey": "gemini-api-key",
+		},
+		"is_default": true,
+	})
+	if recConfigure.Code != http.StatusOK {
+		t.Fatalf("configure API key profile: status=%d body=%s", recConfigure.Code, recConfigure.Body.String())
+	}
+
+	rec := env.do(t, http.MethodPost, "/v1/tenant/connections/session", env.manageKey, map[string]any{
+		"provider": "google-gemini",
+	})
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d; want 400\nbody: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "provider does not use OAuth connect") {
+		t.Fatalf("body = %s; want non-OAuth connect error", rec.Body.String())
 	}
 }
 
@@ -828,6 +908,61 @@ func TestIntegrations_ConfigureProfileResolvesProviderAuthMode(t *testing.T) {
 	body := decodeJSON(t, rec)
 	if body["credentials_type"] != "OAUTH2_CC" {
 		t.Fatalf("credentials_type = %v; want OAUTH2_CC", body["credentials_type"])
+	}
+}
+
+func TestIntegrations_ConfigureAPIKeyProfileCreatesConnection(t *testing.T) {
+	env := setupWithNango(t)
+
+	rec := env.do(t, http.MethodPost, "/v1/integrations/configured", env.manageKey, map[string]any{
+		"provider":         "google-gemini",
+		"alias":            "default",
+		"name":             "Gemini",
+		"credentials_type": "API_KEY",
+		"credentials": map[string]string{
+			"apiKey": "gemini-api-key",
+		},
+		"is_default": true,
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("configure API key profile: status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	body := decodeJSON(t, rec)
+	if body["credentials_type"] != "API_KEY" {
+		t.Fatalf("credentials_type = %v; want API_KEY", body["credentials_type"])
+	}
+
+	recList := env.do(t, http.MethodGet, "/v1/tenant/connections", env.manageKey, nil)
+	if recList.Code != http.StatusOK {
+		t.Fatalf("list connections: status=%d body=%s", recList.Code, recList.Body.String())
+	}
+	var conns []map[string]any
+	if err := json.NewDecoder(recList.Body).Decode(&conns); err != nil {
+		t.Fatalf("decode connections: %v", err)
+	}
+	found := false
+	for _, conn := range conns {
+		if conn["provider"] == "google-gemini" {
+			found = true
+			if conn["nango_connection_id"] != body["nango_provider_config_key"] {
+				t.Fatalf("nango_connection_id = %v; want %v", conn["nango_connection_id"], body["nango_provider_config_key"])
+			}
+		}
+	}
+	if !found {
+		t.Fatal("google-gemini connection not found after API key configure")
+	}
+
+	recConfigured := env.do(t, http.MethodGet, "/v1/integrations/configured?status=connected", env.manageKey, nil)
+	if recConfigured.Code != http.StatusOK {
+		t.Fatalf("list connected configured profiles: status=%d body=%s", recConfigured.Code, recConfigured.Body.String())
+	}
+	var profiles []map[string]any
+	if err := json.NewDecoder(recConfigured.Body).Decode(&profiles); err != nil {
+		t.Fatalf("decode profiles: %v", err)
+	}
+	if len(profiles) != 1 || profiles[0]["provider"] != "google-gemini" || profiles[0]["connected"] != true {
+		t.Fatalf("connected profiles = %#v; want connected google-gemini", profiles)
 	}
 }
 

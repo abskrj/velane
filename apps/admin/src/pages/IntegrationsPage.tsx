@@ -8,7 +8,7 @@ import type { Connection, NangoProvider, IntegrationConfig } from '../types'
 const OAUTH_MODES = new Set(['OAUTH2', 'OAUTH2_CC', 'OAUTH1', 'APP', 'MCP_OAUTH2', 'MCP_OAUTH2_GENERIC'])
 
 function isOAuthMode(authMode: string) {
-  return OAUTH_MODES.has(authMode)
+  return OAUTH_MODES.has(authMode.toUpperCase().trim())
 }
 
 type ManualField = {
@@ -281,7 +281,7 @@ function ConfigureModal({ provider, existing, callbackUrl, onClose, onSaved }: C
               <p className="text-xs text-gray-500 mt-0.5">
                 {isOAuthMode(provider.auth_mode)
                   ? 'Enter your OAuth app credentials'
-                  : 'Register this integration so users can connect'}
+                  : 'Enter the credentials Velane will store in Nango for this integration'}
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -386,7 +386,7 @@ function ConfigureModal({ provider, existing, callbackUrl, onClose, onSaved }: C
               <p className="text-xs text-gray-500">
                 {isOAuthMode(provider.auth_mode)
                   ? 'No manual setup fields were provided for this provider. Save this profile, then click Connect.'
-                  : 'No configuration needed. Users will enter their credentials when they connect.'}
+                  : 'No configuration needed. Credentials are saved when this profile is configured; no OAuth connection step is required.'}
               </p>
             )}
 
@@ -472,7 +472,8 @@ type IntegrationProfileRow = {
   isDefault: boolean
   config: IntegrationConfig
   connection?: Connection
-  status: 'connected' | 'configured'
+  status: 'connected' | 'ready' | 'configured'
+  isConnectable: boolean
 }
 
 interface AddIntegrationModalProps {
@@ -619,7 +620,7 @@ export default function IntegrationsPage() {
   }
 
   async function reload(tab = activeTab, page = currentPageByTab[tab]) {
-    const status = tab === 'ready' ? 'configured' : tab
+    const status = tab === 'ready' ? 'ready' : tab
     const offset = (Math.max(1, page) - 1) * PAGE_SIZE
     const [p, cfg, anyConfigured] = await Promise.all([
       providers.length > 0 ? Promise.resolve(providers) : api.listProviders(),
@@ -653,12 +654,14 @@ export default function IntegrationsPage() {
   const profileRows = useMemo<IntegrationProfileRow[]>(() => {
     const rows = configs.map((config) => {
       const provider = providerByKey.get(config.provider)
-      const status: IntegrationProfileRow['status'] = config.connected ? 'connected' : 'configured'
+      const providerAuthMode = provider?.auth_mode ?? config.credentials_type
+      const isConnectable = isOAuthMode(providerAuthMode)
+      const status: IntegrationProfileRow['status'] = config.connected ? 'connected' : isConnectable ? 'ready' : 'configured'
       return {
         id: config.id,
         providerKey: config.provider,
         providerName: provider?.name ?? config.provider,
-        providerAuthMode: provider?.auth_mode ?? config.credentials_type,
+        providerAuthMode,
         providerLogoURL: provider?.logo_url,
         alias: config.alias,
         profileName: config.name?.trim() || config.alias,
@@ -666,6 +669,7 @@ export default function IntegrationsPage() {
         config,
         connection: undefined,
         status,
+        isConnectable,
       }
     })
     return rows.sort((a, b) => {
@@ -678,6 +682,10 @@ export default function IntegrationsPage() {
   const hasNextPage = hasNextByTab[activeTab]
 
   async function handleConnect(row: IntegrationProfileRow) {
+    if (!row.isConnectable) {
+      setError('This provider does not use OAuth connect. Edit the profile to update credentials.')
+      return
+    }
     setBusy(`${row.providerKey}::${row.alias}::connect`)
     setError(null)
     try {
@@ -880,8 +888,10 @@ export default function IntegrationsPage() {
                             <CheckCircle2 size={13} />
                             Connected
                           </span>
-                        ) : (
+                        ) : row.status === 'ready' ? (
                           <span className="text-blue-600">Ready</span>
+                        ) : (
+                          <span className="text-gray-500">Configured</span>
                         )}
                       </td>
                       <td className="px-4 py-3">
@@ -894,7 +904,7 @@ export default function IntegrationsPage() {
                             >
                               Disconnect
                             </button>
-                          ) : (
+                          ) : row.status === 'ready' ? (
                             <button
                               onClick={() => handleConnect(row)}
                               disabled={busy?.startsWith(`${row.providerKey}::${row.alias}`) ?? false}
@@ -902,7 +912,7 @@ export default function IntegrationsPage() {
                             >
                               Connect
                             </button>
-                          )}
+                          ) : null}
                           <button
                             onClick={() => {
                               const provider = providerByKey.get(row.providerKey)

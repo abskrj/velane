@@ -274,7 +274,7 @@ export const api = {
     query?: string,
     limit?: number,
     offset?: number,
-    status?: 'connected' | 'configured' | 'all',
+    status?: 'connected' | 'configured' | 'ready' | 'all',
   ): Promise<IntegrationConfig[]> {
     const params = new URLSearchParams()
     const trimmedQuery = query?.trim()

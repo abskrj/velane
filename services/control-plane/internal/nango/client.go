@@ -177,6 +177,55 @@ func nangoConnectionMatchesAlias(tags map[string]string, metadata map[string]any
 	return true
 }
 
+// ImportConnection creates or updates a Nango connection for providers where
+// Velane already has the end-user credentials, such as API key integrations.
+func (c *Client) ImportConnection(ctx context.Context, providerConfigKey, connectionID string, credentials, connectionConfig, metadata map[string]any, tags map[string]string) (string, error) {
+	body := map[string]any{
+		"provider_config_key": providerConfigKey,
+		"connection_id":       connectionID,
+		"credentials":         credentials,
+	}
+	if len(connectionConfig) > 0 {
+		body["connection_config"] = connectionConfig
+	}
+	if len(metadata) > 0 {
+		body["metadata"] = metadata
+	}
+	if len(tags) > 0 {
+		body["tags"] = tags
+	}
+	b, _ := json.Marshal(body)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/connections", bytes.NewReader(b))
+	if err != nil {
+		return "", err
+	}
+	c.setAuth(req)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("nango ImportConnection: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 300 {
+		raw, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("nango ImportConnection %d: %s", resp.StatusCode, raw)
+	}
+
+	var out struct {
+		ConnectionID string `json:"connection_id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return "", fmt.Errorf("nango ImportConnection decode: %w", err)
+	}
+	if out.ConnectionID == "" {
+		out.ConnectionID = connectionID
+	}
+	return out.ConnectionID, nil
+}
+
 // PatchConnectionMetadata updates metadata on an existing Nango connection without
 // overwriting fields not included in the patch (PATCH semantics).
 func (c *Client) PatchConnectionMetadata(ctx context.Context, connectionID, providerConfigKey string, metadata map[string]any) error {

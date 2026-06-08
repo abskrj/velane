@@ -84,6 +84,14 @@ func (h *ConnectionsHandler) CreateSession(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusBadRequest, "credential profile/provider mismatch")
 		return
 	}
+	if provider, err := h.nango.GetProvider(r.Context(), req.Provider); err == nil {
+		if !isOAuthConnectMode(provider.AuthMode) {
+			writeError(w, http.StatusBadRequest, "provider does not use OAuth connect")
+			return
+		}
+	} else {
+		h.log.Debug("nango provider lookup failed before connect session", zap.String("provider", req.Provider), zap.Error(err))
+	}
 	alias := req.Alias
 	if alias == "default" && profile.Alias != "" {
 		alias = profile.Alias

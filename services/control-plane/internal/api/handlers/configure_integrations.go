@@ -78,7 +78,15 @@ func (h *ConfigureIntegrationsHandler) ListConfigured(w http.ResponseWriter, r *
 		if statusFilter == "connected" && !isConnected {
 			continue
 		}
-		if (statusFilter == "configured" || statusFilter == "ready") && isConnected {
+		if statusFilter == "configured" && isConnected {
+			continue
+		}
+		if statusFilter == "ready" {
+			if isConnected || !isOAuthConnectMode(c.CredentialsType) {
+				continue
+			}
+		}
+		if statusFilter != "" && statusFilter != "connected" && statusFilter != "configured" && statusFilter != "ready" && statusFilter != "all" {
 			continue
 		}
 		if searchQuery != "" &&
@@ -169,7 +177,9 @@ func (h *ConfigureIntegrationsHandler) Configure(w http.ResponseWriter, r *http.
 	}
 
 	credType := normalizeCredentialType(strings.ToUpper(strings.TrimSpace(req.CredentialsType)))
+	var providerMeta *models.NangoProvider
 	if np, err := h.nango.GetProvider(r.Context(), req.Provider); err == nil {
+		providerMeta = np
 		if providerMode := normalizeCredentialType(strings.ToUpper(strings.TrimSpace(np.AuthMode))); providerMode != "" {
 			if credType != "" && credType != providerMode {
 				h.log.Warn("credentials_type overridden by provider auth_mode",
@@ -238,6 +248,7 @@ func (h *ConfigureIntegrationsHandler) Configure(w http.ResponseWriter, r *http.
 		}
 	}
 	resolvedOAuthScopes := firstNonEmpty(plainFields["oauth_scopes"], plainFields["scopes"])
+	connectionConfig := splitConnectionConfig(providerMeta, plainFields)
 
 	nangoCreds := map[string]any{}
 	if shouldSendCredentialsType(credType) {
@@ -287,6 +298,14 @@ func (h *ConfigureIntegrationsHandler) Configure(w http.ResponseWriter, r *http.
 		// Nango MCP providers are configured without credentials on /integrations.
 		// End-user authorization handles provider credentials during connect.
 		nangoCreds = map[string]any{}
+	case "API_KEY":
+		// API keys belong to the Nango connection, not the provider config. The
+		// connection is imported after the profile is stored below.
+		if apiKeyValue(plainFields) == "" {
+			writeError(w, http.StatusBadRequest, "apiKey is required")
+			return
+		}
+		nangoCreds = map[string]any{}
 	default:
 		if shouldPassThroughCredentials(credType) {
 			for k, v := range plainFields {
@@ -330,6 +349,48 @@ func (h *ConfigureIntegrationsHandler) Configure(w http.ResponseWriter, r *http.
 		h.log.Error("upsert integration credential profile", zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "failed to store integration credentials")
 		return
+	}
+
+	if credType == "API_KEY" {
+		nangoConnID, err := h.nango.ImportConnection(
+			r.Context(),
+			configKey,
+			configKey,
+			map[string]any{
+				"type":   "API_KEY",
+				"apiKey": apiKeyValue(plainFields),
+			},
+			connectionConfig,
+			map[string]any{
+				"velane_alias":     req.Alias,
+				"velane_tenant_id": tenant.ID,
+			},
+			map[string]string{
+				"end_user_id":     tenant.ID,
+				"organization_id": tenant.ID,
+				"velane_alias":    req.Alias,
+			},
+		)
+		if err != nil {
+			h.log.Error("import api key connection", zap.String("provider", req.Provider), zap.String("provider_config_key", configKey), zap.Error(err))
+			writeError(w, http.StatusBadGateway, "failed to connect API key integration: "+err.Error())
+			return
+		}
+
+		credentialProfileID := &profile.ID
+		conn, err := h.store.UpsertConnection(r.Context(), tenant.ID, req.Provider, req.Alias, configKey, credentialProfileID, req.Name)
+		if err != nil {
+			h.log.Error("record api key connection", zap.String("provider", req.Provider), zap.Error(err))
+			writeError(w, http.StatusInternalServerError, "failed to record API key connection")
+			return
+		}
+		if conn.NangoConnectionID == "" || conn.NangoConnectionID != nangoConnID {
+			if _, err := h.store.UpdateNangoConnectionIDByProviderConfigKey(r.Context(), tenant.ID, configKey, nangoConnID); err != nil {
+				h.log.Error("store api key nango connection id", zap.String("provider", req.Provider), zap.String("nango_connection_id", nangoConnID), zap.Error(err))
+				writeError(w, http.StatusInternalServerError, "failed to store API key connection")
+				return
+			}
+		}
 	}
 
 	view, _, err := h.store.DecryptIntegrationCredentialProfile(profile, h.encKey)
@@ -431,6 +492,15 @@ func normalizeCredentialType(mode string) string {
 	return mode
 }
 
+func isOAuthConnectMode(mode string) bool {
+	switch normalizeCredentialType(strings.ToUpper(strings.TrimSpace(mode))) {
+	case "OAUTH2", "OAUTH2_CC", "OAUTH1", "APP", "MCP_OAUTH2", "MCP_OAUTH2_GENERIC":
+		return true
+	default:
+		return false
+	}
+}
+
 func shouldSendCredentialsType(mode string) bool {
 	switch mode {
 	case "OAUTH2", "OAUTH1", "APP", "CUSTOM":
@@ -464,4 +534,21 @@ func normalizeCredentialFieldKey(key string) string {
 	default:
 		return key
 	}
+}
+
+func splitConnectionConfig(provider *models.NangoProvider, plainFields map[string]string) map[string]any {
+	out := map[string]any{}
+	if provider == nil {
+		return out
+	}
+	for key := range provider.ConnectionConfig {
+		if value := strings.TrimSpace(plainFields[key]); value != "" {
+			out[key] = value
+		}
+	}
+	return out
+}
+
+func apiKeyValue(plainFields map[string]string) string {
+	return firstNonEmpty(plainFields["apiKey"], plainFields["api_key"])
 }

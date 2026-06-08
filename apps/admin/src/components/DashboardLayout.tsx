@@ -21,6 +21,7 @@ import velaneLogo from '../assets/velane_sh.png'
 import RouteDocumentTitle from './RouteDocumentTitle'
 import { api } from '../lib/api'
 import { useEmbedMode } from '../hooks/useEmbedMode'
+import { useSessionRefresh } from '../hooks/useSessionRefresh'
 import type { OrgMembership } from '../types'
 
 const allNavItems = [
@@ -51,6 +52,7 @@ export default function DashboardLayout() {
   const navigate = useNavigate()
   const location = useLocation()
   const isEmbedMode = useEmbedMode()
+  useSessionRefresh()
   const isEditorRoute = /^\/dashboard\/snippets\/.+/.test(location.pathname)
   const [orgs, setOrgs] = useState<OrgMembership[]>([])
   const [orgsLoading, setOrgsLoading] = useState(!isEmbedMode)

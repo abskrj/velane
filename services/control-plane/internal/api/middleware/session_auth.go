@@ -16,6 +16,7 @@ const (
 	sessionUserKey    sessionContextKey = "session_user"
 	sessionRoleKey    sessionContextKey = "session_role"
 	SessionCookieName                   = "velane_session"
+	RefreshCookieName                   = "velane_refresh"
 	ActiveOrgCookieName                 = "velane_active_org"
 )
 

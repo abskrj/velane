@@ -11,12 +11,14 @@ type User struct {
 }
 
 type Session struct {
-	ID        string    `json:"id"`
-	UserID    string    `json:"user_id"`
-	Token     string    `json:"token,omitempty"` // raw token, only set on creation
-	TokenHash string    `json:"-"`
-	ExpiresAt time.Time `json:"expires_at"`
-	CreatedAt time.Time `json:"created_at"`
+	ID           string    `json:"id"`
+	UserID         string    `json:"user_id"`
+	Token          string    `json:"token,omitempty"` // raw access token, only set on creation
+	RefreshToken   string    `json:"-"`                 // raw refresh token, only set on creation
+	TokenHash      string    `json:"-"`
+	ExpiresAt      time.Time `json:"expires_at"`
+	RefreshExpires time.Time `json:"-"`
+	CreatedAt      time.Time `json:"created_at"`
 }
 
 type RefreshToken struct {

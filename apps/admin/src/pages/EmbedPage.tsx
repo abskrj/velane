@@ -3,9 +3,8 @@ import { Trash2, Plus, ExternalLink } from 'lucide-react'
 import { api } from '../lib/api'
 import type { EmbedToken, Snippet } from '../types'
 
-const EMBED_BASE = `http://localhost:8092`
-
 export default function EmbedPage() {
+  const embedBase = window.location.origin
   const [tokens, setTokens] = useState<EmbedToken[]>([])
   const [snippets, setSnippets] = useState<Snippet[]>([])
   const [loading, setLoading] = useState(true)
@@ -96,7 +95,7 @@ export default function EmbedPage() {
               {copied === 'newtoken' ? 'Copied!' : 'Copy token'}
             </button>
             <a
-              href={`${EMBED_BASE}?embed=true&token=${newToken.token}`}
+              href={`${embedBase}?embed=true&token=${newToken.token}`}
               target="_blank"
               rel="noopener noreferrer"
               className="flex shrink-0 items-center gap-1 rounded-md border border-green-300 px-3 py-1 text-xs text-green-800 hover:bg-green-100"

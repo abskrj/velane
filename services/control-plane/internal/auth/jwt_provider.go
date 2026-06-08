@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/abskrj/velane/services/control-plane/internal/models"
@@ -80,10 +81,20 @@ func (p *JWTProvider) Authenticate(ctx context.Context, email, password string) 
 	}
 
 	return &models.Session{
-		UserID:    user.ID,
-		Token:     pair.AccessToken,
-		ExpiresAt: pair.ExpiresAt,
+		UserID:         user.ID,
+		Token:          pair.AccessToken,
+		RefreshToken:   pair.RefreshToken,
+		ExpiresAt:      pair.ExpiresAt,
+		RefreshExpires: time.Now().Add(7 * 24 * time.Hour),
 	}, nil
+}
+
+// RevokeRefreshToken revokes a raw refresh token value.
+func (p *JWTProvider) RevokeRefreshToken(ctx context.Context, rawRefreshToken string) error {
+	if strings.TrimSpace(rawRefreshToken) == "" {
+		return nil
+	}
+	return p.store.RevokeRefreshToken(ctx, hashRefreshToken(rawRefreshToken))
 }
 
 // ValidateSession validates the RS256 JWT access token (stateless — no DB lookup).

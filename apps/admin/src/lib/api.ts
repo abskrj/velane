@@ -21,9 +21,34 @@ import type {
 } from '../types'
 
 const BASE = '/api'
+const SESSION_REFRESH_INTERVAL_MS = 14 * 60 * 1000
 
 function getStoredAPIKey(): string {
   return localStorage.getItem('apiKey') ?? ''
+}
+
+let refreshInFlight: Promise<boolean> | null = null
+
+export async function refreshSession(): Promise<boolean> {
+  if (getStoredAPIKey()) return true
+  if (refreshInFlight) return refreshInFlight
+
+  refreshInFlight = (async () => {
+    try {
+      const res = await fetch(`${BASE}/v1/admin/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+      })
+      return res.ok
+    } catch {
+      return false
+    } finally {
+      refreshInFlight = null
+    }
+  })()
+
+  return refreshInFlight
 }
 
 async function request<T>(
@@ -31,6 +56,7 @@ async function request<T>(
   path: string,
   body?: unknown,
   authType: 'session' | 'apikey' | 'none' = 'session',
+  allowRefresh = true,
 ): Promise<T> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -56,6 +82,9 @@ async function request<T>(
       }
       if (credential.startsWith('et_')) {
         throw new Error('Unauthenticated')
+      }
+      if (allowRefresh && await refreshSession()) {
+        return request(method, path, body, authType, false)
       }
       window.location.href = '/login'
       throw new Error('Unauthenticated')
@@ -86,6 +115,12 @@ export const api = {
   async logout(): Promise<void> {
     return request('POST', '/v1/admin/auth/logout', undefined, 'session')
   },
+
+  async refreshSession(): Promise<boolean> {
+    return refreshSession()
+  },
+
+  sessionRefreshIntervalMs: SESSION_REFRESH_INTERVAL_MS,
 
   async me(): Promise<User> {
     return request('GET', '/v1/admin/auth/me', undefined, 'session')

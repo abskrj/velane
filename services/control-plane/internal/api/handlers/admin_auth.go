@@ -115,7 +115,7 @@ func (h *AdminAuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeSessionCookie(w, r, sess)
+	writeAuthCookies(w, r, sess)
 
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"user":          user,
@@ -142,7 +142,7 @@ func (h *AdminAuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeSessionCookie(w, r, sess)
+	writeAuthCookies(w, r, sess)
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"session_token": sess.Token,
@@ -157,7 +157,15 @@ func (h *AdminAuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 			h.log.Debug("invalidate session failed", zap.Error(err))
 		}
 	}
+	if refreshRaw, ok := refreshTokenFromRequest(r); ok {
+		if jwtProvider, ok := h.provider.(*auth.JWTProvider); ok {
+			if err := jwtProvider.RevokeRefreshToken(r.Context(), refreshRaw); err != nil {
+				h.log.Debug("revoke refresh token failed", zap.Error(err))
+			}
+		}
+	}
 	clearSessionCookie(w, r)
+	clearRefreshCookie(w, r)
 	clearActiveOrgCookie(w, r)
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -356,7 +364,13 @@ func (h *AdminAuthHandler) RefreshToken(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if req.RefreshToken == "" {
+	refreshToken := strings.TrimSpace(req.RefreshToken)
+	if refreshToken == "" {
+		if raw, ok := refreshTokenFromRequest(r); ok {
+			refreshToken = raw
+		}
+	}
+	if refreshToken == "" {
 		writeError(w, http.StatusBadRequest, "refresh_token is required")
 		return
 	}
@@ -367,13 +381,19 @@ func (h *AdminAuthHandler) RefreshToken(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	pair, err := jwtProvider.Refresh(r.Context(), req.RefreshToken)
+	pair, err := jwtProvider.Refresh(r.Context(), refreshToken)
 	if err != nil {
 		h.log.Debug("refresh token failed", zap.Error(err))
 		writeError(w, http.StatusUnauthorized, "invalid or expired refresh token")
 		return
 	}
 
+	writeAuthCookies(w, r, &models.Session{
+		Token:          pair.AccessToken,
+		RefreshToken:   pair.RefreshToken,
+		ExpiresAt:      pair.ExpiresAt,
+		RefreshExpires: time.Now().Add(7 * 24 * time.Hour),
+	})
 	writeJSON(w, http.StatusOK, pair)
 }
 
@@ -381,6 +401,13 @@ func (h *AdminAuthHandler) RefreshToken(w http.ResponseWriter, r *http.Request) 
 func hashInviteToken(raw string) string {
 	h := sha256.Sum256([]byte(raw))
 	return hex.EncodeToString(h[:])
+}
+
+func writeAuthCookies(w http.ResponseWriter, r *http.Request, sess *models.Session) {
+	writeSessionCookie(w, r, sess)
+	if strings.TrimSpace(sess.RefreshToken) != "" {
+		writeRefreshCookie(w, r, sess.RefreshToken, sess.RefreshExpires)
+	}
 }
 
 func writeSessionCookie(w http.ResponseWriter, r *http.Request, sess *models.Session) {
@@ -400,9 +427,39 @@ func writeSessionCookie(w http.ResponseWriter, r *http.Request, sess *models.Ses
 	})
 }
 
+func writeRefreshCookie(w http.ResponseWriter, r *http.Request, token string, expiresAt time.Time) {
+	maxAge := int(time.Until(expiresAt).Seconds())
+	if maxAge < 0 {
+		maxAge = 0
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     middleware.RefreshCookieName,
+		Value:    token,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   isHTTPSRequest(r),
+		Expires:  expiresAt,
+		MaxAge:   maxAge,
+	})
+}
+
 func clearSessionCookie(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     middleware.SessionCookieName,
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   isHTTPSRequest(r),
+		MaxAge:   -1,
+		Expires:  time.Unix(0, 0),
+	})
+}
+
+func clearRefreshCookie(w http.ResponseWriter, r *http.Request) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     middleware.RefreshCookieName,
 		Value:    "",
 		Path:     "/",
 		HttpOnly: true,
@@ -435,6 +492,14 @@ func writeActiveOrgCookie(w http.ResponseWriter, r *http.Request, slug string) {
 		SameSite: http.SameSiteLaxMode,
 		Secure:   isHTTPSRequest(r),
 	})
+}
+
+func refreshTokenFromRequest(r *http.Request) (string, bool) {
+	cookie, err := r.Cookie(middleware.RefreshCookieName)
+	if err != nil || strings.TrimSpace(cookie.Value) == "" {
+		return "", false
+	}
+	return strings.TrimSpace(cookie.Value), true
 }
 
 func sessionTokenFromRequest(r *http.Request) (string, bool) {

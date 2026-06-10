@@ -83,11 +83,19 @@ export default function Home() {
                   Connect your agent
                 </a>
                 <a
-                  className="rounded-full border border-black/10 px-6 py-3 text-sm font-medium text-zinc-600 transition-colors hover:bg-black/5"
+                  className="inline-flex items-center gap-2 rounded-full border border-black/10 px-6 py-3 text-sm font-medium text-zinc-600 transition-colors hover:bg-black/5"
                   href="https://github.com/abskrj/velane"
                   target="_blank"
                   rel="noreferrer"
                 >
+                  <Image
+                    src="/github.png"
+                    alt=""
+                    width={16}
+                    height={16}
+                    aria-hidden
+                    className="h-4 w-4 object-contain"
+                  />
                   View GitHub
                 </a>
               </div>

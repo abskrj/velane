@@ -46,7 +46,7 @@ export default function SocialLoginButtons() {
           <a
             key={provider}
             href={api.oauthStartUrl(provider)}
-            className="flex w-full items-center justify-center gap-2 rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            className="flex w-full items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
           >
             <ProviderIcon provider={provider} />
             {PROVIDER_LABELS[provider] ?? `Continue with ${provider}`}
@@ -55,7 +55,7 @@ export default function SocialLoginButtons() {
       </div>
       <div className="mt-6 flex items-center gap-3">
         <div className="h-px flex-1 bg-gray-200" />
-        <span className="text-xs text-gray-400">or</span>
+        <span className="text-xs text-gray-400">or continue with email</span>
         <div className="h-px flex-1 bg-gray-200" />
       </div>
     </div>

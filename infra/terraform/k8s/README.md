@@ -6,7 +6,7 @@ This guide walks you through deploying Velane on AWS EKS with a custom domain, f
 
 | Tool | Version | Install |
 |------|---------|---------|
-| Terraform | ≥ 1.5 | [terraform.io](https://developer.hashicorp.com/terraform/install) |
+| OpenTofu | ≥ 1.8 | [opentofu.org](https://opentofu.org/docs/intro/install/) |
 | AWS CLI | v2 | [aws.amazon.com/cli](https://aws.amazon.com/cli/) |
 | kubectl | any | [kubernetes.io](https://kubernetes.io/docs/tasks/tools/) |
 | helm | ≥ 3 | [helm.sh](https://helm.sh/docs/intro/install/) |
@@ -27,27 +27,27 @@ cp terraform.tfvars.example terraform.tfvars   # if you haven't already
 # Edit terraform.tfvars:
 #   - Set region and cluster_name
 #   - Set domain = "yourdomain.com"  ← creates ACM cert + ALB controller IAM role
-terraform init
-terraform apply
+tofu init
+tofu apply
 ```
 
 After apply, note the outputs you'll need in later steps:
 
 ```bash
-terraform output update_kubeconfig_command   # run this to configure kubectl
-terraform output acm_certificate_arn         # paste into k8s/terraform.tfvars
-terraform output acm_dns_validation_records  # add these to your DNS
-terraform output setup_alb_controller_command
+tofu output update_kubeconfig_command   # run this to configure kubectl
+tofu output acm_certificate_arn         # paste into k8s/terraform.tfvars
+tofu output acm_dns_validation_records  # add these to your DNS
+tofu output setup_alb_controller_command
 ```
 
 ---
 
 ## Step 2 — Validate the ACM certificate
 
-ACM uses DNS validation. Terraform output gives you the CNAME record(s) to add:
+ACM uses DNS validation. OpenTofu output gives you the CNAME record(s) to add:
 
 ```bash
-terraform output acm_dns_validation_records
+tofu output acm_dns_validation_records
 # Example output:
 # [{ name = "_abc123.yourdomain.com.", type = "CNAME", value = "_def456.acm-validations.aws." }]
 ```
@@ -59,9 +59,9 @@ terraform output acm_dns_validation_records
 
 Check certificate status:
 ```bash
-terraform output acm_certificate_status
+tofu output acm_certificate_status
 # or
-aws acm describe-certificate --certificate-arn $(terraform output -raw acm_certificate_arn) \
+aws acm describe-certificate --certificate-arn $(tofu output -raw acm_certificate_arn) \
   --query 'Certificate.Status' --output text
 ```
 
@@ -73,13 +73,13 @@ The ALB controller is a Kubernetes controller that creates an Application Load B
 
 ```bash
 # Refresh kubeconfig first
-$(terraform output -raw update_kubeconfig_command)
+$(tofu output -raw update_kubeconfig_command)
 
-# Then run the install script (copy the exact command from terraform output)
+# Then run the install script (copy the exact command from tofu output)
 bash infra/scripts/setup-alb-controller.sh \
   --cluster YOUR_CLUSTER_NAME \
   --region  us-east-1 \
-  --role-arn $(terraform output -raw alb_controller_role_arn)
+  --role-arn $(tofu output -raw alb_controller_role_arn)
 ```
 
 Verify it's running:
@@ -106,7 +106,7 @@ Edit `terraform.tfvars` — required values:
 | `encryption_key` | `openssl rand -hex 32` |
 | `jwt_private_key_pem` | `openssl genrsa 2048 \| openssl pkcs8 -topk8 -nocrypt` |
 | `base_domain` | Your root domain, e.g. `yourdomain.com` |
-| `acm_certificate_arn` | From Step 1: `terraform -chdir=../aws-eks output -raw acm_certificate_arn` |
+| `acm_certificate_arn` | From Step 1: `tofu -chdir=../aws-eks output -raw acm_certificate_arn` |
 | `nango_secret_key` | `python -c "import uuid; print(uuid.uuid4())"` |
 | `nango_public_key` | Same command, different value |
 | `google_oauth_client_id` / `google_oauth_client_secret` | [Google Cloud Console](https://console.cloud.google.com/) → APIs & Services → Credentials (optional) |
@@ -115,21 +115,21 @@ Edit `terraform.tfvars` — required values:
 After apply, get OAuth redirect URIs to register with each provider:
 
 ```bash
-terraform output oauth_redirect_uris
+tofu output oauth_redirect_uris
 ```
 
 Then apply:
 
 ```bash
-terraform init
-terraform apply
+tofu init
+tofu apply
 ```
 
 ---
 
 ## Step 5 — Point your domain to the ALB
 
-Once Terraform creates the Ingress, get the ALB hostname:
+Once OpenTofu creates the Ingress, get the ALB hostname:
 
 ```bash
 kubectl get ingress -n velane velane -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
@@ -218,9 +218,9 @@ To deploy a new image tag:
 # Option 1: update the variable and re-apply
 # In terraform.tfvars:
 #   control_plane_image = "ghcr.io/abskrj/velane-control-plane:sha-abc123"
-terraform apply
+tofu apply
 
-# Option 2: quick rollout without Terraform
+# Option 2: quick rollout without re-applying OpenTofu
 kubectl set image deployment/control-plane control-plane=ghcr.io/abskrj/velane-control-plane:sha-abc123 -n velane
 ```
 

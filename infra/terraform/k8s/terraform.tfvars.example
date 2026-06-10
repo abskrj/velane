@@ -72,7 +72,7 @@ nango_connect_subdomain = "connect"  # connect.yourdomain.com
 nango_api_subdomain     = "nango"    # nango.yourdomain.com
 
 # ACM certificate ARN (HTTPS on port 443 — free, strongly recommended).
-# Get from: terraform -chdir=infra/terraform/aws-eks output -raw acm_certificate_arn
+# Get from: tofu -chdir=infra/terraform/aws-eks output -raw acm_certificate_arn
 # Leave empty for HTTP-only (not recommended for production).
 acm_certificate_arn = "arn:aws:acm:us-east-1:ACCOUNT_ID:certificate/CERTIFICATE_ID"
 

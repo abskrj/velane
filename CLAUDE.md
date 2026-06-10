@@ -162,6 +162,31 @@ The `meta.json` should include an `integration` field for grouping:
 - `ENCRYPTION_KEY` and `JWT_PRIVATE_KEY` must be stable in production. Ephemeral (default) values mean secrets can't be decrypted and all JWTs invalidate on restart.
 - MCP server runs on `:8090`, admin portal on `:8092`, control-plane on `:8080`.
 
+## Production deployment (OpenTofu)
+
+Infrastructure lives under `infra/terraform/`. Use **OpenTofu** (`tofu`), not HashiCorp Terraform. Config files keep the `terraform.tfvars` name (OpenTofu convention); state files may be `terraform.tfstate`.
+
+```bash
+# 1. EKS cluster (once) — infra/terraform/aws-eks
+cd infra/terraform/aws-eks
+cp terraform.tfvars.example terraform.tfvars   # edit domain, region, etc.
+tofu init && tofu apply
+
+# 2. Velane workloads — infra/terraform/k8s
+cd infra/terraform/k8s
+cp terraform.tfvars.example terraform.tfvars   # edit images, secrets, OAuth, domain
+tofu init && tofu apply
+
+# Useful outputs
+tofu output oauth_redirect_uris
+tofu -chdir=../aws-eks output -raw acm_certificate_arn
+```
+
+- Pin container images to CI tags (`ghcr.io/abskrj/velane-<service>:sha-<short-sha>` or `:latest` after a main-branch build).
+- `PUBLIC_BASE_URL` and OAuth client env vars are wired via `terraform.tfvars` → control-plane secret.
+- EKS kubeconfig must be valid (`aws eks update-kubeconfig` or set `kubeconfig_context` in tfvars).
+- Full walkthrough: `infra/terraform/k8s/README.md`.
+
 ## License
 
 Dual-licensed: AGPL-3.0 (open source) + commercial license for proprietary use.

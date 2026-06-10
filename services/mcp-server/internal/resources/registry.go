@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	snippetCatalogLimit    = 50
+	workflowCatalogLimit   = 50
 	connectionCatalogLimit = 50
 )
 
@@ -40,13 +40,13 @@ func (r *Registry) List() []Resource {
 		{
 			URI:         "velane://runtime/contract",
 			Name:        "Velane runtime contract",
-			Description: "How to write snippets, use integrations, invoke safely, and interpret stdout/stderr.",
+			Description: "How to write workflows, use integrations, invoke safely, and interpret stdout/stderr.",
 			MimeType:    "text/markdown",
 		},
 		{
-			URI:         "velane://snippets",
-			Name:        "Snippet catalog",
-			Description: "Compact first page of snippets for this tenant. Use get_snippet for code and versions.",
+			URI:         "velane://workflows",
+			Name:        "Workflow catalog",
+			Description: "Compact first page of workflows for this tenant. Use get_workflow for code and versions.",
 			MimeType:    "application/json",
 		},
 		{
@@ -66,8 +66,8 @@ func (r *Registry) Read(ctx context.Context, authHeader, uri string) ([]Content,
 			MimeType: "text/markdown",
 			Text:     runtimeContract,
 		}}, nil
-	case "velane://snippets":
-		text, err := r.readSnippetCatalog(ctx, authHeader)
+	case "velane://workflows", "velane://snippets":
+		text, err := r.readWorkflowCatalog(ctx, authHeader)
 		if err != nil {
 			return nil, err
 		}
@@ -83,33 +83,33 @@ func (r *Registry) Read(ctx context.Context, authHeader, uri string) ([]Content,
 	}
 }
 
-func (r *Registry) readSnippetCatalog(ctx context.Context, authHeader string) (string, error) {
-	var snippets []map[string]any
-	if err := r.client.Get(ctx, authHeader, "/v1/snippets", &snippets); err != nil {
+func (r *Registry) readWorkflowCatalog(ctx context.Context, authHeader string) (string, error) {
+	var workflows []map[string]any
+	if err := r.client.Get(ctx, authHeader, "/v1/snippets", &workflows); err != nil {
 		return "", err
 	}
 
-	total := len(snippets)
-	if len(snippets) > snippetCatalogLimit {
-		snippets = snippets[:snippetCatalogLimit]
+	total := len(workflows)
+	if len(workflows) > workflowCatalogLimit {
+		workflows = workflows[:workflowCatalogLimit]
 	}
 
-	items := make([]map[string]any, 0, len(snippets))
-	for _, sn := range snippets {
-		items = append(items, compact(sn, "id", "slug", "name", "language", "created_at"))
+	items := make([]map[string]any, 0, len(workflows))
+	for _, wf := range workflows {
+		items = append(items, compact(wf, "id", "slug", "name", "language", "created_at"))
 	}
 
 	return marshalPretty(map[string]any{
 		"items": items,
 		"page": map[string]any{
-			"limit":     snippetCatalogLimit,
+			"limit":     workflowCatalogLimit,
 			"returned":  len(items),
 			"total":     total,
 			"truncated": total > len(items),
 		},
 		"next_steps": []string{
-			"Use get_snippet with snippet_id to read code, versions, and active environments.",
-			"Use list_snippets when you need the raw tool response.",
+			"Use get_workflow with workflow_id to read code, versions, and active environments.",
+			"Use list_workflows when you need the raw tool response.",
 		},
 	})
 }
@@ -134,7 +134,7 @@ func (r *Registry) readConnectionCatalog(ctx context.Context, authHeader string)
 		},
 		"next_steps": []string{
 			"Use list_connections with provider/limit/offset to filter or paginate.",
-			"Use get_integration_docs with provider before writing integration-heavy snippet code.",
+			"Use get_integration_docs with provider before writing integration-heavy workflow code.",
 		},
 	})
 }
@@ -159,11 +159,11 @@ func marshalPretty(value any) (string, error) {
 
 const runtimeContract = `# Velane Runtime Contract
 
-Velane snippets are tenant-scoped functions that run in Bun/TypeScript or Python.
+Velane workflows are tenant-scoped functions that run in Bun/TypeScript or Python.
 
 ## Handler shape
 
-Bun snippets export a default async function or named handler:
+Bun workflows export a default async function or named handler:
 
 ` + "```ts" + `
 export default async function handler(input: Record<string, unknown>) {
@@ -171,7 +171,7 @@ export default async function handler(input: Record<string, unknown>) {
 }
 ` + "```" + `
 
-Python snippets define handler:
+Python workflows define handler:
 
 ` + "```python" + `
 def handler(input: dict) -> dict:
@@ -180,7 +180,7 @@ def handler(input: dict) -> dict:
 
 ## Integrations
 
-Use connected OAuth integrations through the built-in integration helper. Do not embed credentials in snippet code.
+Use connected OAuth integrations through the built-in integration helper. Do not embed credentials in workflow code.
 
 Bun:
 
@@ -211,7 +211,7 @@ Prefer this order for integration-heavy work:
 
 1. Read velane://connections or call list_connections.
 2. Call get_integration_docs(provider).
-3. Create or update a draft snippet.
+3. Create or update a draft workflow.
 4. Invoke in dev and inspect logs/output.
 5. Publish the exact validated version_number.
 `

@@ -127,16 +127,59 @@ func (s *Server) handleToolsCall(ctx context.Context, authHeader string, req pro
 		})
 	}
 
+	structured, text := formatToolResult(params.Name, result)
 	return protocol.Success(req.ID, map[string]any{
-		"structuredContent": result,
+		"structuredContent": structured,
 		"content": []map[string]any{
 			{
 				"type": "text",
-				"text": fmt.Sprintf("%s completed successfully", params.Name),
+				"text": text,
 			},
 		},
 		"isError": false,
 	})
+}
+
+// formatToolResult shapes tool output for MCP clients. Cursor and other hosts validate
+// structuredContent as a JSON object (record), not a top-level array.
+func formatToolResult(toolName string, result any) (map[string]any, string) {
+	if result == nil {
+		return map[string]any{}, fmt.Sprintf("%s completed successfully", toolName)
+	}
+
+	b, err := json.Marshal(result)
+	if err != nil {
+		return map[string]any{"value": fmt.Sprint(result)}, fmt.Sprintf("%s completed successfully", toolName)
+	}
+
+	if len(b) > 0 && b[0] == '[' {
+		var items []any
+		if err := json.Unmarshal(b, &items); err == nil {
+			key := listResultKey(toolName)
+			structured := map[string]any{key: items}
+			return structured, fmt.Sprintf("%s completed successfully\n%s", toolName, string(b))
+		}
+	}
+
+	var obj map[string]any
+	if err := json.Unmarshal(b, &obj); err == nil && obj != nil {
+		return obj, fmt.Sprintf("%s completed successfully\n%s", toolName, string(b))
+	}
+
+	return map[string]any{"value": result}, fmt.Sprintf("%s completed successfully", toolName)
+}
+
+func listResultKey(toolName string) string {
+	switch toolName {
+	case "list_workflows", "list_snippets":
+		return "workflows"
+	case "list_connections":
+		return "connections"
+	case "list_secrets":
+		return "secrets"
+	default:
+		return "items"
+	}
 }
 
 func (s *Server) handleResourcesRead(ctx context.Context, authHeader string, req protocol.Request) protocol.Response {

@@ -46,7 +46,19 @@ func (r *Registry) List() []Tool {
 	return out
 }
 
+// legacyToolNames maps pre-workflow MCP tool names to their current equivalents.
+var legacyToolNames = map[string]string{
+	"list_snippets":              "list_workflows",
+	"get_snippet":                "get_workflow",
+	"create_snippet":             "create_workflow",
+	"publish_snippet":            "publish_workflow",
+	"invoke_snippet":             "invoke_workflow",
+}
+
 func (r *Registry) Call(ctx context.Context, authHeader, name string, args map[string]any) (any, error) {
+	if alias, ok := legacyToolNames[name]; ok {
+		name = alias
+	}
 	t, ok := r.tools[name]
 	if !ok {
 		return nil, fmt.Errorf("unknown tool: %s", name)
@@ -57,6 +69,28 @@ func (r *Registry) Call(ctx context.Context, authHeader, name string, args map[s
 func (r *Registry) add(tool Tool) {
 	r.tools[tool.Name] = tool
 	r.order = append(r.order, tool.Name)
+}
+
+func toWorkflowID(args map[string]any, required bool) (string, error) {
+	id, err := toString(args, "workflow_id", false)
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(id) != "" {
+		return id, nil
+	}
+	return toString(args, "snippet_id", required)
+}
+
+func toWorkflowSlug(args map[string]any, required bool) (string, error) {
+	slug, err := toString(args, "workflow_slug", false)
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(slug) != "" {
+		return slug, nil
+	}
+	return toString(args, "snippet_slug", required)
 }
 
 func toString(args map[string]any, key string, required bool) (string, error) {

@@ -3,14 +3,14 @@ import Image from 'next/image';
 import Link from 'next/link';
 
 const featuredIntegrations = [
-  { name: "GitHub",     color: "bg-zinc-900",   icon: "GH" },
-  { name: "Slack",      color: "bg-[#4A154B]",  icon: "#" },
-  { name: "Salesforce", color: "bg-[#0176D3]",  icon: "SF" },
-  { name: "Stripe",     color: "bg-[#635BFF]",  icon: "S" },
-  { name: "Notion",     color: "bg-zinc-900",   icon: "N" },
-  { name: "Linear",     color: "bg-[#5E6AD2]",  icon: "L" },
-  { name: "HubSpot",    color: "bg-[#FF7A59]",  icon: "H" },
-  { name: "Zendesk",    color: "bg-[#03363D]",  icon: "Z" },
+  { name: "GitHub", logo: "/github.png" },
+  { name: "Slack", logo: "/slack.png" },
+  { name: "Salesforce", logo: "/salesforce.jpg" },
+  { name: "Stripe", logo: "/stripe.png" },
+  { name: "Notion", logo: "/notion.png" },
+  { name: "Linear", logo: "/linear.png" },
+  { name: "HubSpot", logo: "/hubspot.webp" },
+  { name: "Zendesk", logo: "/zendesk.svg" },
 ];
 
 export default function Home() {
@@ -136,10 +136,14 @@ export default function Home() {
                   key={item.name}
                   className="group flex items-center gap-4 rounded-2xl border border-black/5 bg-white p-5 shadow-sm transition-all hover:border-black/10 hover:shadow-md hover:-translate-y-px"
                 >
-                  <div
-                    className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-sm font-semibold tracking-[-0.3px] text-white ${item.color}`}
-                  >
-                    {item.icon}
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-black/5 bg-zinc-50 p-1.5">
+                    <Image
+                      src={item.logo}
+                      alt={`${item.name} logo`}
+                      width={28}
+                      height={28}
+                      className="h-full w-full object-contain"
+                    />
                   </div>
                   <span className="font-medium text-zinc-800 group-hover:text-zinc-950">{item.name}</span>
                 </div>
@@ -235,7 +239,7 @@ export default function Home() {
                 {'{'}{'\n'}
                 {'  '}<span className="text-pink-400">"mcpServers"</span>: {'{'}{'\n'}
                 {'    '}<span className="text-blue-400">"velane"</span>: {'{'}{'\n'}
-                {'      '}<span className="text-pink-400">"url"</span>: <span className="text-emerald-300">"http://localhost:8090/mcp"</span>,{'\n'}
+                {'      '}<span className="text-pink-400">"url"</span>: <span className="text-emerald-300">"https://mcp.velane.sh/mcp"</span>,{'\n'}
                 {'      '}<span className="text-pink-400">"headers"</span>: {'{'}{'\n'}
                 {'        '}<span className="text-blue-400">"Authorization"</span>: <span className="text-emerald-300">"Bearer vl_xxxx"</span>{'\n'}
                 {'      '}{'}'}{'\n'}

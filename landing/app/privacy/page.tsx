@@ -41,24 +41,35 @@ export default function PrivacyPolicy() {
 
         <div className="space-y-10 text-[15px] leading-[1.75] text-zinc-700">
           <p className="text-base text-zinc-800">
-            Velane ("we", "us", or "our") respects your privacy. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you use our website, hosted platform at app.velane.sh, and related services (collectively, the "Service").
+            Velane ("we", "us", or "our") respects your privacy. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you use Velane&apos;s hosted cloud service, our website, and related Velane-operated infrastructure.
           </p>
 
           {/* Section 1 */}
           <section>
-            <h2 className="mb-4 text-xl font-medium tracking-tight text-zinc-900">1. Information We Collect</h2>
-            <p className="mb-3">We collect the following types of information:</p>
+            <h2 className="mb-4 text-xl font-medium tracking-tight text-zinc-900">1. Scope: Cloud vs Self-Hosted</h2>
+            <p className="mb-3">
+              This Privacy Policy applies when you use Velane&apos;s <span className="font-medium text-zinc-900">hosted cloud service</span>, including app.velane.sh and related Velane-operated infrastructure.
+            </p>
+            <p>
+              If you <span className="font-medium text-zinc-900">self-host</span> Velane on your own infrastructure, you control and own your tenant data — including snippets, logs, integration connections, and secrets. We do not collect or process that data unless you voluntarily share it with us (for example, through support requests). Your internal handling of self-hosted data is governed by your own policies and deployment choices. This website may still collect limited technical data when you visit it, as described below.
+            </p>
+          </section>
+
+          {/* Section 2 */}
+          <section>
+            <h2 className="mb-4 text-xl font-medium tracking-tight text-zinc-900">2. Information We Collect</h2>
+            <p className="mb-3">On Velane Cloud, we collect the following types of information:</p>
             <ul className="list-disc pl-6 space-y-2.5">
-              <li><span className="font-medium text-zinc-900">Account Information:</span> When you create an account or tenant, we collect your email address, name (if provided), and authentication credentials.</li>
+              <li><span className="font-medium text-zinc-900">Account Information:</span> When you create an account or tenant, we collect your email address and name (if provided). Passwords are stored as one-way hashes — we never store plaintext passwords. We also issue session tokens to keep you signed in.</li>
               <li><span className="font-medium text-zinc-900">Usage Data:</span> We collect information about how you and your AI agents interact with the Service, including API calls, snippet invocations, logs, and performance metrics.</li>
               <li><span className="font-medium text-zinc-900">Integration Data:</span> When you connect third-party services (via Nango or direct OAuth), we store connection metadata and tokens securely on your behalf. We never store or access the underlying data from those services unless explicitly invoked by your code.</li>
               <li><span className="font-medium text-zinc-900">Technical Data:</span> IP addresses, browser type, device information, and cookies for authentication and analytics.</li>
             </ul>
           </section>
 
-          {/* Section 2 */}
+          {/* Section 3 */}
           <section>
-            <h2 className="mb-4 text-xl font-medium tracking-tight text-zinc-900">2. How We Use Your Information</h2>
+            <h2 className="mb-4 text-xl font-medium tracking-tight text-zinc-900">3. How We Use Your Information</h2>
             <p className="mb-3">We use the information we collect to:</p>
             <ul className="list-disc pl-6 space-y-2">
               <li>Provide, operate, and maintain the Service</li>
@@ -70,9 +81,9 @@ export default function PrivacyPolicy() {
             </ul>
           </section>
 
-          {/* Section 3 */}
+          {/* Section 4 */}
           <section>
-            <h2 className="mb-4 text-xl font-medium tracking-tight text-zinc-900">3. Sharing of Information</h2>
+            <h2 className="mb-4 text-xl font-medium tracking-tight text-zinc-900">4. Sharing of Information</h2>
             <p className="mb-3">We do not sell your personal information. We may share information in the following limited cases:</p>
             <ul className="list-disc pl-6 space-y-2.5">
               <li>With service providers who help us operate the Service (hosting, analytics, error monitoring) under strict confidentiality obligations.</li>
@@ -81,17 +92,17 @@ export default function PrivacyPolicy() {
             </ul>
           </section>
 
-          {/* Section 4 */}
+          {/* Section 5 */}
           <section>
-            <h2 className="mb-4 text-xl font-medium tracking-tight text-zinc-900">4. Data Security</h2>
+            <h2 className="mb-4 text-xl font-medium tracking-tight text-zinc-900">5. Data Security</h2>
             <p>
               We use industry-standard security practices, including encryption in transit (TLS), encryption at rest for secrets, and strict access controls. However, no method of transmission over the Internet is 100% secure.
             </p>
           </section>
 
-          {/* Section 5 */}
+          {/* Section 6 */}
           <section>
-            <h2 className="mb-4 text-xl font-medium tracking-tight text-zinc-900">5. Your Rights</h2>
+            <h2 className="mb-4 text-xl font-medium tracking-tight text-zinc-900">6. Your Rights</h2>
             <p className="mb-3">Depending on your location, you may have the right to:</p>
             <ul className="list-disc pl-6 space-y-2">
               <li>Access, correct, or delete your personal information</li>
@@ -104,33 +115,33 @@ export default function PrivacyPolicy() {
             </p>
           </section>
 
-          {/* Section 6 */}
+          {/* Section 7 */}
           <section>
-            <h2 className="mb-4 text-xl font-medium tracking-tight text-zinc-900">6. Data Retention</h2>
+            <h2 className="mb-4 text-xl font-medium tracking-tight text-zinc-900">7. Data Retention</h2>
             <p>
               We retain your information for as long as your account is active or as needed to provide the Service. You may request deletion of your account and associated data at any time.
             </p>
           </section>
 
-          {/* Section 7 */}
+          {/* Section 8 */}
           <section>
-            <h2 className="mb-4 text-xl font-medium tracking-tight text-zinc-900">7. Third-Party Services</h2>
+            <h2 className="mb-4 text-xl font-medium tracking-tight text-zinc-900">8. Third-Party Services</h2>
             <p>
               The Service integrates with third-party providers (via Nango and direct OAuth). Those providers have their own privacy policies. We are not responsible for the practices of third parties you choose to connect.
             </p>
           </section>
 
-          {/* Section 8 */}
+          {/* Section 9 */}
           <section>
-            <h2 className="mb-4 text-xl font-medium tracking-tight text-zinc-900">8. Changes to This Policy</h2>
+            <h2 className="mb-4 text-xl font-medium tracking-tight text-zinc-900">9. Changes to This Policy</h2>
             <p>
               We may update this Privacy Policy from time to time. We will notify you of material changes by posting the new policy on this page and updating the "Last updated" date.
             </p>
           </section>
 
-          {/* Section 9 */}
+          {/* Section 10 */}
           <section>
-            <h2 className="mb-4 text-xl font-medium tracking-tight text-zinc-900">9. Contact Us</h2>
+            <h2 className="mb-4 text-xl font-medium tracking-tight text-zinc-900">10. Contact Us</h2>
             <p>
               If you have questions or concerns about this Privacy Policy, please contact us at:
             </p>

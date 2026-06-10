@@ -332,19 +332,19 @@ export default function MCPPage() {
           <div className="rounded-xl border border-gray-100 bg-gray-50 p-4">
             <p className="text-sm font-medium text-gray-900">Tools</p>
             <p className="mt-1 text-xs leading-5 text-gray-500">
-              Actions such as creating snippets, updating drafts, invoking runs, listing connections, and reading metrics.
+              Actions such as creating workflows, updating drafts, invoking runs, listing connections, and reading metrics.
             </p>
           </div>
           <div className="rounded-xl border border-gray-100 bg-gray-50 p-4">
             <p className="text-sm font-medium text-gray-900">Resources</p>
             <p className="mt-1 text-xs leading-5 text-gray-500">
-              Bounded context such as the runtime contract, compact snippet catalog, and connected integrations.
+              Bounded context such as the runtime contract, compact workflow catalog, and connected integrations.
             </p>
           </div>
           <div className="rounded-xl border border-gray-100 bg-gray-50 p-4">
             <p className="text-sm font-medium text-gray-900">Prompts</p>
             <p className="mt-1 text-xs leading-5 text-gray-500">
-              Guided workflows for creating integration snippets, debugging failed invocations, and publishing after validation.
+              Guided flows for creating integration workflows, debugging failed invocations, and publishing after validation.
             </p>
           </div>
         </div>

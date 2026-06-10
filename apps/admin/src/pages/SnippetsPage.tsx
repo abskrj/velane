@@ -68,15 +68,15 @@ export default function SnippetsPage() {
     <div>
       <div className="mb-8 flex items-start justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Snippets</h1>
-          <p className="mt-1.5 text-sm text-gray-500">Manage your code snippets and deployments.</p>
+          <h1 className="text-3xl font-bold text-gray-900">Workflows</h1>
+          <p className="mt-1.5 text-sm text-gray-500">Manage your workflows and deployments.</p>
         </div>
         <button
           className="inline-flex items-center gap-2 rounded-lg bg-gray-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-gray-800"
           onClick={() => setShowModal(true)}
         >
           <Plus size={15} />
-          New Snippet
+          New Workflow
         </button>
       </div>
 
@@ -88,7 +88,7 @@ export default function SnippetsPage() {
       )}
 
       {loading && (
-        <p className="text-sm text-gray-400">Loading snippets...</p>
+        <p className="text-sm text-gray-400">Loading workflows...</p>
       )}
 
       {!loading && snippets.length === 0 && (
@@ -96,15 +96,15 @@ export default function SnippetsPage() {
           <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-gray-100">
             <FileCode2 size={22} className="text-gray-400" />
           </div>
-          <p className="text-base font-semibold text-gray-800">No snippets yet</p>
+          <p className="text-base font-semibold text-gray-800">No workflows yet</p>
           <p className="mt-1.5 max-w-xs text-center text-sm text-gray-500">
-            You haven't created any snippets. Create one to get started with your deployments.
+            You haven't created any workflows. Create one to get started with your deployments.
           </p>
           <button
             className="mt-6 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
             onClick={() => setShowModal(true)}
           >
-            Create your first snippet
+            Create your first workflow
           </button>
         </div>
       )}
@@ -140,7 +140,7 @@ export default function SnippetsPage() {
                     <button
                       className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-600"
                       onClick={(e) => handleDelete(e, sn.id)}
-                      title="Delete snippet"
+                      title="Delete workflow"
                     >
                       <Trash2 size={14} />
                     </button>
@@ -155,13 +155,13 @@ export default function SnippetsPage() {
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
           <div className="w-full max-w-md rounded-xl border border-gray-200 bg-white p-6 shadow-xl">
-            <h2 className="mb-4 text-lg font-semibold text-gray-900">New Snippet</h2>
+            <h2 className="mb-4 text-lg font-semibold text-gray-900">New Workflow</h2>
 
             <div className="mb-4">
               <label className="mb-1 block text-sm font-medium text-gray-700">Name</label>
               <input
                 className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400"
-                placeholder="My Snippet"
+                placeholder="My Workflow"
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
                 autoFocus
@@ -186,7 +186,7 @@ export default function SnippetsPage() {
               </label>
               <input
                 className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400"
-                placeholder="What does this snippet do?"
+                placeholder="What does this workflow do?"
                 value={newDescription}
                 onChange={(e) => setNewDescription(e.target.value)}
               />

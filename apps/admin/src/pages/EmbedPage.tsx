@@ -74,7 +74,7 @@ export default function EmbedPage() {
     <div>
       <h1 className="mb-1 text-2xl font-bold text-gray-900">Embed Dashboard</h1>
       <p className="mb-8 text-sm text-gray-500">
-        Generate tokens to embed a read-only snippet dashboard in any web page.
+        Generate tokens to embed a read-only workflow dashboard in any web page.
       </p>
 
       {error && (
@@ -113,12 +113,12 @@ export default function EmbedPage() {
 
         <div className="mb-4">
           <label className="mb-2 block text-sm font-medium text-gray-700">
-            Snippets to expose <span className="font-normal text-gray-400">(leave empty to expose all)</span>
+            Workflows to expose <span className="font-normal text-gray-400">(leave empty to expose all)</span>
           </label>
           {loading ? (
-            <p className="text-sm text-gray-400">Loading snippets...</p>
+            <p className="text-sm text-gray-400">Loading workflows...</p>
           ) : snippets.length === 0 ? (
-            <p className="text-sm text-gray-400">No snippets yet.</p>
+            <p className="text-sm text-gray-400">No workflows yet.</p>
           ) : (
             <div className="flex flex-wrap gap-2">
               {snippets.map(s => (
@@ -178,7 +178,7 @@ export default function EmbedPage() {
             <thead className="border-b border-gray-200 bg-gray-50 text-xs font-medium text-gray-500">
               <tr>
                 <th className="px-6 py-3 text-left">ID</th>
-                <th className="px-6 py-3 text-left">Snippets</th>
+                <th className="px-6 py-3 text-left">Workflows</th>
                 <th className="px-6 py-3 text-left">Expires</th>
                 <th className="px-6 py-3 text-left">Last used</th>
                 <th className="px-6 py-3 text-left"></th>
@@ -192,8 +192,8 @@ export default function EmbedPage() {
                   </td>
                   <td className="px-6 py-3 text-gray-600">
                     {tok.allowed_snippet_ids.length === 0
-                      ? 'All snippets'
-                      : `${tok.allowed_snippet_ids.length} snippet${tok.allowed_snippet_ids.length > 1 ? 's' : ''}`}
+                      ? 'All workflows'
+                      : `${tok.allowed_snippet_ids.length} workflow${tok.allowed_snippet_ids.length > 1 ? 's' : ''}`}
                   </td>
                   <td className="px-6 py-3 text-gray-600">
                     {new Date(tok.expires_at).toLocaleDateString()}

@@ -49,12 +49,12 @@ func TestToolsList(t *testing.T) {
 		t.Fatalf("unexpected error: %+v", resp.Error)
 	}
 	raw, _ := json.Marshal(resp.Result)
-	if !strings.Contains(string(raw), "list_snippets") {
-		t.Fatalf("expected tool list to include list_snippets: %s", string(raw))
+	if !strings.Contains(string(raw), "list_workflows") {
+		t.Fatalf("expected tool list to include list_workflows: %s", string(raw))
 	}
 }
 
-func TestToolsCallListSnippets(t *testing.T) {
+func TestToolsCallListWorkflows(t *testing.T) {
 	cp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "Bearer test" {
 			http.Error(w, `{"error":"bad auth"}`, http.StatusUnauthorized)
@@ -71,7 +71,7 @@ func TestToolsCallListSnippets(t *testing.T) {
 
 	srv := server.New(tools.NewRegistry(controlplane.New(cp.URL)))
 	params := map[string]any{
-		"name":      "list_snippets",
+		"name":      "list_workflows",
 		"arguments": map[string]any{},
 	}
 	pb, _ := json.Marshal(params)
@@ -87,6 +87,18 @@ func TestToolsCallListSnippets(t *testing.T) {
 	b, _ := json.Marshal(resp.Result)
 	if !strings.Contains(string(b), "structuredContent") {
 		t.Fatalf("expected structuredContent in result: %s", string(b))
+	}
+	var parsed struct {
+		StructuredContent map[string]any `json:"structuredContent"`
+	}
+	if err := json.Unmarshal(b, &parsed); err != nil {
+		t.Fatalf("unmarshal result: %v", err)
+	}
+	if parsed.StructuredContent == nil {
+		t.Fatalf("structuredContent should be an object: %s", string(b))
+	}
+	if _, ok := parsed.StructuredContent["workflows"]; !ok {
+		t.Fatalf("expected workflows key in structuredContent: %s", string(b))
 	}
 }
 
@@ -170,7 +182,7 @@ func TestResourcesReadRuntimeContract(t *testing.T) {
 	}
 }
 
-func TestResourcesReadSnippetCatalogTruncates(t *testing.T) {
+func TestResourcesReadWorkflowCatalogTruncates(t *testing.T) {
 	cp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/snippets" {
 			http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
@@ -185,7 +197,7 @@ func TestResourcesReadSnippetCatalogTruncates(t *testing.T) {
 	defer cp.Close()
 
 	srv := server.New(tools.NewRegistry(controlplane.New(cp.URL)))
-	params := map[string]any{"uri": "velane://snippets"}
+	params := map[string]any{"uri": "velane://workflows"}
 	pb, _ := json.Marshal(params)
 	resp := srv.HandleRequest(context.Background(), "Bearer test", protocol.Request{
 		JSONRPC: "2.0",
@@ -198,17 +210,17 @@ func TestResourcesReadSnippetCatalogTruncates(t *testing.T) {
 	}
 	raw, _ := json.Marshal(resp.Result)
 	if strings.Contains(string(raw), "should-not-leak") {
-		t.Fatalf("snippet catalog should not include code: %s", string(raw))
+		t.Fatalf("workflow catalog should not include code: %s", string(raw))
 	}
 	if !strings.Contains(string(raw), "one") || !strings.Contains(string(raw), "two") {
-		t.Fatalf("expected compact snippet metadata: %s", string(raw))
+		t.Fatalf("expected compact workflow metadata: %s", string(raw))
 	}
 }
 
 func TestPromptsGet(t *testing.T) {
 	srv := server.New(tools.NewRegistry(controlplane.New("http://localhost:1")))
 	params := map[string]any{
-		"name": "create_integration_snippet",
+		"name": "create_integration_workflow",
 		"arguments": map[string]any{
 			"provider": "github",
 			"goal":     "create an issue",

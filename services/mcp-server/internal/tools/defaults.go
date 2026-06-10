@@ -15,7 +15,7 @@ func (r *Registry) addDefaults() {
 		Name: "list_connections",
 		Description: `List OAuth integrations connected for this tenant.
 
-IMPORTANT — how to use integrations in snippet code:
+IMPORTANT — how to use integrations in workflow code:
 
 Bun/TypeScript:
   import { integration } from '@velane/integrations'
@@ -74,7 +74,7 @@ Call get_integration_docs(provider) to look up endpoints for any provider.`,
 
 	r.add(Tool{
 		Name:        "get_integration_docs",
-		Description: "Get API endpoints, base URL, and a working code example for a specific integration provider. Call this before writing snippet code that uses an integration.",
+		Description: "Get API endpoints, base URL, and a working code example for a specific integration provider. Call this before writing workflow code that uses an integration.",
 		InputSchema: map[string]any{
 			"type":     "object",
 			"required": []string{"provider"},
@@ -100,8 +100,8 @@ Call get_integration_docs(provider) to look up endpoints for any provider.`,
 	})
 
 	r.add(Tool{
-		Name:        "list_snippets",
-		Description: "List snippets available to the authenticated tenant.",
+		Name:        "list_workflows",
+		Description: "List workflows available to the authenticated tenant.",
 		InputSchema: map[string]any{"type": "object", "properties": map[string]any{}},
 		Handle: func(ctx context.Context, authHeader string, _ map[string]any) (any, error) {
 			var out []map[string]any
@@ -113,19 +113,20 @@ Call get_integration_docs(provider) to look up endpoints for any provider.`,
 	})
 
 	r.add(Tool{
-		Name:        "get_snippet",
-		Description: "Get a snippet by ID, including its version history (with code) and the active version per environment. Use this to read the current code before editing an existing snippet.",
+		Name:        "get_workflow",
+		Description: "Get a workflow by ID, including its version history (with code) and the active version per environment. Use this to read the current code before editing an existing workflow.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"required": []string{
-				"snippet_id",
+				"workflow_id",
 			},
 			"properties": map[string]any{
-				"snippet_id": map[string]any{"type": "string"},
+				"workflow_id": map[string]any{"type": "string", "description": "Workflow ID."},
+				"snippet_id":  map[string]any{"type": "string", "description": "Deprecated alias for workflow_id."},
 			},
 		},
 		Handle: func(ctx context.Context, authHeader string, args map[string]any) (any, error) {
-			snippetID, err := toString(args, "snippet_id", true)
+			snippetID, err := toWorkflowID(args, true)
 			if err != nil {
 				return nil, err
 			}
@@ -156,7 +157,7 @@ Call get_integration_docs(provider) to look up endpoints for any provider.`,
 			}
 
 			return map[string]any{
-				"snippet":      snippet,
+				"workflow":     snippet,
 				"versions":     versions,
 				"environments": environments,
 				"latest_code":  activeCode,
@@ -165,8 +166,8 @@ Call get_integration_docs(provider) to look up endpoints for any provider.`,
 	})
 
 	r.add(Tool{
-		Name:        "create_snippet",
-		Description: "Create a snippet.",
+		Name:        "create_workflow",
+		Description: "Create a workflow.",
 		InputSchema: map[string]any{
 			"type":     "object",
 			"required": []string{"name", "slug", "language"},
@@ -200,9 +201,9 @@ Call get_integration_docs(provider) to look up endpoints for any provider.`,
 
 	r.add(Tool{
 		Name: "update_draft",
-		Description: `Create a new snippet version from source code.
+		Description: `Create a new workflow version from source code.
 
-Built-in import always available in snippet code (no install needed):
+Built-in import always available in workflow code (no install needed):
   Bun:    import { integration } from '@velane/integrations'
   Python: from velane.integrations import integration
 
@@ -210,9 +211,10 @@ Call list_connections to see which OAuth providers are connected for this tenant
 Call get_integration_docs(provider) for endpoint reference and working code examples.`,
 		InputSchema: map[string]any{
 			"type":     "object",
-			"required": []string{"snippet_id", "code"},
+			"required": []string{"workflow_id", "code"},
 			"properties": map[string]any{
-				"snippet_id":      map[string]any{"type": "string"},
+				"workflow_id":     map[string]any{"type": "string", "description": "Workflow ID."},
+				"snippet_id":      map[string]any{"type": "string", "description": "Deprecated alias for workflow_id."},
 				"code":            map[string]any{"type": "string"},
 				"input_schema":    map[string]any{"type": "string"},
 				"output_schema":   map[string]any{"type": "string"},
@@ -222,7 +224,7 @@ Call get_integration_docs(provider) for endpoint reference and working code exam
 			},
 		},
 		Handle: func(ctx context.Context, authHeader string, args map[string]any) (any, error) {
-			snippetID, err := toString(args, "snippet_id", true)
+			snippetID, err := toWorkflowID(args, true)
 			if err != nil {
 				return nil, err
 			}
@@ -265,19 +267,20 @@ Call get_integration_docs(provider) for endpoint reference and working code exam
 	})
 
 	r.add(Tool{
-		Name:        "publish_snippet",
-		Description: "Publish a snippet version to an environment.",
+		Name:        "publish_workflow",
+		Description: "Publish a workflow version to an environment.",
 		InputSchema: map[string]any{
 			"type":     "object",
-			"required": []string{"snippet_id", "version_number", "env"},
+			"required": []string{"workflow_id", "version_number", "env"},
 			"properties": map[string]any{
-				"snippet_id":     map[string]any{"type": "string"},
+				"workflow_id":    map[string]any{"type": "string", "description": "Workflow ID."},
+				"snippet_id":     map[string]any{"type": "string", "description": "Deprecated alias for workflow_id."},
 				"version_number": map[string]any{"type": "integer"},
 				"env":            map[string]any{"type": "string", "enum": []string{"dev", "staging", "prod"}},
 			},
 		},
 		Handle: func(ctx context.Context, authHeader string, args map[string]any) (any, error) {
-			snippetID, err := toString(args, "snippet_id", true)
+			snippetID, err := toWorkflowID(args, true)
 			if err != nil {
 				return nil, err
 			}
@@ -303,14 +306,15 @@ Call get_integration_docs(provider) for endpoint reference and working code exam
 	})
 
 	r.add(Tool{
-		Name:        "invoke_snippet",
-		Description: "Invoke a snippet synchronously, asynchronously, or as a stream. tenant_slug is optional; when omitted the tenant is inferred from the API key.",
+		Name:        "invoke_workflow",
+		Description: "Invoke a workflow synchronously, asynchronously, or as a stream. tenant_slug is optional; when omitted the tenant is inferred from the API key.",
 		InputSchema: map[string]any{
 			"type":     "object",
-			"required": []string{"snippet_slug"},
+			"required": []string{"workflow_slug"},
 			"properties": map[string]any{
-				"tenant_slug":  map[string]any{"type": "string", "description": "Tenant slug. Optional — inferred from the API key when omitted."},
-				"snippet_slug": map[string]any{"type": "string"},
+				"tenant_slug":   map[string]any{"type": "string", "description": "Tenant slug. Optional — inferred from the API key when omitted."},
+				"workflow_slug": map[string]any{"type": "string", "description": "Workflow slug."},
+				"snippet_slug":  map[string]any{"type": "string", "description": "Deprecated alias for workflow_slug."},
 				"env":          map[string]any{"type": "string"},
 				"version":      map[string]any{"type": "string"},
 				"invoke_mode":  map[string]any{"type": "string", "enum": []string{"sync", "async", "stream"}},
@@ -320,7 +324,7 @@ Call get_integration_docs(provider) for endpoint reference and working code exam
 		},
 		Handle: func(ctx context.Context, authHeader string, args map[string]any) (any, error) {
 			tenantSlug, _ := toString(args, "tenant_slug", false)
-			snippetSlug, err := toString(args, "snippet_slug", true)
+			snippetSlug, err := toWorkflowSlug(args, true)
 			if err != nil {
 				return nil, err
 			}
@@ -384,12 +388,13 @@ Call get_integration_docs(provider) for endpoint reference and working code exam
 
 	r.add(Tool{
 		Name:        "get_logs",
-		Description: "List past invocations for a snippet (status, output, error, stderr, duration, mode). Use get_invocation for the full record of a single run by ID. Note: streamed debug logs (console.log/print) are live-only and not stored here.",
+		Description: "List past invocations for a workflow (status, output, error, stderr, duration, mode). Use get_invocation for the full record of a single run by ID. Note: streamed debug logs (console.log/print) are live-only and not stored here.",
 		InputSchema: map[string]any{
 			"type":     "object",
-			"required": []string{"snippet_id"},
+			"required": []string{"workflow_id"},
 			"properties": map[string]any{
-				"snippet_id": map[string]any{"type": "string"},
+				"workflow_id": map[string]any{"type": "string", "description": "Workflow ID."},
+				"snippet_id":  map[string]any{"type": "string", "description": "Deprecated alias for workflow_id."},
 				"limit":      map[string]any{"type": "integer"},
 				"status":     map[string]any{"type": "string"},
 				"env":        map[string]any{"type": "string"},
@@ -398,7 +403,7 @@ Call get_integration_docs(provider) for endpoint reference and working code exam
 			},
 		},
 		Handle: func(ctx context.Context, authHeader string, args map[string]any) (any, error) {
-			snippetID, err := toString(args, "snippet_id", true)
+			snippetID, err := toWorkflowID(args, true)
 			if err != nil {
 				return nil, err
 			}
@@ -428,7 +433,7 @@ Call get_integration_docs(provider) for endpoint reference and working code exam
 
 	r.add(Tool{
 		Name:        "get_invocation",
-		Description: "Get a single invocation by ID, including status, output, error, stderr, and duration. Use this to poll an async invocation (invoke_snippet with invoke_mode=async returns an invocation_id) until status is 'completed', 'failed', 'timeout', or 'oom_killed'.",
+		Description: "Get a single invocation by ID, including status, output, error, stderr, and duration. Use this to poll an async invocation (invoke_workflow with invoke_mode=async returns an invocation_id) until status is 'completed', 'failed', 'timeout', or 'oom_killed'.",
 		InputSchema: map[string]any{
 			"type":     "object",
 			"required": []string{"invocation_id"},
@@ -471,7 +476,8 @@ Call get_integration_docs(provider) for endpoint reference and working code exam
 			"properties": map[string]any{
 				"name":         map[string]any{"type": "string"},
 				"value":        map[string]any{"type": "string"},
-				"snippet_id":   map[string]any{"type": "string"},
+				"workflow_id":  map[string]any{"type": "string", "description": "Optional workflow ID scope."},
+				"snippet_id":   map[string]any{"type": "string", "description": "Deprecated alias for workflow_id."},
 				"environments": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
 			},
 		},
@@ -484,7 +490,7 @@ Call get_integration_docs(provider) for endpoint reference and working code exam
 			if err != nil {
 				return nil, err
 			}
-			snippetID, _ := toString(args, "snippet_id", false)
+			snippetID, _ := toWorkflowID(args, false)
 			environments, err := toStringSlice(args, "environments")
 			if err != nil {
 				return nil, err
@@ -510,17 +516,18 @@ Call get_integration_docs(provider) for endpoint reference and working code exam
 
 	r.add(Tool{
 		Name:        "get_metrics",
-		Description: "Get aggregate and time-series metrics for a snippet.",
+		Description: "Get aggregate and time-series metrics for a workflow.",
 		InputSchema: map[string]any{
 			"type":     "object",
-			"required": []string{"snippet_id"},
+			"required": []string{"workflow_id"},
 			"properties": map[string]any{
-				"snippet_id": map[string]any{"type": "string"},
+				"workflow_id": map[string]any{"type": "string", "description": "Workflow ID."},
+				"snippet_id":  map[string]any{"type": "string", "description": "Deprecated alias for workflow_id."},
 				"window":     map[string]any{"type": "string", "enum": []string{"1h", "24h", "7d"}},
 			},
 		},
 		Handle: func(ctx context.Context, authHeader string, args map[string]any) (any, error) {
-			snippetID, err := toString(args, "snippet_id", true)
+			snippetID, err := toWorkflowID(args, true)
 			if err != nil {
 				return nil, err
 			}

@@ -4,14 +4,14 @@ import Link from 'next/link';
 import CursorAgentChat from './components/CursorAgentChat';
 
 const featuredIntegrations = [
-  { name: "GitHub", logo: "/github.png" },
-  { name: "Slack", logo: "/slack.png" },
   { name: "Salesforce", logo: "/salesforce.jpg" },
+  { name: "Zendesk", logo: "/zendesk.svg" },
+  { name: "HubSpot", logo: "/hubspot.webp" },
   { name: "Stripe", logo: "/stripe.png" },
   { name: "Notion", logo: "/notion.png" },
+  { name: "Slack", logo: "/slack.png" },
+  { name: "GitHub", logo: "/github.png" },
   { name: "Linear", logo: "/linear.png" },
-  { name: "HubSpot", logo: "/hubspot.webp" },
-  { name: "Zendesk", logo: "/zendesk.svg" },
 ];
 
 export default function Home() {
@@ -55,8 +55,18 @@ export default function Home() {
 
       <main>
         {/* Hero Section */}
-        <section className="mx-auto w-full max-w-5xl px-6 min-h-[calc(100vh-80px)] flex flex-col justify-center py-20 md:py-32">
-          <div className="grid gap-16 md:grid-cols-2 md:items-center">
+        <section className="relative overflow-hidden min-h-[calc(100vh-80px)] flex flex-col justify-center py-20 md:py-32">
+          {/* Dot grid, faded behind the headline */}
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle,rgb(0_0_0/0.08)_1px,transparent_1px)] [background-size:24px_24px] [mask-image:radial-gradient(ellipse_70%_70%_at_35%_45%,transparent_25%,black_75%)]"
+          />
+          {/* Soft spotlight glow behind the hero copy */}
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute left-[-10%] top-1/2 h-[36rem] w-[36rem] -translate-y-1/2 rounded-full bg-white blur-3xl"
+          />
+          <div className="relative mx-auto w-full max-w-5xl px-6 grid gap-16 md:grid-cols-2 md:items-center">
             <div className="max-w-xl">
               <h1 className="text-5xl font-medium tracking-tight text-zinc-900 leading-[1.1] md:text-6xl">
                 Don't write workflows.<br/>Let your agent do it.
@@ -221,20 +231,32 @@ export default function Home() {
         </section>
 
         {/* Final CTA */}
-        <section className="mx-auto w-full max-w-5xl px-6 min-h-screen flex flex-col justify-center py-32 text-center">
-          <h2 className="text-4xl font-medium tracking-tight text-zinc-900">
-            Ready to bring your agents to life?
-          </h2>
-          <p className="mx-auto mt-6 max-w-xl text-lg text-zinc-600">
-            Join the teams building the next generation of reliable, agent-driven applications on Velane.
-          </p>
-          <div className="mt-10 flex justify-center gap-4">
-            <a
-              className="rounded-full bg-zinc-900 px-8 py-4 text-sm font-medium text-white shadow-lg transition-transform hover:scale-105 hover:bg-zinc-800"
-              href="https://app.velane.sh"
-            >
-              Start building for free
-            </a>
+        <section className="relative overflow-hidden min-h-screen flex flex-col justify-center py-32 text-center">
+          {/* Dot grid, clearing toward the CTA copy */}
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle,rgb(0_0_0/0.08)_1px,transparent_1px)] [background-size:24px_24px] [mask-image:radial-gradient(ellipse_55%_55%_at_50%_50%,transparent_30%,black_80%)]"
+          />
+          {/* Spotlight glow behind the CTA */}
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute left-1/2 top-1/2 h-[32rem] w-[44rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-white blur-3xl"
+          />
+          <div className="relative mx-auto w-full max-w-5xl px-6">
+            <h2 className="text-4xl font-medium tracking-tight text-zinc-900">
+              Ready to bring your agents to life?
+            </h2>
+            <p className="mx-auto mt-6 max-w-xl text-lg text-zinc-600">
+              Join the teams building the next generation of reliable, agent-driven applications on Velane.
+            </p>
+            <div className="mt-10 flex justify-center gap-4">
+              <a
+                className="rounded-full bg-zinc-900 px-8 py-4 text-sm font-medium text-white shadow-lg transition-transform hover:scale-105 hover:bg-zinc-800"
+                href="https://app.velane.sh"
+              >
+                Start building for free
+              </a>
+            </div>
           </div>
         </section>
       </main>

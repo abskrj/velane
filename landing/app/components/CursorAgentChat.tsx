@@ -10,7 +10,7 @@ type Entry =
   | { type: "summary"; text: string };
 
 const script: Entry[] = [
-  { type: "user", text: "Sync new Stripe customers into HubSpot as contacts." },
+  { type: "user", text: "Build a workflow that syncs new Stripe customers to HubSpot contacts." },
   {
     type: "assistant",
     text: "I'll check your connections, write the snippet, and ship it to dev first.",

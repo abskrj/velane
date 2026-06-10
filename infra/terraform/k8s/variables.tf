@@ -311,7 +311,7 @@ variable "ingress_annotations" {
 }
 
 variable "acm_certificate_arn" {
-  description = "ARN of an ACM certificate to attach to the ALB (enables HTTPS on port 443). Leave empty for HTTP-only. Get this from: terraform -chdir=infra/terraform/aws-eks output -raw acm_certificate_arn"
+  description = "ARN of an ACM certificate to attach to the ALB (enables HTTPS on port 443). Leave empty for HTTP-only. Get this from: tofu -chdir=infra/terraform/aws-eks output -raw acm_certificate_arn"
   type        = string
   default     = ""
 }

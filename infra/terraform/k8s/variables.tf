@@ -256,6 +256,42 @@ variable "mcp_public_url" {
   default     = ""
 }
 
+# ==================== Social login (Google / GitHub) ====================
+
+variable "public_base_url" {
+  description = "Browser-facing admin portal origin used for OAuth redirect URIs (e.g. https://admin.yourdomain.com). If empty and ingress is enabled, defaults to https://admin_subdomain.base_domain."
+  type        = string
+  default     = ""
+}
+
+variable "google_oauth_client_id" {
+  description = "Google OAuth client ID for admin portal sign-in. Leave empty to disable Google login."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "google_oauth_client_secret" {
+  description = "Google OAuth client secret for admin portal sign-in."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "github_oauth_client_id" {
+  description = "GitHub OAuth client ID (App) for admin portal sign-in. Leave empty to disable GitHub login."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "github_oauth_client_secret" {
+  description = "GitHub OAuth client secret for admin portal sign-in."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
 variable "nango_connect_subdomain" {
   description = "Subdomain prefix for the Nango Connect UI."
   type        = string

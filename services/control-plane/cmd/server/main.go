@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/abskrj/velane/services/control-plane/internal/api"
+	"github.com/abskrj/velane/services/control-plane/internal/api/handlers"
 	"github.com/abskrj/velane/services/control-plane/internal/auth"
 	"github.com/abskrj/velane/services/control-plane/internal/config"
 	"github.com/abskrj/velane/services/control-plane/internal/executor"
@@ -134,7 +135,14 @@ func main() {
 	}
 
 	// --- Router ---
-	router := api.NewRouterWithJWT(store, sched, log, encKey, authProvider, pubKey, nangoClient, cfg.NangoInternalURL, cfg.NangoConnectURL, cfg.NangoApiURL, cfg.NangoWebhookSecret, cfg.NangoSecretKey, cfg.MCPPublicURL, platLibs)
+	oauthCfg := handlers.OAuthConfig{
+		PublicBaseURL:           cfg.PublicBaseURL,
+		GoogleOAuthClientID:     cfg.GoogleOAuthClientID,
+		GoogleOAuthClientSecret: cfg.GoogleOAuthClientSecret,
+		GitHubOAuthClientID:     cfg.GitHubOAuthClientID,
+		GitHubOAuthClientSecret: cfg.GitHubOAuthClientSecret,
+	}
+	router := api.NewRouterWithJWT(store, sched, log, encKey, authProvider, pubKey, nangoClient, cfg.NangoInternalURL, cfg.NangoConnectURL, cfg.NangoApiURL, cfg.NangoWebhookSecret, cfg.NangoSecretKey, cfg.MCPPublicURL, platLibs, oauthCfg)
 
 	// --- HTTP server ---
 	srv := &http.Server{

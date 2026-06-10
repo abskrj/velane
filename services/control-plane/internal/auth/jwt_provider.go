@@ -89,6 +89,23 @@ func (p *JWTProvider) Authenticate(ctx context.Context, email, password string) 
 	}, nil
 }
 
+// IssueSession issues a new access + refresh token pair for an already-identified
+// user (e.g. after OAuth login), bypassing the password check. The returned
+// Session has Token set to the access token, matching Authenticate.
+func (p *JWTProvider) IssueSession(ctx context.Context, user *models.User) (*models.Session, error) {
+	pair, err := p.issueTokenPair(ctx, user)
+	if err != nil {
+		return nil, err
+	}
+	return &models.Session{
+		UserID:         user.ID,
+		Token:          pair.AccessToken,
+		RefreshToken:   pair.RefreshToken,
+		ExpiresAt:      pair.ExpiresAt,
+		RefreshExpires: time.Now().Add(7 * 24 * time.Hour),
+	}, nil
+}
+
 // RevokeRefreshToken revokes a raw refresh token value.
 func (p *JWTProvider) RevokeRefreshToken(ctx context.Context, rawRefreshToken string) error {
 	if strings.TrimSpace(rawRefreshToken) == "" {

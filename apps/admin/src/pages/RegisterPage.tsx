@@ -4,6 +4,7 @@ import { AlertCircle, Eye, EyeOff, Loader2 } from 'lucide-react'
 import { api } from '../lib/api'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import SocialLoginButtons from '../components/SocialLoginButtons'
+import AuthBrandHeader from '../components/AuthBrandHeader'
 
 export default function RegisterPage() {
   useDocumentTitle('Create account')
@@ -43,12 +44,7 @@ export default function RegisterPage() {
           aria-hidden="true"
           className="absolute -bottom-40 -right-40 h-96 w-96 rounded-full bg-white/5 blur-3xl"
         />
-        <div className="relative flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-lg font-bold text-gray-900">
-            V
-          </div>
-          <span className="text-xl font-semibold tracking-tight text-white">Velane</span>
-        </div>
+        <AuthBrandHeader className="relative" />
         <div className="relative">
           <h2 className="max-w-md text-3xl font-semibold leading-tight tracking-tight text-white">
             Ship integrations without leaving your editor.
@@ -66,12 +62,7 @@ export default function RegisterPage() {
       {/* Form panel */}
       <div className="flex w-full items-center justify-center px-6 py-12 lg:w-1/2">
         <div className="w-full max-w-sm">
-          <div className="mb-8 flex items-center gap-3 lg:hidden">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gray-900 text-lg font-bold text-white">
-              V
-            </div>
-            <span className="text-xl font-semibold tracking-tight text-gray-900">Velane</span>
-          </div>
+          <AuthBrandHeader variant="light" className="mb-8 lg:hidden" />
 
           <h1 className="text-2xl font-semibold tracking-tight text-gray-900">Create your account</h1>
           <p className="mt-1.5 mb-8 text-sm text-gray-500">

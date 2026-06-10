@@ -26,7 +26,7 @@ import type { OrgMembership } from '../types'
 
 const allNavItems = [
   { to: '/dashboard/overview', label: 'Overview', icon: LayoutDashboard, embedHidden: false },
-  { to: '/dashboard/snippets', label: 'Snippets', icon: Code, embedHidden: false },
+  { to: '/dashboard/snippets', label: 'Workflows', icon: Code, embedHidden: false },
   { to: '/dashboard/integrations', label: 'Integrations', icon: Plug, embedHidden: false },
   { to: '/dashboard/mcp', label: 'MCP', icon: Terminal, embedHidden: false },
   { to: '/dashboard/variables', label: 'Variables', icon: Lock, embedHidden: false },

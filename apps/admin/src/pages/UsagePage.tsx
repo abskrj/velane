@@ -55,12 +55,12 @@ export default function UsagePage() {
           {data.top_snippets.length > 0 && (
             <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
               <h2 className="border-b border-gray-200 px-4 py-3 text-base font-semibold text-gray-900">
-                Top Snippets
+                Top Workflows
               </h2>
               <table className="w-full text-sm">
                 <thead className="border-b border-gray-200 bg-gray-50 text-left">
                   <tr>
-                    <th className="px-4 py-3 font-medium text-gray-600">Snippet</th>
+                    <th className="px-4 py-3 font-medium text-gray-600">Workflow</th>
                     <th className="px-4 py-3 font-medium text-gray-600">Invocations</th>
                     <th className="px-4 py-3 font-medium text-gray-600">p95 Latency</th>
                   </tr>

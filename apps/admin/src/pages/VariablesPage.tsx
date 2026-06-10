@@ -134,7 +134,7 @@ export default function VariablesPage() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Variables & Credentials</h1>
         <p className="mt-1 text-sm text-gray-500">
-          Injected as environment variables into every snippet invocation.
+          Injected as environment variables into every workflow invocation.
           Credentials are write-only — values are never displayed after creation.
         </p>
       </div>

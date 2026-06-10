@@ -1,6 +1,7 @@
 import React from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
+import CursorAgentChat from './components/CursorAgentChat';
 
 const featuredIntegrations = [
   { name: "GitHub", logo: "/github.png" },
@@ -61,7 +62,7 @@ export default function Home() {
                 Don't write workflows.<br/>Let your agent do it.
               </h1>
               <p className="mt-6 text-lg leading-relaxed text-zinc-600">
-                Add Velane to Cursor or Claude via MCP. Your AI handles the rest—creating APIs, pulling integrations, debugging logs, and promoting to production.
+                Add Velane to Cursor or Claude via MCP. Your AI handles the rest; creating APIs, pulling integrations, debugging logs, and promoting to production.
               </p>
               
               <div className="mt-10 flex flex-wrap items-center gap-4">
@@ -82,40 +83,8 @@ export default function Home() {
               </div>
             </div>
 
-            {/* The Velane Circle - Humanized & Crafted */}
-            <div className="relative mx-auto w-full max-w-sm">
-              <div className="relative aspect-square w-full">
-                {/* Background glow */}
-                <div className="absolute inset-0 rounded-full bg-zinc-200/50 blur-3xl animate-pulse" />
-                
-                {/* Main structure */}
-                <div className="absolute inset-4 rounded-full border border-black/5 bg-white/50 shadow-xl backdrop-blur-xl transition-transform duration-700 hover:scale-105">
-                  
-                  {/* Center Node */}
-                  <div className="absolute left-1/2 top-1/2 flex h-24 w-24 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-zinc-900 text-white shadow-2xl">
-                    <span className="font-medium tracking-tight">Velane</span>
-                  </div>
-
-                  {/* Satellite Nodes */}
-                  <div className="absolute left-1/2 top-8 -translate-x-1/2 rounded-full border border-black/5 bg-white/90 px-4 py-2 text-xs font-medium text-zinc-600 shadow-sm backdrop-blur-md">
-                    iPaaS
-                  </div>
-                  <div className="absolute bottom-12 left-6 rounded-full border border-black/5 bg-white/90 px-4 py-2 text-xs font-medium text-zinc-600 shadow-sm backdrop-blur-md">
-                    Code Runtime
-                  </div>
-                  <div className="absolute bottom-12 right-6 rounded-full border border-black/5 bg-white/90 px-4 py-2 text-xs font-medium text-zinc-600 shadow-sm backdrop-blur-md">
-                    Agent First
-                  </div>
-                  
-                  {/* Decorative connecting lines (SVG) */}
-                  <svg className="absolute inset-0 h-full w-full -z-10 opacity-20" viewBox="0 0 100 100">
-                    <line x1="50" y1="50" x2="50" y2="20" stroke="black" strokeWidth="0.5" strokeDasharray="2 2" />
-                    <line x1="50" y1="50" x2="25" y2="75" stroke="black" strokeWidth="0.5" strokeDasharray="2 2" />
-                    <line x1="50" y1="50" x2="75" y2="75" stroke="black" strokeWidth="0.5" strokeDasharray="2 2" />
-                  </svg>
-                </div>
-              </div>
-            </div>
+            {/* Agent <> Velane — live Cursor agent session */}
+            <CursorAgentChat />
           </div>
         </section>
 

@@ -776,7 +776,7 @@ export default function IntegrationsPage() {
       </div>
 
       <p className="mb-6 text-sm text-gray-500">
-        Use <code className="rounded bg-gray-100 px-1 py-0.5 text-xs">{`integration('provider', { alias: "..." })`}</code> in snippets.
+        Use <code className="rounded bg-gray-100 px-1 py-0.5 text-xs">{`integration('provider', { alias: "..." })`}</code> in workflows.
       </p>
 
       {error && (

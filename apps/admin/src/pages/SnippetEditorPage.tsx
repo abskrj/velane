@@ -6,6 +6,7 @@ import LanguageBadge from '../components/LanguageBadge'
 import PublishDropdown from '../components/PublishDropdown'
 import { Toast, useToast } from '../components/Toast'
 import { api } from '../lib/api'
+import { setupMonacoVelaneTypes } from '../lib/monacoVelaneTypes'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import type { InvocationResult, LogLine, Snippet, SnippetEnvironment, SnippetVersion } from '../types'
 
@@ -58,7 +59,7 @@ export default function SnippetEditorPage() {
 
   useDocumentTitle(
     snippet ? snippet.name || snippet.slug : undefined,
-    snippet ? 'Snippets' : undefined,
+    snippet ? 'Workflows' : undefined,
   )
 
   useEffect(() => {
@@ -120,7 +121,7 @@ export default function SnippetEditorPage() {
         return
       }
       if (isDirty.current) {
-        showToast('Snippet updated by another editor — your edits take priority', 'error')
+        showToast('Workflow updated by another editor — your edits take priority', 'error')
         return
       }
       setCode(incoming.code)
@@ -288,7 +289,7 @@ export default function SnippetEditorPage() {
             className="text-sm text-gray-500 hover:text-gray-900"
             onClick={() => navigate('/dashboard/snippets')}
           >
-            &larr; Snippets
+            &larr; Workflows
           </button>
           <span className="font-medium text-gray-900">{snippet?.name}</span>
           {snippet && <LanguageBadge language={snippet.language} />}
@@ -334,7 +335,7 @@ export default function SnippetEditorPage() {
                       onClick={() => { setShowMenu(false); handleDelete() }}
                     >
                       <Trash2 className="h-3.5 w-3.5" />
-                      Delete snippet
+                      Delete workflow
                     </button>
                   </div>
                 </>
@@ -351,6 +352,7 @@ export default function SnippetEditorPage() {
             language={monacoLanguage}
             value={displayCode}
             onChange={isReadOnly ? undefined : handleCodeChange}
+            beforeMount={setupMonacoVelaneTypes}
             options={{
               readOnly: isReadOnly,
               minimap: { enabled: false },
@@ -432,7 +434,7 @@ export default function SnippetEditorPage() {
                 >
                   {invokeResult.stderr?.includes("Missing 'default' export") ? (
                     <p className="text-xs text-red-300">
-                      Your snippet must export a default function. Add this to your code:
+                      Your workflow must export a default function. Add this to your code:
                       <br /><br />
                       <code className="rounded bg-red-900 px-1">export default async function handler(input) {'{ ... }'}</code>
                     </p>
@@ -470,7 +472,7 @@ export default function SnippetEditorPage() {
             <div className="flex-1 overflow-auto p-3">
               {runLogs.length === 0 ? (
                 <div className="flex h-full items-center justify-center text-sm text-gray-500">
-                  Run the snippet in <code className="mx-1 rounded bg-gray-100 px-1">dev</code> to see live logs.
+                  Run the workflow in <code className="mx-1 rounded bg-gray-100 px-1">dev</code> to see live logs.
                 </div>
               ) : (
                 <pre className="font-mono text-xs leading-relaxed">
@@ -494,7 +496,7 @@ export default function SnippetEditorPage() {
             <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4">
               <div>
                 <h2 className="text-base font-semibold text-gray-900">Connect</h2>
-                <p className="mt-0.5 text-xs text-gray-500">Call this snippet from your agent or IDE</p>
+                <p className="mt-0.5 text-xs text-gray-500">Call this workflow from your agent or IDE</p>
               </div>
               <button
                 className="rounded-md p-1.5 text-gray-400 hover:bg-gray-100"

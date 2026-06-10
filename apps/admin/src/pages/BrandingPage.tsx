@@ -4,7 +4,7 @@ import type { Branding } from '../types'
 
 const DEFAULT_BRANDING: Branding = {
   logo_url: '',
-  accent_color: '#6366f1',
+  accent_color: '#000',
   font_family: 'Inter, sans-serif',
   custom_domain: '',
   hide_branding: false,
@@ -81,7 +81,7 @@ export default function BrandingPage() {
               <div className="flex items-center gap-3">
                 <input
                   type="color"
-                  value={branding.accent_color ?? '#6366f1'}
+                  value={branding.accent_color ?? '#000'}
                   onChange={(e) => setBranding((b) => ({ ...b, accent_color: e.target.value }))}
                   className="h-9 w-16 cursor-pointer rounded border border-gray-300"
                 />
@@ -90,7 +90,7 @@ export default function BrandingPage() {
                   value={branding.accent_color ?? ''}
                   onChange={(e) => setBranding((b) => ({ ...b, accent_color: e.target.value }))}
                   className="w-32 rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-gray-400 focus:outline-none"
-                  placeholder="#6366f1"
+                  placeholder="#000"
                 />
               </div>
             </div>
@@ -107,16 +107,21 @@ export default function BrandingPage() {
             </div>
 
             <div className="mb-4">
-              <label className="mb-1 block text-sm font-medium text-gray-700">Custom Domain</label>
+              <div className="mb-1 flex items-center gap-2">
+                <label className="text-sm font-medium text-gray-700">Custom Domain</label>
+                <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-500">
+                  Coming soon
+                </span>
+              </div>
               <input
                 type="text"
+                disabled
                 value={branding.custom_domain ?? ''}
-                onChange={(e) => setBranding((b) => ({ ...b, custom_domain: e.target.value }))}
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-gray-400 focus:outline-none"
-                placeholder="snippets.yourcompany.com"
+                className="w-full rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-400"
+                placeholder="workflows.yourcompany.com"
               />
               <p className="mt-1 text-xs text-gray-400">
-                Add a CNAME record pointing to embed.velane.io to use a custom domain.
+                Custom domains for the embed dashboard aren&apos;t available yet.
               </p>
             </div>
 
@@ -163,7 +168,7 @@ export default function BrandingPage() {
           )}
           <div
             className="mb-2 h-6 w-full rounded"
-            style={{ backgroundColor: branding.accent_color || '#6366f1' }}
+            style={{ backgroundColor: branding.accent_color || '#000' }}
           />
           <p className="text-xs text-gray-600">Sample embed content</p>
           {!branding.hide_branding && (

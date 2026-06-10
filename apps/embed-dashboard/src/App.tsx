@@ -47,7 +47,7 @@ export default function App() {
   const [error, setError] = useState('')
 
   const style = useMemo(() => {
-    const accent = bootstrap?.tenant?.branding?.accent_color || '#6366f1'
+    const accent = bootstrap?.tenant?.branding?.accent_color || '#000'
     const font = bootstrap?.tenant?.branding?.font_family || 'Inter, system-ui, sans-serif'
     return { ['--accent' as string]: accent, fontFamily: font }
   }, [bootstrap])
@@ -87,7 +87,7 @@ export default function App() {
         <aside className="panel">
           <h2 style={{ marginTop: 0 }}>{bootstrap?.tenant?.name ?? 'Embed Dashboard'}</h2>
           <input
-            placeholder="Search snippets"
+            placeholder="Search workflows"
             onChange={(e) => {
               const q = e.target.value.toLowerCase()
               if (!q) {
@@ -110,7 +110,7 @@ export default function App() {
         </aside>
         <main className="content">
           {error ? <div className="card" style={{ color: '#b91c1c' }}>{error}</div> : null}
-          {!selected || !detail ? <div className="card">Select a snippet</div> : (
+          {!selected || !detail ? <div className="card">Select a workflow</div> : (
             <>
               <h2 style={{ marginTop: 0 }}>{detail.snippet?.name}</h2>
               <div className="grid-2">

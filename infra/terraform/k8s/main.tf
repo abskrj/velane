@@ -27,6 +27,7 @@ locals {
   effective_nango_connect_url = var.nango_connect_url != "" ? var.nango_connect_url : "${local.public_scheme}://${var.nango_connect_subdomain}.${var.base_domain}"
   effective_nango_api_url     = var.nango_api_url != "" ? var.nango_api_url : "${local.public_scheme}://${var.nango_api_subdomain}.${var.base_domain}"
   effective_mcp_public_url    = var.mcp_public_url != "" ? var.mcp_public_url : (var.enable_ingress ? "${local.public_scheme}://${var.mcp_subdomain}.${var.base_domain}/mcp" : "")
+  effective_public_base_url   = var.public_base_url != "" ? var.public_base_url : (var.enable_ingress ? "${local.public_scheme}://${var.admin_subdomain}.${var.base_domain}" : "")
 
   # Derive a separate Nango database URL from the main Postgres DSN when the user
   # doesn't provide one. Terraform's replace() is plain string replacement, so we
@@ -78,6 +79,10 @@ resource "kubernetes_secret_v1" "control_plane" {
     NANGO_SECRET_KEY     = var.nango_secret_key
     NANGO_PUBLIC_KEY     = var.nango_public_key
     NANGO_WEBHOOK_SECRET = var.nango_webhook_secret
+    GOOGLE_OAUTH_CLIENT_ID     = var.google_oauth_client_id
+    GOOGLE_OAUTH_CLIENT_SECRET = var.google_oauth_client_secret
+    GITHUB_OAUTH_CLIENT_ID     = var.github_oauth_client_id
+    GITHUB_OAUTH_CLIENT_SECRET = var.github_oauth_client_secret
   }
 }
 
@@ -401,6 +406,46 @@ resource "kubernetes_deployment_v1" "control_plane" {
           env {
             name  = "MCP_PUBLIC_URL"
             value = local.effective_mcp_public_url
+          }
+          env {
+            name  = "PUBLIC_BASE_URL"
+            value = local.effective_public_base_url
+          }
+          env {
+            name = "GOOGLE_OAUTH_CLIENT_ID"
+            value_from {
+              secret_key_ref {
+                name = kubernetes_secret_v1.control_plane.metadata[0].name
+                key  = "GOOGLE_OAUTH_CLIENT_ID"
+              }
+            }
+          }
+          env {
+            name = "GOOGLE_OAUTH_CLIENT_SECRET"
+            value_from {
+              secret_key_ref {
+                name = kubernetes_secret_v1.control_plane.metadata[0].name
+                key  = "GOOGLE_OAUTH_CLIENT_SECRET"
+              }
+            }
+          }
+          env {
+            name = "GITHUB_OAUTH_CLIENT_ID"
+            value_from {
+              secret_key_ref {
+                name = kubernetes_secret_v1.control_plane.metadata[0].name
+                key  = "GITHUB_OAUTH_CLIENT_ID"
+              }
+            }
+          }
+          env {
+            name = "GITHUB_OAUTH_CLIENT_SECRET"
+            value_from {
+              secret_key_ref {
+                name = kubernetes_secret_v1.control_plane.metadata[0].name
+                key  = "GITHUB_OAUTH_CLIENT_SECRET"
+              }
+            }
           }
         }
       }

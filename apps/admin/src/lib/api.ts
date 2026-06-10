@@ -116,6 +116,21 @@ export const api = {
     return request('POST', '/v1/admin/auth/logout', undefined, 'session')
   },
 
+  // Returns the social login providers the server has configured (e.g. ['google', 'github']).
+  async listOAuthProviders(): Promise<string[]> {
+    try {
+      const res = await request<{ providers: string[] }>('GET', '/v1/admin/auth/oauth/providers', undefined, 'none')
+      return res.providers ?? []
+    } catch {
+      return []
+    }
+  },
+
+  // Full-page redirect into the provider's OAuth flow.
+  oauthStartUrl(provider: string): string {
+    return `${BASE}/v1/admin/auth/oauth/${provider}/start`
+  },
+
   async refreshSession(): Promise<boolean> {
     return refreshSession()
   },

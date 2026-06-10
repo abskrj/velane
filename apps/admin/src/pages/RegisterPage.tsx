@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { api } from '../lib/api'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
+import SocialLoginButtons from '../components/SocialLoginButtons'
 
 export default function RegisterPage() {
   useDocumentTitle('Create account')
@@ -39,6 +40,8 @@ export default function RegisterPage() {
         {error && (
           <div className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">{error}</div>
         )}
+
+        <SocialLoginButtons />
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>

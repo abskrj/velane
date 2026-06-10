@@ -120,6 +120,22 @@ nango_connect_url = ""
 nango_api_url     = ""
 
 # =============================================================================
+# SOCIAL LOGIN  (Google / GitHub — optional)
+# =============================================================================
+
+# Browser-facing admin origin for OAuth redirects. Auto-derived from
+# admin_subdomain + base_domain when enable_ingress = true.
+# public_base_url = "https://admin.yourdomain.com"
+
+# Register these redirect URIs in your OAuth apps:
+#   Google: https://admin.yourdomain.com/api/v1/admin/auth/oauth/google/callback
+#   GitHub: https://admin.yourdomain.com/api/v1/admin/auth/oauth/github/callback
+# google_oauth_client_id     = "REPLACE_WITH_GOOGLE_CLIENT_ID"
+# google_oauth_client_secret = "REPLACE_WITH_GOOGLE_CLIENT_SECRET"
+# github_oauth_client_id     = "REPLACE_WITH_GITHUB_CLIENT_ID"
+# github_oauth_client_secret = "REPLACE_WITH_GITHUB_CLIENT_SECRET"
+
+# =============================================================================
 # OBSERVABILITY  (optional)
 # =============================================================================
 

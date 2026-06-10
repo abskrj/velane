@@ -109,6 +109,14 @@ Edit `terraform.tfvars` — required values:
 | `acm_certificate_arn` | From Step 1: `terraform -chdir=../aws-eks output -raw acm_certificate_arn` |
 | `nango_secret_key` | `python -c "import uuid; print(uuid.uuid4())"` |
 | `nango_public_key` | Same command, different value |
+| `google_oauth_client_id` / `google_oauth_client_secret` | [Google Cloud Console](https://console.cloud.google.com/) → APIs & Services → Credentials (optional) |
+| `github_oauth_client_id` / `github_oauth_client_secret` | GitHub → Settings → Developer settings → OAuth Apps (optional) |
+
+After apply, get OAuth redirect URIs to register with each provider:
+
+```bash
+terraform output oauth_redirect_uris
+```
 
 Then apply:
 

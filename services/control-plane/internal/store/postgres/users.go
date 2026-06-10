@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"time"
 
@@ -17,6 +18,45 @@ func (s *Store) CreateUser(ctx context.Context, email, passwordHash string) (*mo
 		email, passwordHash,
 	)
 	return scanUser(row)
+}
+
+// CreateUserNoPassword inserts a user without a password (OAuth-only account).
+func (s *Store) CreateUserNoPassword(ctx context.Context, email string) (*models.User, error) {
+	row := s.pool.QueryRow(ctx,
+		`INSERT INTO users (email)
+		 VALUES ($1)
+		 RETURNING id, email, password_hash, created_at, updated_at`,
+		email,
+	)
+	return scanUser(row)
+}
+
+// GetUserByOAuthIdentity returns the user linked to the given provider+subject pair.
+func (s *Store) GetUserByOAuthIdentity(ctx context.Context, provider, subject string) (*models.User, error) {
+	row := s.pool.QueryRow(ctx,
+		`SELECT u.id, u.email, u.password_hash, u.created_at, u.updated_at
+		 FROM users u
+		 JOIN oauth_identities oi ON oi.user_id = u.id
+		 WHERE oi.provider = $1 AND oi.subject = $2`,
+		provider, subject,
+	)
+	u, err := scanUser(row)
+	if err != nil {
+		return nil, fmt.Errorf("GetUserByOAuthIdentity: %w", err)
+	}
+	return u, nil
+}
+
+// CreateOAuthIdentity links an external identity to a user. It is idempotent on
+// the (provider, subject) pair.
+func (s *Store) CreateOAuthIdentity(ctx context.Context, userID, provider, subject, email string) error {
+	_, err := s.pool.Exec(ctx,
+		`INSERT INTO oauth_identities (user_id, provider, subject, email)
+		 VALUES ($1, $2, $3, $4)
+		 ON CONFLICT (provider, subject) DO NOTHING`,
+		userID, provider, subject, email,
+	)
+	return err
 }
 
 // GetUserByEmail retrieves a user by email address. Returns an error if not found.
@@ -130,9 +170,11 @@ func scanRefreshToken(s scannable) (*models.RefreshToken, error) {
 
 func scanUser(s scannable) (*models.User, error) {
 	var u models.User
-	if err := s.Scan(&u.ID, &u.Email, &u.PasswordHash, &u.CreatedAt, &u.UpdatedAt); err != nil {
+	var passwordHash sql.NullString
+	if err := s.Scan(&u.ID, &u.Email, &passwordHash, &u.CreatedAt, &u.UpdatedAt); err != nil {
 		return nil, err
 	}
+	u.PasswordHash = passwordHash.String
 	return &u, nil
 }
 

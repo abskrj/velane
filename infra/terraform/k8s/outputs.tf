@@ -63,3 +63,16 @@ output "effective_nango_database_url" {
   value       = local.effective_nango_database_url
   sensitive   = true
 }
+
+output "effective_public_base_url" {
+  description = "Browser-facing admin portal origin used for OAuth redirect URIs."
+  value       = local.effective_public_base_url
+}
+
+output "oauth_redirect_uris" {
+  description = "OAuth callback URLs to register in Google Cloud Console / GitHub OAuth App settings."
+  value = local.effective_public_base_url != "" ? {
+    google = "${local.effective_public_base_url}/api/v1/admin/auth/oauth/google/callback"
+    github = "${local.effective_public_base_url}/api/v1/admin/auth/oauth/github/callback"
+  } : {}
+}

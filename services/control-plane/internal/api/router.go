@@ -8,6 +8,7 @@ import (
 	"github.com/abskrj/velane/services/control-plane/internal/api/middleware"
 	"github.com/abskrj/velane/services/control-plane/internal/audit"
 	"github.com/abskrj/velane/services/control-plane/internal/auth"
+	"github.com/abskrj/velane/services/control-plane/internal/auth/oauth"
 	"github.com/abskrj/velane/services/control-plane/internal/hub"
 	"github.com/abskrj/velane/services/control-plane/internal/nango"
 	"github.com/abskrj/velane/services/control-plane/internal/platformlibs"
@@ -20,15 +21,15 @@ import (
 
 // NewRouter builds and returns the fully configured chi router.
 func NewRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logger, encKey []byte, authProvider auth.Provider, nangoClient *nango.Client, nangoInternalURL, nangoConnectURL, nangoApiURL, nangoWebhookSecret, nangoSecretKey, mcpPublicURL string, platLibs []platformlibs.PlatformLib) http.Handler {
-	return newRouter(store, sched, log, encKey, authProvider, nil, nangoClient, nangoInternalURL, nangoConnectURL, nangoApiURL, nangoWebhookSecret, nangoSecretKey, mcpPublicURL, platLibs)
+	return newRouter(store, sched, log, encKey, authProvider, nil, nangoClient, nangoInternalURL, nangoConnectURL, nangoApiURL, nangoWebhookSecret, nangoSecretKey, mcpPublicURL, platLibs, handlers.OAuthConfig{})
 }
 
 // NewRouterWithJWT builds the router and wires the RSA public key for the JWKS endpoint.
-func NewRouterWithJWT(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logger, encKey []byte, authProvider auth.Provider, pubKey *rsa.PublicKey, nangoClient *nango.Client, nangoInternalURL, nangoConnectURL, nangoApiURL, nangoWebhookSecret, nangoSecretKey, mcpPublicURL string, platLibs []platformlibs.PlatformLib) http.Handler {
-	return newRouter(store, sched, log, encKey, authProvider, pubKey, nangoClient, nangoInternalURL, nangoConnectURL, nangoApiURL, nangoWebhookSecret, nangoSecretKey, mcpPublicURL, platLibs)
+func NewRouterWithJWT(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logger, encKey []byte, authProvider auth.Provider, pubKey *rsa.PublicKey, nangoClient *nango.Client, nangoInternalURL, nangoConnectURL, nangoApiURL, nangoWebhookSecret, nangoSecretKey, mcpPublicURL string, platLibs []platformlibs.PlatformLib, oauthCfg handlers.OAuthConfig) http.Handler {
+	return newRouter(store, sched, log, encKey, authProvider, pubKey, nangoClient, nangoInternalURL, nangoConnectURL, nangoApiURL, nangoWebhookSecret, nangoSecretKey, mcpPublicURL, platLibs, oauthCfg)
 }
 
-func newRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logger, encKey []byte, authProvider auth.Provider, pubKey *rsa.PublicKey, nangoClient *nango.Client, nangoInternalURL, nangoConnectURL, nangoApiURL, nangoWebhookSecret, nangoSecretKey, mcpPublicURL string, platLibs []platformlibs.PlatformLib) http.Handler {
+func newRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logger, encKey []byte, authProvider auth.Provider, pubKey *rsa.PublicKey, nangoClient *nango.Client, nangoInternalURL, nangoConnectURL, nangoApiURL, nangoWebhookSecret, nangoSecretKey, mcpPublicURL string, platLibs []platformlibs.PlatformLib, oauthCfg handlers.OAuthConfig) http.Handler {
 	r := chi.NewRouter()
 
 	// Global middleware.
@@ -84,6 +85,24 @@ func newRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logge
 	r.Post("/v1/admin/auth/login", adminAuthH.Login)
 	r.Post("/v1/admin/auth/logout", adminAuthH.Logout)
 	r.Post("/v1/admin/auth/refresh", adminAuthH.RefreshToken)
+
+	// Social login (Google / GitHub) — public, session-based. Only wired when at
+	// least one provider is configured and JWT auth is in use.
+	if jwtProvider, ok := authProvider.(*auth.JWTProvider); ok && oauthCfg.Enabled() {
+		oauthMgr := oauth.NewManager(oauthCfg.PublicBaseURL)
+		if oauthCfg.GoogleOAuthClientID != "" && oauthCfg.GoogleOAuthClientSecret != "" {
+			oauthMgr.AddGoogle(oauthCfg.GoogleOAuthClientID, oauthCfg.GoogleOAuthClientSecret)
+		}
+		if oauthCfg.GitHubOAuthClientID != "" && oauthCfg.GitHubOAuthClientSecret != "" {
+			oauthMgr.AddGitHub(oauthCfg.GitHubOAuthClientID, oauthCfg.GitHubOAuthClientSecret)
+		}
+		oauthH := handlers.NewOAuthHandler(oauthMgr, jwtProvider, store, log, oauthCfg.PublicBaseURL)
+		r.Get("/v1/admin/auth/oauth/providers", oauthH.ListProviders)
+		r.Get("/v1/admin/auth/oauth/{provider}/start", oauthH.Start)
+		r.Get("/v1/admin/auth/oauth/{provider}/callback", oauthH.Callback)
+		log.Info("social login enabled", zap.Strings("providers", oauthMgr.Names()))
+	}
+
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.SessionAuth(authProvider, store, log))
 		r.Get("/v1/admin/auth/me", adminAuthH.Me)

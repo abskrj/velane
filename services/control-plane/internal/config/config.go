@@ -30,6 +30,13 @@ type Config struct {
 	JWTPrivateKeyPEM string // RS256 private key PEM (env: JWT_PRIVATE_KEY); if empty, generate ephemeral key with warning
 	JWTPublicKeyPEM  string // derived from private key, not loaded from env
 
+	// Social login (Phase 9) — OAuth user sign-in for the admin portal.
+	PublicBaseURL           string // PUBLIC_BASE_URL: browser-facing admin portal origin (default http://localhost:8092). API is reached at PublicBaseURL + "/api".
+	GoogleOAuthClientID     string // GOOGLE_OAUTH_CLIENT_ID
+	GoogleOAuthClientSecret string // GOOGLE_OAUTH_CLIENT_SECRET
+	GitHubOAuthClientID     string // GITHUB_OAUTH_CLIENT_ID
+	GitHubOAuthClientSecret string // GITHUB_OAUTH_CLIENT_SECRET
+
 	// Bootstrap (first-run admin seeding)
 	BootstrapEmail    string // BOOTSTRAP_EMAIL: email for the initial admin user
 	BootstrapPassword string // BOOTSTRAP_PASSWORD: password for the initial admin user
@@ -76,6 +83,11 @@ func Load() Config {
 		ClickHouseDSN:           os.Getenv("CLICKHOUSE_DSN"),
 		LogsBucket:              os.Getenv("LOGS_BUCKET"),
 		ReplayBucket:            os.Getenv("REPLAY_BUCKET"),
+		PublicBaseURL:           getEnv("PUBLIC_BASE_URL", "http://localhost:8092"),
+		GoogleOAuthClientID:     os.Getenv("GOOGLE_OAUTH_CLIENT_ID"),
+		GoogleOAuthClientSecret: os.Getenv("GOOGLE_OAUTH_CLIENT_SECRET"),
+		GitHubOAuthClientID:     os.Getenv("GITHUB_OAUTH_CLIENT_ID"),
+		GitHubOAuthClientSecret: os.Getenv("GITHUB_OAUTH_CLIENT_SECRET"),
 		BootstrapEmail:          os.Getenv("BOOTSTRAP_EMAIL"),
 		BootstrapPassword:       os.Getenv("BOOTSTRAP_PASSWORD"),
 		BootstrapTenant:         getEnv("BOOTSTRAP_TENANT", "default"),

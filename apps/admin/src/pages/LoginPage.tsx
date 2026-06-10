@@ -1,14 +1,26 @@
 import { useState, type FormEvent } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { api } from '../lib/api'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
+import SocialLoginButtons from '../components/SocialLoginButtons'
+
+const OAUTH_ERROR_MESSAGES: Record<string, string> = {
+  access_denied: 'Sign-in was cancelled.',
+  invalid_state: 'Sign-in session expired. Please try again.',
+  missing_code: 'Sign-in failed. Please try again.',
+  exchange_failed: 'Could not complete sign-in with the provider.',
+  account_error: 'Could not sign you in. The provider may not have shared a verified email.',
+  session_error: 'Could not start your session. Please try again.',
+}
 
 export default function LoginPage() {
   useDocumentTitle('Sign in')
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const oauthError = searchParams.get('auth_error')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [error, setError] = useState('')
+  const [error, setError] = useState(oauthError ? OAUTH_ERROR_MESSAGES[oauthError] ?? 'Sign-in failed.' : '')
   const [loading, setLoading] = useState(false)
 
   const handleSubmit = async (e: FormEvent) => {
@@ -37,6 +49,8 @@ export default function LoginPage() {
         {error && (
           <div className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">{error}</div>
         )}
+
+        <SocialLoginButtons />
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>

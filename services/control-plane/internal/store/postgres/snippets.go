@@ -4,23 +4,27 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/abskrj/velane/services/control-plane/internal/ids"
 	"github.com/abskrj/velane/services/control-plane/internal/models"
 )
 
 // CreateSnippet inserts a new snippet and ensures dev/prod environment rows
-// exist for it (with no active version yet).
-func (s *Store) CreateSnippet(ctx context.Context, tenantID, name, slug, language, createdBy string) (*models.Snippet, error) {
+// exist for it (with no active version yet). The workflow ID and slug are both
+// assigned as a new UUID v7; callers cannot set slug.
+func (s *Store) CreateSnippet(ctx context.Context, tenantID, name, language, createdBy string) (*models.Snippet, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("begin tx: %w", err)
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
 
+	id := ids.New()
+
 	row := tx.QueryRow(ctx,
-		`INSERT INTO snippets (tenant_id, name, slug, language, created_by)
-		 VALUES ($1, $2, $3, $4, $5)
+		`INSERT INTO snippets (id, tenant_id, name, slug, language, created_by)
+		 VALUES ($1, $2, $3, $1, $4, $5)
 		 RETURNING id, tenant_id, name, slug, language, created_at, created_by`,
-		tenantID, name, slug, language, createdBy,
+		id, tenantID, name, language, createdBy,
 	)
 
 	var sn models.Snippet

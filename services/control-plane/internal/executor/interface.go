@@ -16,6 +16,7 @@ type RunSpec struct {
 	Input         string            // raw JSON input payload
 	TimeoutMs     int               // execution deadline in milliseconds
 	MaxMemoryMB   int               // soft memory ceiling in MiB
+	MaxCPUPercent int               // CPU limit as percent of one core (1-100)
 	SecretEnvVars map[string]string // injected as env vars into the snippet process
 	Libraries     map[string]string // importPath → source; written to temp workspace before execution
 	EgressPolicy  *EgressPolicy     // nil = no policy enforcement

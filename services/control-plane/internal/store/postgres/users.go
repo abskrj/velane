@@ -6,16 +6,17 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/abskrj/velane/services/control-plane/internal/ids"
 	"github.com/abskrj/velane/services/control-plane/internal/models"
 )
 
 // CreateUser inserts a new user row and returns the created record.
 func (s *Store) CreateUser(ctx context.Context, email, passwordHash string) (*models.User, error) {
 	row := s.pool.QueryRow(ctx,
-		`INSERT INTO users (email, password_hash)
-		 VALUES ($1, $2)
+		`INSERT INTO users (id, email, password_hash)
+		 VALUES ($1, $2, $3)
 		 RETURNING id, email, password_hash, created_at, updated_at`,
-		email, passwordHash,
+		ids.New(), email, passwordHash,
 	)
 	return scanUser(row)
 }
@@ -23,10 +24,10 @@ func (s *Store) CreateUser(ctx context.Context, email, passwordHash string) (*mo
 // CreateUserNoPassword inserts a user without a password (OAuth-only account).
 func (s *Store) CreateUserNoPassword(ctx context.Context, email string) (*models.User, error) {
 	row := s.pool.QueryRow(ctx,
-		`INSERT INTO users (email)
-		 VALUES ($1)
+		`INSERT INTO users (id, email)
+		 VALUES ($1, $2)
 		 RETURNING id, email, password_hash, created_at, updated_at`,
-		email,
+		ids.New(), email,
 	)
 	return scanUser(row)
 }
@@ -51,10 +52,10 @@ func (s *Store) GetUserByOAuthIdentity(ctx context.Context, provider, subject st
 // the (provider, subject) pair.
 func (s *Store) CreateOAuthIdentity(ctx context.Context, userID, provider, subject, email string) error {
 	_, err := s.pool.Exec(ctx,
-		`INSERT INTO oauth_identities (user_id, provider, subject, email)
-		 VALUES ($1, $2, $3, $4)
+		`INSERT INTO oauth_identities (id, user_id, provider, subject, email)
+		 VALUES ($1, $2, $3, $4, $5)
 		 ON CONFLICT (provider, subject) DO NOTHING`,
-		userID, provider, subject, email,
+		ids.New(), userID, provider, subject, email,
 	)
 	return err
 }
@@ -88,10 +89,10 @@ func (s *Store) GetUserByID(ctx context.Context, id string) (*models.User, error
 // CreateSession inserts a new session row and returns the session record.
 func (s *Store) CreateSession(ctx context.Context, userID, tokenHash string, expiresAt time.Time) (*models.Session, error) {
 	row := s.pool.QueryRow(ctx,
-		`INSERT INTO user_sessions (user_id, token_hash, expires_at)
-		 VALUES ($1, $2, $3)
+		`INSERT INTO user_sessions (id, user_id, token_hash, expires_at)
+		 VALUES ($1, $2, $3, $4)
 		 RETURNING id, user_id, token_hash, expires_at, created_at`,
-		userID, tokenHash, expiresAt,
+		ids.New(), userID, tokenHash, expiresAt,
 	)
 	return scanSession(row)
 }
@@ -121,10 +122,10 @@ func (s *Store) DeleteSession(ctx context.Context, tokenHash string) error {
 // CreateRefreshToken inserts a new refresh token record and returns it.
 func (s *Store) CreateRefreshToken(ctx context.Context, userID, tokenHash string, expiresAt time.Time) (*models.RefreshToken, error) {
 	row := s.pool.QueryRow(ctx,
-		`INSERT INTO refresh_tokens (user_id, token_hash, expires_at)
-		 VALUES ($1, $2, $3)
+		`INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at)
+		 VALUES ($1, $2, $3, $4)
 		 RETURNING id, user_id, token_hash, expires_at, revoked_at, created_at`,
-		userID, tokenHash, expiresAt,
+		ids.New(), userID, tokenHash, expiresAt,
 	)
 	return scanRefreshToken(row)
 }

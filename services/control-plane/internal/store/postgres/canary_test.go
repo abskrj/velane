@@ -14,7 +14,7 @@ func TestSetCanary(t *testing.T) {
 		t.Fatalf("create tenant: %v", err)
 	}
 
-	snippet, err := store.CreateSnippet(ctx, tenant.ID, "Canary Snippet", uniqueSlug(t, "canary-snip"), "bun", "")
+	snippet, err := store.CreateSnippet(ctx, tenant.ID, "Canary Snippet", "bun", "")
 	if err != nil {
 		t.Fatalf("create snippet: %v", err)
 	}
@@ -74,7 +74,7 @@ func TestClearCanary(t *testing.T) {
 		t.Fatalf("create tenant: %v", err)
 	}
 
-	snippet, err := store.CreateSnippet(ctx, tenant.ID, "Clear Canary Snippet", uniqueSlug(t, "clear-canary-snip"), "bun", "")
+	snippet, err := store.CreateSnippet(ctx, tenant.ID, "Clear Canary Snippet", "bun", "")
 	if err != nil {
 		t.Fatalf("create snippet: %v", err)
 	}

@@ -14,8 +14,7 @@ func TestCreateSnippet(t *testing.T) {
 		t.Fatalf("CreateTenant: %v", err)
 	}
 
-	slug := uniqueSlug(t, "my-snippet")
-	sn, err := store.CreateSnippet(ctx, tenant.ID, "My Snippet", slug, "bun", "user-1")
+	sn, err := store.CreateSnippet(ctx, tenant.ID, "My Snippet", "bun", "user-1")
 	if err != nil {
 		t.Fatalf("CreateSnippet: %v", err)
 	}
@@ -26,8 +25,8 @@ func TestCreateSnippet(t *testing.T) {
 	if sn.TenantID != tenant.ID {
 		t.Errorf("tenant_id = %q; want %q", sn.TenantID, tenant.ID)
 	}
-	if sn.Slug != slug {
-		t.Errorf("slug = %q; want %q", sn.Slug, slug)
+	if sn.Slug != sn.ID {
+		t.Errorf("slug = %q; want %q (slug must equal id)", sn.Slug, sn.ID)
 	}
 	if string(sn.Language) != "bun" {
 		t.Errorf("language = %q; want %q", sn.Language, "bun")
@@ -42,7 +41,7 @@ func TestGetSnippetByID(t *testing.T) {
 	ctx := context.Background()
 
 	tenant, _ := store.CreateTenant(ctx, "GetByID Org", uniqueSlug(t, "getbyid-org"))
-	created, err := store.CreateSnippet(ctx, tenant.ID, "By ID", uniqueSlug(t, "byid"), "python", "user-1")
+	created, err := store.CreateSnippet(ctx, tenant.ID, "By ID", "python", "user-1")
 	if err != nil {
 		t.Fatalf("CreateSnippet: %v", err)
 	}
@@ -61,13 +60,12 @@ func TestGetSnippetBySlug(t *testing.T) {
 	ctx := context.Background()
 
 	tenant, _ := store.CreateTenant(ctx, "BySlug Org", uniqueSlug(t, "byslug-org"))
-	slug := uniqueSlug(t, "by-slug")
-	created, err := store.CreateSnippet(ctx, tenant.ID, "By Slug", slug, "bun", "user-1")
+	created, err := store.CreateSnippet(ctx, tenant.ID, "By Slug", "bun", "user-1")
 	if err != nil {
 		t.Fatalf("CreateSnippet: %v", err)
 	}
 
-	fetched, err := store.GetSnippetBySlug(ctx, tenant.ID, slug)
+	fetched, err := store.GetSnippetBySlug(ctx, tenant.ID, created.ID)
 	if err != nil {
 		t.Fatalf("GetSnippetBySlug: %v", err)
 	}
@@ -83,8 +81,7 @@ func TestListSnippets(t *testing.T) {
 	tenant, _ := store.CreateTenant(ctx, "List Org", uniqueSlug(t, "list-org"))
 
 	for i := 0; i < 3; i++ {
-		_, err := store.CreateSnippet(ctx, tenant.ID,
-			"Snippet", uniqueSlug(t, "list-snippet"), "bun", "user-1")
+		_, err := store.CreateSnippet(ctx, tenant.ID, "Snippet", "bun", "user-1")
 		if err != nil {
 			t.Fatalf("CreateSnippet %d: %v", i, err)
 		}
@@ -104,7 +101,7 @@ func TestDeleteSnippet(t *testing.T) {
 	ctx := context.Background()
 
 	tenant, _ := store.CreateTenant(ctx, "Delete Org", uniqueSlug(t, "delete-org"))
-	sn, err := store.CreateSnippet(ctx, tenant.ID, "To Delete", uniqueSlug(t, "to-delete"), "bun", "user-1")
+	sn, err := store.CreateSnippet(ctx, tenant.ID, "To Delete", "bun", "user-1")
 	if err != nil {
 		t.Fatalf("CreateSnippet: %v", err)
 	}
@@ -124,7 +121,7 @@ func TestGetSnippetEnvironment_SeedOnCreate(t *testing.T) {
 	ctx := context.Background()
 
 	tenant, _ := store.CreateTenant(ctx, "Env Org", uniqueSlug(t, "env-org"))
-	sn, err := store.CreateSnippet(ctx, tenant.ID, "Env Snippet", uniqueSlug(t, "env-sn"), "python", "user-1")
+	sn, err := store.CreateSnippet(ctx, tenant.ID, "Env Snippet", "python", "user-1")
 	if err != nil {
 		t.Fatalf("CreateSnippet: %v", err)
 	}
@@ -140,20 +137,24 @@ func TestGetSnippetEnvironment_SeedOnCreate(t *testing.T) {
 	}
 }
 
-func TestCreateSnippet_DuplicateSlugInSameTenantFails(t *testing.T) {
+func TestCreateSnippet_SlugEqualsID(t *testing.T) {
 	store := testStore(t)
 	ctx := context.Background()
 
-	tenant, _ := store.CreateTenant(ctx, "Dup Slug Org", uniqueSlug(t, "dupslug-org"))
-	slug := uniqueSlug(t, "dup-slug")
+	tenant, _ := store.CreateTenant(ctx, "Slug ID Org", uniqueSlug(t, "slugid-org"))
 
-	_, err := store.CreateSnippet(ctx, tenant.ID, "First", slug, "bun", "user-1")
+	first, err := store.CreateSnippet(ctx, tenant.ID, "First", "bun", "user-1")
 	if err != nil {
 		t.Fatalf("first CreateSnippet: %v", err)
 	}
-
-	_, err = store.CreateSnippet(ctx, tenant.ID, "Second", slug, "bun", "user-1")
-	if err == nil {
-		t.Fatal("expected error for duplicate slug within same tenant, got nil")
+	second, err := store.CreateSnippet(ctx, tenant.ID, "Second", "bun", "user-1")
+	if err != nil {
+		t.Fatalf("second CreateSnippet: %v", err)
+	}
+	if first.Slug != first.ID || second.Slug != second.ID {
+		t.Fatalf("slug must equal id: first=%q/%q second=%q/%q", first.ID, first.Slug, second.ID, second.Slug)
+	}
+	if first.ID == second.ID {
+		t.Fatal("expected distinct workflow IDs")
 	}
 }

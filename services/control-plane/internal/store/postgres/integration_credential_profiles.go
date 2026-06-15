@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/abskrj/velane/services/control-plane/internal/ids"
 	"github.com/abskrj/velane/services/control-plane/internal/models"
 )
 
@@ -164,16 +165,16 @@ func (s *Store) UpsertIntegrationCredentialProfile(
 	now := time.Now()
 	row := tx.QueryRow(ctx,
 		`INSERT INTO integration_credential_profiles
-			(tenant_id, provider, alias, name, nango_provider_config_key, config_json, is_default, created_by, created_at, updated_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9)
+			(id, tenant_id, provider, alias, name, nango_provider_config_key, config_json, is_default, created_by, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10)
 		 ON CONFLICT (tenant_id, provider, alias) WHERE deleted_at IS NULL
 		 DO UPDATE SET
 			name = EXCLUDED.name,
 			config_json = EXCLUDED.config_json,
-			is_default = CASE WHEN $10 THEN TRUE ELSE integration_credential_profiles.is_default END,
+			is_default = CASE WHEN $11 THEN TRUE ELSE integration_credential_profiles.is_default END,
 			updated_at = EXCLUDED.updated_at
 		 RETURNING id, tenant_id, provider, alias, name, nango_provider_config_key, config_json, is_default, created_by, created_at, updated_at`,
-		tenantID, provider, alias, name, providerConfigKey, configBytes, setDefault, createdBy, now, setDefault,
+		ids.New(), tenantID, provider, alias, name, providerConfigKey, configBytes, setDefault, createdBy, now, setDefault,
 	)
 
 	profile, err := scanCredentialProfile(row)

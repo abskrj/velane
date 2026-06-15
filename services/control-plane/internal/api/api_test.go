@@ -173,8 +173,8 @@ func TestCreateAPIKey(t *testing.T) {
 		t.Fatalf("status = %d; want 201\nbody: %s", rec.Code, rec.Body.String())
 	}
 	body := decodeJSON(t, rec)
-	if _, ok := body["plain_key"]; !ok {
-		t.Error("response must include plain_key field")
+	if _, ok := body["key"]; !ok {
+		t.Error("response must include key field (one-time plain key)")
 	}
 }
 
@@ -194,25 +194,40 @@ func TestCreateAPIKey_RequiresAdminScope(t *testing.T) {
 
 func TestCreateSnippet(t *testing.T) {
 	env := setup(t)
-	slug := fmt.Sprintf("my-snippet-%d", time.Now().UnixNano())
 	rec := env.do(t, http.MethodPost, "/v1/snippets", env.manageKey, map[string]any{
 		"name":     "My Snippet",
-		"slug":     slug,
 		"language": "bun",
 	})
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status = %d; want 201\nbody: %s", rec.Code, rec.Body.String())
 	}
 	body := decodeJSON(t, rec)
-	if body["slug"] != slug {
-		t.Errorf("slug = %q; want %q", body["slug"], slug)
+	id, _ := body["id"].(string)
+	slug, _ := body["slug"].(string)
+	if id == "" {
+		t.Fatal("expected non-empty id")
+	}
+	if slug != id {
+		t.Errorf("slug = %q; want %q (slug must equal id)", slug, id)
+	}
+}
+
+func TestCreateSnippet_RejectsCustomSlug(t *testing.T) {
+	env := setup(t)
+	rec := env.do(t, http.MethodPost, "/v1/snippets", env.manageKey, map[string]any{
+		"name":     "My Snippet",
+		"slug":     "custom-slug",
+		"language": "bun",
+	})
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d; want 400\nbody: %s", rec.Code, rec.Body.String())
 	}
 }
 
 func TestCreateSnippet_RequiresManageScope(t *testing.T) {
 	env := setup(t)
 	rec := env.do(t, http.MethodPost, "/v1/snippets", env.invokeKey, map[string]any{
-		"name": "Bad", "slug": "bad", "language": "bun",
+		"name": "Bad", "language": "bun",
 	})
 	if rec.Code != http.StatusForbidden {
 		t.Errorf("status = %d; want 403", rec.Code)
@@ -225,7 +240,7 @@ func TestListSnippets(t *testing.T) {
 	// Create two snippets.
 	for i := 0; i < 2; i++ {
 		env.do(t, http.MethodPost, "/v1/snippets", env.manageKey, map[string]any{
-			"name": "Snippet", "slug": fmt.Sprintf("list-sn-%d-%d", time.Now().UnixNano(), i), "language": "bun",
+			"name": "Snippet", "language": "bun",
 		})
 	}
 
@@ -247,9 +262,8 @@ func TestGetSnippet_TenantIsolation(t *testing.T) {
 	env := setup(t)
 
 	// Create a snippet under env's tenant.
-	slug := fmt.Sprintf("isolation-sn-%d", time.Now().UnixNano())
 	rec := env.do(t, http.MethodPost, "/v1/snippets", env.manageKey, map[string]any{
-		"name": "Isolation", "slug": slug, "language": "bun",
+		"name": "Isolation", "language": "bun",
 	})
 	body := decodeJSON(t, rec)
 	snippetID, _ := body["id"].(string)
@@ -268,9 +282,8 @@ func TestGetSnippet_TenantIsolation(t *testing.T) {
 func TestDeleteSnippet(t *testing.T) {
 	env := setup(t)
 
-	slug := fmt.Sprintf("del-sn-%d", time.Now().UnixNano())
 	rec := env.do(t, http.MethodPost, "/v1/snippets", env.manageKey, map[string]any{
-		"name": "Delete Me", "slug": slug, "language": "python",
+		"name": "Delete Me", "language": "python",
 	})
 	body := decodeJSON(t, rec)
 	snippetID, _ := body["id"].(string)
@@ -290,9 +303,8 @@ func TestDeleteSnippet(t *testing.T) {
 
 func createTestSnippet(t *testing.T, env *testEnv) (snippetID string) {
 	t.Helper()
-	slug := fmt.Sprintf("vsn-sn-%d", time.Now().UnixNano())
 	rec := env.do(t, http.MethodPost, "/v1/snippets", env.manageKey, map[string]any{
-		"name": "VSN", "slug": slug, "language": "bun",
+		"name": "VSN", "language": "bun",
 	})
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("create snippet: status %d", rec.Code)
@@ -319,6 +331,34 @@ func TestCreateVersion(t *testing.T) {
 	body := decodeJSON(t, rec)
 	if body["status"] != "draft" {
 		t.Errorf("status = %q; want %q", body["status"], "draft")
+	}
+}
+
+func TestCreateVersionExceedsTenantLimits(t *testing.T) {
+	env := setup(t)
+	snippetID := createTestSnippet(t, env)
+
+	rec := env.do(t, http.MethodPost, "/v1/snippets/"+snippetID+"/versions", env.manageKey, map[string]any{
+		"code":            "export async function handler() { return {ok: true} }",
+		"timeout_ms":      5000,
+		"max_memory_mb":   99999,
+		"max_cpu_percent": 100,
+	})
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d; want 400\nbody: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestGetRuntimeLimits(t *testing.T) {
+	env := setup(t)
+
+	rec := env.do(t, http.MethodGet, "/v1/tenant/runtime-limits", env.manageKey, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d; want 200", rec.Code)
+	}
+	body := decodeJSON(t, rec)
+	if body["max_timeout_ms"] == nil {
+		t.Fatal("expected max_timeout_ms in response")
 	}
 }
 
@@ -371,18 +411,18 @@ func TestListVersions(t *testing.T) {
 // --- Invocations ---
 
 // publishSnippetForInvoke creates a snippet, creates a version, and publishes
-// it to prod. Returns the snippet slug for the invoke URL.
-func publishSnippetForInvoke(t *testing.T, env *testEnv) (snippetSlug string) {
+// it to prod. Returns the workflow ID for the invoke URL.
+func publishSnippetForInvoke(t *testing.T, env *testEnv) (workflowID string) {
 	t.Helper()
-	snippetSlug = fmt.Sprintf("invoke-sn-%d", time.Now().UnixNano())
 	rec := env.do(t, http.MethodPost, "/v1/snippets", env.manageKey, map[string]any{
-		"name": "Invoke Snippet", "slug": snippetSlug, "language": "bun",
+		"name": "Invoke Snippet", "language": "bun",
 	})
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("create snippet: %d", rec.Code)
 	}
 	body := decodeJSON(t, rec)
 	snippetID := body["id"].(string)
+	workflowID = snippetID
 
 	rec2 := env.do(t, http.MethodPost, "/v1/snippets/"+snippetID+"/versions", env.manageKey, map[string]any{
 		"code": "export async function handler(req) { return {ok: true} }",
@@ -399,7 +439,7 @@ func publishSnippetForInvoke(t *testing.T, env *testEnv) (snippetSlug string) {
 		t.Fatalf("publish: %d\nbody: %s", rec3.Code, rec3.Body.String())
 	}
 
-	return snippetSlug
+	return workflowID
 }
 
 func TestInvoke_Success(t *testing.T) {
@@ -470,12 +510,12 @@ func TestInvoke_InvalidJSON(t *testing.T) {
 
 func TestInvoke_NoPublishedVersion(t *testing.T) {
 	env := setup(t)
-	slug := fmt.Sprintf("no-pub-%d", time.Now().UnixNano())
-	env.do(t, http.MethodPost, "/v1/snippets", env.manageKey, map[string]any{
-		"name": "No Pub", "slug": slug, "language": "bun",
+	createRec := env.do(t, http.MethodPost, "/v1/snippets", env.manageKey, map[string]any{
+		"name": "No Pub", "language": "bun",
 	})
+	workflowID := decodeJSON(t, createRec)["id"].(string)
 
-	path := fmt.Sprintf("/v1/invoke/%s", slug)
+	path := fmt.Sprintf("/v1/invoke/%s", workflowID)
 	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+env.invokeKey)
@@ -753,16 +793,16 @@ func TestInvoke_AsyncMode(t *testing.T) {
 
 func TestInvoke_VersionPinning(t *testing.T) {
 	env := setup(t)
-	snippetSlug := fmt.Sprintf("pin-sn-%d", time.Now().UnixNano())
 
 	// Create snippet.
 	rec := env.do(t, http.MethodPost, "/v1/snippets", env.manageKey, map[string]any{
-		"name": "Pin Snippet", "slug": snippetSlug, "language": "bun",
+		"name": "Pin Snippet", "language": "bun",
 	})
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("create snippet: %d", rec.Code)
 	}
 	snippetID := decodeJSON(t, rec)["id"].(string)
+	snippetSlug := snippetID
 
 	// Create version 1 with distinctive code.
 	rec2 := env.do(t, http.MethodPost, "/v1/snippets/"+snippetID+"/versions", env.manageKey, map[string]any{
@@ -1111,9 +1151,7 @@ func TestGetSnippetLogs(t *testing.T) {
 	})
 	vNum := int(decodeJSON(t, vRec)["version_number"].(float64))
 	env.do(t, http.MethodPost, fmt.Sprintf("/v1/snippets/%s/versions/%d/publish?env=prod", snippetID, vNum), env.manageKey, nil)
-	snippet := env.do(t, http.MethodGet, "/v1/snippets/"+snippetID, env.manageKey, nil)
-	slug := decodeJSON(t, snippet)["slug"].(string)
-	invokePath := fmt.Sprintf("/v1/invoke/%s?env=prod", slug)
+	invokePath := fmt.Sprintf("/v1/invoke/%s?env=prod", snippetID)
 	req := httptest.NewRequest(http.MethodPost, invokePath, strings.NewReader(`{"a":1}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+env.invokeKey)
@@ -1147,9 +1185,7 @@ func TestGetSnippetMetrics(t *testing.T) {
 	})
 	vNum := int(decodeJSON(t, vRec)["version_number"].(float64))
 	env.do(t, http.MethodPost, fmt.Sprintf("/v1/snippets/%s/versions/%d/publish?env=prod", snippetID, vNum), env.manageKey, nil)
-	snippet := env.do(t, http.MethodGet, "/v1/snippets/"+snippetID, env.manageKey, nil)
-	slug := decodeJSON(t, snippet)["slug"].(string)
-	invokePath := fmt.Sprintf("/v1/invoke/%s?env=prod", slug)
+	invokePath := fmt.Sprintf("/v1/invoke/%s?env=prod", snippetID)
 	req := httptest.NewRequest(http.MethodPost, invokePath, strings.NewReader(`{"a":1}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+env.invokeKey)

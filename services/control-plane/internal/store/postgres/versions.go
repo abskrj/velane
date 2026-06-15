@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/abskrj/velane/services/control-plane/internal/ids"
 	"github.com/abskrj/velane/services/control-plane/internal/models"
 )
 
@@ -28,11 +29,11 @@ func (s *Store) CreateVersion(ctx context.Context, snippetID, code, inputSchema,
 
 	row := tx.QueryRow(ctx,
 		`INSERT INTO snippet_versions
-		   (snippet_id, version_number, code, input_schema, output_schema, timeout_ms, max_memory_mb, max_cpu_percent, created_by)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		   (id, snippet_id, version_number, code, input_schema, output_schema, timeout_ms, max_memory_mb, max_cpu_percent, created_by)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		 RETURNING id, snippet_id, version_number, code, input_schema, output_schema,
 		           timeout_ms, max_memory_mb, max_cpu_percent, status, created_at, created_by`,
-		snippetID, nextNum, code, inputSchema, outputSchema, timeoutMs, maxMemoryMB, maxCPUPercent, createdBy,
+		ids.New(), snippetID, nextNum, code, inputSchema, outputSchema, timeoutMs, maxMemoryMB, maxCPUPercent, createdBy,
 	)
 
 	v, err := scanVersion(row)

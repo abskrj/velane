@@ -167,13 +167,12 @@ Call get_integration_docs(provider) to look up endpoints for any provider.`,
 
 	r.add(Tool{
 		Name:        "create_workflow",
-		Description: "Create a workflow.",
+		Description: "Create a workflow. The workflow ID (UUID) is assigned automatically.",
 		InputSchema: map[string]any{
 			"type":     "object",
-			"required": []string{"name", "slug", "language"},
+			"required": []string{"name", "language"},
 			"properties": map[string]any{
 				"name":     map[string]any{"type": "string"},
-				"slug":     map[string]any{"type": "string"},
 				"language": map[string]any{"type": "string", "enum": []string{"bun", "python"}},
 			},
 		},
@@ -182,15 +181,14 @@ Call get_integration_docs(provider) to look up endpoints for any provider.`,
 			if err != nil {
 				return nil, err
 			}
-			slug, err := toString(args, "slug", true)
-			if err != nil {
-				return nil, err
+			if slug, _ := toString(args, "slug", false); strings.TrimSpace(slug) != "" {
+				return nil, fmt.Errorf("slug is assigned automatically; do not send slug")
 			}
 			lang, err := toString(args, "language", true)
 			if err != nil {
 				return nil, err
 			}
-			body := map[string]any{"name": name, "slug": slug, "language": lang}
+			body := map[string]any{"name": name, "language": lang}
 			var out map[string]any
 			if err := r.client.Post(ctx, authHeader, "/v1/snippets", body, &out); err != nil {
 				return nil, err
@@ -309,22 +307,23 @@ Call get_integration_docs(provider) for endpoint reference and working code exam
 		Name:        "invoke_workflow",
 		Description: "Invoke a workflow synchronously, asynchronously, or as a stream. tenant_slug is optional; when omitted the tenant is inferred from the API key.",
 		InputSchema: map[string]any{
-			"type":     "object",
-			"required": []string{"workflow_slug"},
+			"type": "object",
 			"properties": map[string]any{
 				"tenant_slug":   map[string]any{"type": "string", "description": "Tenant slug. Optional — inferred from the API key when omitted."},
-				"workflow_slug": map[string]any{"type": "string", "description": "Workflow slug."},
-				"snippet_slug":  map[string]any{"type": "string", "description": "Deprecated alias for workflow_slug."},
-				"env":          map[string]any{"type": "string"},
-				"version":      map[string]any{"type": "string"},
-				"invoke_mode":  map[string]any{"type": "string", "enum": []string{"sync", "async", "stream"}},
-				"callback_url": map[string]any{"type": "string"},
-				"input":        map[string]any{},
+				"workflow_id":   map[string]any{"type": "string", "description": "Workflow ID (UUID)."},
+				"workflow_slug": map[string]any{"type": "string", "description": "Deprecated alias for workflow_id."},
+				"snippet_slug":  map[string]any{"type": "string", "description": "Deprecated alias for workflow_id."},
+				"snippet_id":    map[string]any{"type": "string", "description": "Deprecated alias for workflow_id."},
+				"env":           map[string]any{"type": "string"},
+				"version":       map[string]any{"type": "string"},
+				"invoke_mode":   map[string]any{"type": "string", "enum": []string{"sync", "async", "stream"}},
+				"callback_url":  map[string]any{"type": "string"},
+				"input":         map[string]any{},
 			},
 		},
 		Handle: func(ctx context.Context, authHeader string, args map[string]any) (any, error) {
 			tenantSlug, _ := toString(args, "tenant_slug", false)
-			snippetSlug, err := toWorkflowSlug(args, true)
+			workflowRef, err := toWorkflowInvokeTarget(args)
 			if err != nil {
 				return nil, err
 			}
@@ -342,9 +341,9 @@ Call get_integration_docs(provider) for endpoint reference and working code exam
 			// plane resolves the tenant from the authenticated API key.
 			var path string
 			if tenantSlug != "" {
-				path = fmt.Sprintf("/v1/invoke/%s/%s", url.PathEscape(tenantSlug), url.PathEscape(snippetSlug))
+				path = fmt.Sprintf("/v1/invoke/%s/%s", url.PathEscape(tenantSlug), url.PathEscape(workflowRef))
 			} else {
-				path = fmt.Sprintf("/v1/invoke/%s", url.PathEscape(snippetSlug))
+				path = fmt.Sprintf("/v1/invoke/%s", url.PathEscape(workflowRef))
 			}
 			query := url.Values{}
 			if env != "" {

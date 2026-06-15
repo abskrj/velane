@@ -3,6 +3,7 @@ import { matchPath, useLocation } from 'react-router-dom'
 import { setDocumentTitle } from '../lib/documentTitle'
 
 const dashboardRoutes: { path: string; title: string }[] = [
+  { path: '/dashboard/snippets/:id/settings', title: 'Workflows' },
   { path: '/dashboard/snippets/:id', title: 'Workflows' },
   { path: '/dashboard/overview', title: 'Overview' },
   { path: '/dashboard/snippets', title: 'Workflows' },

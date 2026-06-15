@@ -44,7 +44,12 @@ curl -s -X POST "http://localhost:8080/v1/invoke/$SNIPPET" \
 
 Each publish creates an immutable version, so rollback is straightforward.
 
+## Runtime settings
+
+Open a workflow’s **Settings** tab to configure timeout, memory, and CPU limits for the next version. Saving creates a new version (even if code did not change). Tenant caps are shown read-only at the top of the page.
+
 ## What to do next
 
 - Read [Invocation Modes](../invoke/invocation-modes.md) for sync/async/stream behavior
 - Read [Integrations Overview](../integrations/overview.md) to call third-party APIs from snippets
+- Read [Agent Workflows](./agent-workflows.md) for LangGraph (Python) and Mastra (Bun)

@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/google/uuid"
+	"github.com/abskrj/velane/services/control-plane/internal/ids"
 )
 
 const poolKeyPrefix = "velane:pool:"
@@ -31,7 +31,7 @@ func (c *Client) InitPool(ctx context.Context, snippetID, env string, minInstanc
 
 	slots := make([]any, needed)
 	for i := range slots {
-		slots[i] = uuid.New().String()
+		slots[i] = ids.New()
 	}
 
 	if err := c.rdb.LPush(ctx, key, slots...).Err(); err != nil {

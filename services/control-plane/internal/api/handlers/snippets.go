@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/abskrj/velane/services/control-plane/internal/api/middleware"
 	"github.com/abskrj/velane/services/control-plane/internal/models"
@@ -46,8 +47,8 @@ func (h *SnippetsHandler) ListSnippets(w http.ResponseWriter, r *http.Request) {
 // createSnippetRequest is the expected POST body.
 type createSnippetRequest struct {
 	Name     string `json:"name"`
-	Slug     string `json:"slug"`
 	Language string `json:"language"`
+	Slug     string `json:"slug"` // ignored; rejected if sent
 }
 
 // CreateSnippet handles POST /v1/snippets.
@@ -72,8 +73,13 @@ func (h *SnippetsHandler) CreateSnippet(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if req.Name == "" || req.Slug == "" || req.Language == "" {
-		writeError(w, http.StatusBadRequest, "name, slug, and language are required")
+	if strings.TrimSpace(req.Slug) != "" {
+		writeError(w, http.StatusBadRequest, "slug is assigned automatically; do not send slug")
+		return
+	}
+
+	if req.Name == "" || req.Language == "" {
+		writeError(w, http.StatusBadRequest, "name and language are required")
 		return
 	}
 
@@ -82,7 +88,7 @@ func (h *SnippetsHandler) CreateSnippet(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	snippet, err := h.store.CreateSnippet(r.Context(), tenant.ID, req.Name, req.Slug, req.Language, createdBy)
+	snippet, err := h.store.CreateSnippet(r.Context(), tenant.ID, req.Name, req.Language, createdBy)
 	if err != nil {
 		h.log.Error("create snippet failed", zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "failed to create snippet")

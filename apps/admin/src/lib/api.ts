@@ -7,6 +7,8 @@ import type {
   UsageSummary,
   APIKey,
   EgressPolicy,
+  RuntimeLimits,
+  RuntimeSettings,
   Snippet,
   SnippetVersion,
   SnippetEnvironment,
@@ -220,8 +222,7 @@ export const api = {
   },
 
   async createSnippet(data: { name: string; language: string; description?: string }): Promise<Snippet> {
-    const slug = data.name.toLowerCase().replace(/\s+/g, '-')
-    return request('POST', `/v1/snippets`, { ...data, slug }, 'apikey')
+    return request('POST', `/v1/snippets`, data, 'apikey')
   },
 
   async updateSnippet(id: string, data: Partial<{ name: string; description: string }>): Promise<Snippet> {
@@ -241,8 +242,22 @@ export const api = {
     return request('GET', `/v1/snippets/${snippetId}/environments`, undefined, 'apikey')
   },
 
-  async createVersion(snippetId: string, code: string): Promise<SnippetVersion> {
-    return request('POST', `/v1/snippets/${snippetId}/versions`, { code }, 'apikey')
+  async getRuntimeLimits(): Promise<RuntimeLimits> {
+    return request('GET', '/v1/tenant/runtime-limits', undefined, 'apikey')
+  },
+
+  async createVersion(
+    snippetId: string,
+    code: string,
+    runtime?: RuntimeSettings,
+  ): Promise<SnippetVersion> {
+    const body: Record<string, unknown> = { code }
+    if (runtime) {
+      body.timeout_ms = runtime.timeout_ms
+      body.max_memory_mb = runtime.max_memory_mb
+      body.max_cpu_percent = runtime.max_cpu_percent
+    }
+    return request('POST', `/v1/snippets/${snippetId}/versions`, body, 'apikey')
   },
 
   async publishVersion(snippetId: string, versionNum: number, env: string): Promise<void> {

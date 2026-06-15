@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/abskrj/velane/services/control-plane/internal/ids"
 	"github.com/abskrj/velane/services/control-plane/internal/models"
 )
 
@@ -25,12 +26,12 @@ func (s *Store) CreateInvocationWithMode(
 ) (*models.Invocation, error) {
 	row := s.pool.QueryRow(ctx,
 		`INSERT INTO invocations
-		   (snippet_id, version_id, environment, tenant_id, status, input_payload, invoke_mode, callback_url)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		   (id, snippet_id, version_id, environment, tenant_id, status, input_payload, invoke_mode, callback_url)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		 RETURNING id, snippet_id, version_id, environment, tenant_id, status,
 		           input_payload, input_ref, output, output_ref, error, stderr, stderr_ref, duration_ms, peak_memory_mb, cpu_ms,
 		           created_at, completed_at, callback_url, invoke_mode`,
-		snippetID, versionID, environment, tenantID, string(status), inputPayload, invokeMode, nullableString(callbackURL),
+		ids.New(), snippetID, versionID, environment, tenantID, string(status), inputPayload, invokeMode, nullableString(callbackURL),
 	)
 	inv, err := scanInvocation(row)
 	if err != nil {

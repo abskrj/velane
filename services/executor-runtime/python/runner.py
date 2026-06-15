@@ -56,6 +56,7 @@ import time
 from pathlib import Path
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
+from cgroup_limits import apply_limits, cleanup_cgroup, is_oom_exit, read_peak_memory_mb
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
@@ -75,8 +76,9 @@ class EgressPolicy(BaseModel):
 class RunRequest(BaseModel):
     code: str
     input: str = "{}"
-    timeout_ms: int = 30_000
-    max_memory_mb: int = 128
+    timeout_ms: int = 60_000
+    max_memory_mb: int = 200
+    max_cpu_percent: int = 10
     secret_env_vars: Dict[str, str] = {}
     libraries: Dict[str, str] = {}
     egress_policy: Optional[EgressPolicy] = None
@@ -96,6 +98,13 @@ class RunResult(BaseModel):
 # ---------------------------------------------------------------------------
 
 HARNESS_TEMPLATE = '''\
+import resource
+
+_max_mem_mb = {max_memory_mb!r}
+if _max_mem_mb > 0:
+    _lim = _max_mem_mb * 1024 * 1024
+    resource.setrlimit(resource.RLIMIT_AS, (_lim, _lim))
+
 import asyncio
 import json
 import os
@@ -201,6 +210,13 @@ asyncio.run(_main())
 # ---------------------------------------------------------------------------
 
 STREAM_HARNESS_TEMPLATE = '''\
+import resource
+
+_max_mem_mb = {max_memory_mb!r}
+if _max_mem_mb > 0:
+    _lim = _max_mem_mb * 1024 * 1024
+    resource.setrlimit(resource.RLIMIT_AS, (_lim, _lim))
+
 import asyncio
 import inspect
 import json
@@ -389,7 +405,11 @@ async def run_snippet(req: RunRequest) -> RunResult:
         write_libraries(work_dir, req.libraries)
         snippet_path.write_text(req.code, encoding="utf-8")
         harness_path.write_text(
-            HARNESS_TEMPLATE.format(snippet_dir=work_dir, blocked_domains=blocked_domains),
+            HARNESS_TEMPLATE.format(
+                snippet_dir=work_dir,
+                blocked_domains=blocked_domains,
+                max_memory_mb=req.max_memory_mb,
+            ),
             encoding="utf-8",
         )
 
@@ -412,6 +432,10 @@ async def run_snippet(req: RunRequest) -> RunResult:
                 cwd=work_dir,
             )
 
+            cgroup = None
+            if proc.pid:
+                cgroup = apply_limits(proc.pid, req.max_memory_mb, req.max_cpu_percent)
+
             try:
                 stdout_bytes, stderr_bytes = await asyncio.wait_for(
                     proc.communicate(),
@@ -423,6 +447,7 @@ async def run_snippet(req: RunRequest) -> RunResult:
                     await proc.communicate()
                 except Exception:
                     pass
+                cleanup_cgroup(cgroup)
                 duration_ms = int((time.monotonic() - start) * 1000)
                 return RunResult(
                     stderr="execution timed out",
@@ -437,14 +462,21 @@ async def run_snippet(req: RunRequest) -> RunResult:
             stdout = stdout_bytes.decode("utf-8", errors="replace").strip()
             stderr = stderr_bytes.decode("utf-8", errors="replace").strip()
 
+            peak_mb = read_peak_memory_mb(cgroup)
+            cleanup_cgroup(cgroup)
+
             error_str = ""
             if exit_code != 0:
-                error_str = "non-zero exit"
+                if is_oom_exit(exit_code):
+                    error_str = "oom"
+                else:
+                    error_str = "non-zero exit"
 
             return RunResult(
                 output=stdout,
                 stderr=stderr,
                 duration_ms=duration_ms,
+                peak_memory_mb=peak_mb,
                 exit_code=exit_code,
                 error=error_str,
             )
@@ -484,7 +516,11 @@ async def run_snippet_stream(req: RunRequest) -> AsyncGenerator[str, None]:
         write_libraries(work_dir, req.libraries)
         snippet_path.write_text(req.code, encoding="utf-8")
         harness_path.write_text(
-            STREAM_HARNESS_TEMPLATE.format(snippet_dir=work_dir, blocked_domains=blocked_domains),
+            STREAM_HARNESS_TEMPLATE.format(
+                snippet_dir=work_dir,
+                blocked_domains=blocked_domains,
+                max_memory_mb=req.max_memory_mb,
+            ),
             encoding="utf-8",
         )
 
@@ -504,6 +540,10 @@ async def run_snippet_stream(req: RunRequest) -> AsyncGenerator[str, None]:
                 stderr=asyncio.subprocess.PIPE,
                 cwd=work_dir,
             )
+
+            cgroup = None
+            if proc.pid:
+                cgroup = apply_limits(proc.pid, req.max_memory_mb, req.max_cpu_percent)
 
             deadline = asyncio.get_event_loop().time() + timeout_sec
             timed_out = False
@@ -550,6 +590,7 @@ async def run_snippet_stream(req: RunRequest) -> AsyncGenerator[str, None]:
                     await proc.communicate()
                 except Exception:
                     pass
+                cleanup_cgroup(cgroup)
 
             if timed_out:
                 yield f"data: {json.dumps({'chunk': '', 'done': True, 'error': 'timeout'})}\n\n"

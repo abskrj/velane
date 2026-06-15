@@ -75,8 +75,7 @@ export default function SnippetEditorPage() {
     setSaving(true)
     try {
       if (isNew) {
-        const slug = snippetName.toLowerCase().replace(/\s+/g, '-')
-        const sn = await api.createSnippet({ name: snippetName, slug, language })
+        const sn = await api.createSnippet({ name: snippetName, language })
         setSnippetId(sn.id)
         await api.createVersion(sn.id, code)
         navigate(`/snippets/${sn.id}`, { replace: true })
@@ -123,7 +122,7 @@ export default function SnippetEditorPage() {
     setInvoking(true)
     setInvokeResult(null)
     try {
-      const result = await api.invokeSnippet(snippet?.slug ?? snippetId, testInput)
+      const result = await api.invokeSnippet(snippetId ?? snippet?.id ?? '', testInput)
       setInvokeResult(result)
     } catch (err) {
       setInvokeResult({

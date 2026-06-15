@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/abskrj/velane/services/control-plane/internal/ids"
 	"github.com/abskrj/velane/services/control-plane/internal/models"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -41,10 +42,10 @@ func (s *Store) CreateAPIKeyWithPlain(ctx context.Context, tenantID, name string
 	}
 
 	row := s.pool.QueryRow(ctx,
-		`INSERT INTO api_keys (tenant_id, key_hash, key_prefix, name, scopes)
-		 VALUES ($1, $2, $3, $4, $5)
+		`INSERT INTO api_keys (id, tenant_id, key_hash, key_prefix, name, scopes)
+		 VALUES ($1, $2, $3, $4, $5, $6)
 		 RETURNING id, tenant_id, key_hash, key_prefix, name, scopes, expires_at, last_used_at, created_at`,
-		tenantID, string(hash), prefix, name, scopes,
+		ids.New(), tenantID, string(hash), prefix, name, scopes,
 	)
 
 	k, err := scanAPIKey(row)

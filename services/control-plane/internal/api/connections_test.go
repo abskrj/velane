@@ -506,11 +506,17 @@ func TestConnections_TenantIsolation(t *testing.T) {
 		t.Fatalf("create key2: %v", err)
 	}
 
-	// Tenant 2's key should NOT be able to list tenant 1's connections
-	// (the slug in the path belongs to tenant 1, but auth token is for tenant 2).
+	// Tenant 2's key lists only its own connections (route is not tenant-slug scoped).
 	rec2 := env.do(t, http.MethodGet, path, key2, nil)
-	if rec2.Code != http.StatusForbidden {
-		t.Errorf("cross-tenant list: status = %d; want 403", rec2.Code)
+	if rec2.Code != http.StatusOK {
+		t.Errorf("tenant2 list: status = %d; want 200", rec2.Code)
+	}
+	var connections []any
+	if err := json.NewDecoder(rec2.Body).Decode(&connections); err != nil {
+		t.Fatalf("decode connections: %v", err)
+	}
+	if len(connections) != 0 {
+		t.Errorf("tenant2 should have 0 connections, got %d", len(connections))
 	}
 }
 

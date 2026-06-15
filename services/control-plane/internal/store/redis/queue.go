@@ -28,6 +28,7 @@ type Job struct {
 	Input         string            `json:"input"`
 	TimeoutMs     int               `json:"timeout_ms"`
 	MaxMemoryMB   int               `json:"max_memory_mb"`
+	MaxCPUPercent int               `json:"max_cpu_percent"`
 	CallbackURL   string            `json:"callback_url,omitempty"`
 	Env           string            `json:"env"`
 	SecretEnvVars map[string]string `json:"secret_env_vars,omitempty"`

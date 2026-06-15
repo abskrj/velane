@@ -2,13 +2,13 @@ import Editor from '@monaco-editor/react'
 import { Check, ChevronRight, Copy, History, MoreHorizontal, Plug, Trash2, X } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import LanguageBadge from '../components/LanguageBadge'
+import WorkflowHeader from '../components/WorkflowHeader'
 import PublishDropdown from '../components/PublishDropdown'
 import { Toast, useToast } from '../components/Toast'
 import { api } from '../lib/api'
 import { setupMonacoVelaneTypes } from '../lib/monacoVelaneTypes'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
-import type { InvocationResult, LogLine, Snippet, SnippetEnvironment, SnippetVersion } from '../types'
+import type { InvocationResult, LogLine, RuntimeSettings, Snippet, SnippetEnvironment, SnippetVersion } from '../types'
 
 type ActiveTab = 'test' | 'logs'
 
@@ -51,6 +51,11 @@ export default function SnippetEditorPage() {
   const [runLogs, setRunLogs] = useState<LogLine[]>([])
   const [invoking, setInvoking] = useState(false)
   const [selectedVersion, setSelectedVersion] = useState<SnippetVersion | null>(null)
+  const [runtimeDraft, setRuntimeDraft] = useState<RuntimeSettings>({
+    timeout_ms: 60000,
+    max_memory_mb: 200,
+    max_cpu_percent: 10,
+  })
 
   const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const isDirty = useRef(false)
@@ -71,7 +76,13 @@ export default function SnippetEditorPage() {
         setVersions(vs)
         setEnvironments(envs ?? [])
         if (vs.length > 0) {
-          setCode(vs[vs.length - 1].code)
+          const latest = vs[vs.length - 1]
+          setCode(latest.code)
+          setRuntimeDraft({
+            timeout_ms: latest.timeout_ms ?? 60000,
+            max_memory_mb: latest.max_memory_mb ?? 200,
+            max_cpu_percent: latest.max_cpu_percent ?? 10,
+          })
         } else {
           setCode(STARTER_TEMPLATES[sn.language] ?? STARTER_TEMPLATES.bun)
         }
@@ -148,7 +159,7 @@ export default function SnippetEditorPage() {
       if (autosaveTimer.current) clearTimeout(autosaveTimer.current)
       autosaveTimer.current = setTimeout(async () => {
         try {
-          const created = await api.createVersion(id, newCode)
+          const created = await api.createVersion(id, newCode, runtimeDraft)
           if (created?.id) ownVersionIds.current.add(created.id)
           await reloadVersions()
           isDirty.current = false
@@ -161,7 +172,7 @@ export default function SnippetEditorPage() {
         }
       }, 1500)
     },
-    [id],
+    [id, runtimeDraft],
   )
 
   async function handlePublish(env: 'dev' | 'staging' | 'prod') {
@@ -283,67 +294,54 @@ export default function SnippetEditorPage() {
     <div className="flex h-full flex-col">
       {toast && <Toast message={toast.message} type={toast.type} onDismiss={dismissToast} />}
 
-      <header className="flex h-14 shrink-0 items-center justify-between border-b border-gray-200 bg-white px-4">
-        <div className="flex items-center gap-3">
-          <button
-            className="text-sm text-gray-500 hover:text-gray-900"
-            onClick={() => navigate('/dashboard/snippets')}
-          >
-            &larr; Workflows
-          </button>
-          <span className="font-medium text-gray-900">{snippet?.name}</span>
-          {snippet && <LanguageBadge language={snippet.language} />}
-        </div>
-        <div className="flex items-center gap-2">
-          {autoSaving && <span className="text-xs text-gray-400">Saving…</span>}
-          {!autoSaving && autoSaved && <span className="text-xs text-gray-400">Saved</span>}
-          {versions.length > 0 && (
+      <WorkflowHeader
+        snippet={snippet}
+        trailing={
+          <div className="flex items-center gap-2">
+            {autoSaving && <span className="text-xs text-gray-400">Saving…</span>}
+            {!autoSaving && autoSaved && <span className="text-xs text-gray-400">Saved</span>}
+            {versions.length > 0 && (
+              <button
+                className="flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                onClick={() => setShowVersions(true)}
+              >
+                <History className="h-3.5 w-3.5" />
+                Versions
+                <span className="rounded bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-600">
+                  {versions.length}
+                </span>
+              </button>
+            )}
             <button
               className="flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
-              onClick={() => setShowVersions(true)}
+              onClick={() => { setConnectTab('endpoint'); setShowConnect(true) }}
             >
-              <History className="h-3.5 w-3.5" />
-              Versions
-              <span className="rounded bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-600">
-                {versions.length}
-              </span>
+              <Plug className="h-3.5 w-3.5" />
+              Connect
             </button>
-          )}
-          <button
-            className="flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
-            onClick={() => { setConnectTab('endpoint'); setShowConnect(true) }}
-          >
-            <Plug className="h-3.5 w-3.5" />
-            Connect
-          </button>
-          <PublishDropdown onPublish={handlePublish} disabled={!hasDraft} />
-          {id && (
+            <PublishDropdown onPublish={handlePublish} disabled={!hasDraft} />
             <div className="relative" ref={menuRef}>
               <button
-                className="rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-600 hover:bg-gray-50"
+                className="rounded-md p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-900"
                 onClick={() => setShowMenu((v) => !v)}
-                title="More options"
               >
                 <MoreHorizontal className="h-4 w-4" />
               </button>
               {showMenu && (
-                <>
-                  <div className="fixed inset-0 z-10" onClick={() => setShowMenu(false)} />
-                  <div className="absolute right-0 z-20 mt-1 w-40 rounded-md border border-gray-200 bg-white py-1 shadow-lg">
-                    <button
-                      className="flex w-full items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50"
-                      onClick={() => { setShowMenu(false); handleDelete() }}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                      Delete workflow
-                    </button>
-                  </div>
-                </>
+                <div className="absolute right-0 top-full z-20 mt-1 w-40 rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
+                  <button
+                    className="flex w-full items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-gray-50"
+                    onClick={() => handleDelete()}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Delete workflow
+                  </button>
+                </div>
               )}
             </div>
-          )}
-        </div>
-      </header>
+          </div>
+        }
+      />
 
       <div className="flex min-h-0 flex-1">
         <div className="flex-1 border-r border-gray-200">

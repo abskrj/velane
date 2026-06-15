@@ -74,6 +74,18 @@ export interface EgressPolicy {
   blocked_domains: string[]
 }
 
+export interface RuntimeLimits {
+  max_timeout_ms: number
+  max_memory_mb: number
+  max_cpu_percent: number
+}
+
+export interface RuntimeSettings {
+  timeout_ms: number
+  max_memory_mb: number
+  max_cpu_percent: number
+}
+
 export interface Snippet {
   id: string
   name: string
@@ -90,6 +102,9 @@ export interface SnippetVersion {
   code: string
   status: 'draft' | 'published' | 'archived'
   created_at: string
+  timeout_ms: number
+  max_memory_mb: number
+  max_cpu_percent: number
 }
 
 export interface SnippetEnvironment {

@@ -40,6 +40,7 @@ import { randomBytes } from "node:crypto";
 import { mkdtemp, writeFile, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
+import { applyLimits, cleanupCgroup, isOomExit, readPeakMemoryMb } from "./cgroup_limits";
 
 const PORT = 8080;
 
@@ -53,6 +54,7 @@ interface RunRequest {
   input: string;
   timeout_ms: number;
   max_memory_mb: number;
+  max_cpu_percent?: number;
   secret_env_vars?: Record<string, string>;
   libraries?: Record<string, string>;
   egress_policy?: EgressPolicy;
@@ -263,7 +265,7 @@ async function runSnippet(req: RunRequest): Promise<RunResult> {
     const harnessCode = buildHarnessCode(snippetPath, req.input, req.egress_policy);
     await writeFile(harnessPath, harnessCode, "utf8");
 
-    const timeoutMs = req.timeout_ms > 0 ? req.timeout_ms : 30_000;
+    const timeoutMs = req.timeout_ms > 0 ? req.timeout_ms : 60_000;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -280,6 +282,12 @@ async function runSnippet(req: RunRequest): Promise<RunResult> {
         stderr: "pipe",
         signal: controller.signal,
       });
+
+      let cgroup: string | null = null;
+      if (proc.pid) {
+        const cpuPct = req.max_cpu_percent && req.max_cpu_percent > 0 ? req.max_cpu_percent : 10;
+        cgroup = applyLimits(proc.pid, req.max_memory_mb, cpuPct);
+      }
 
       const stdoutChunks: Uint8Array[] = [];
       const stderrChunks: Uint8Array[] = [];
@@ -323,6 +331,8 @@ async function runSnippet(req: RunRequest): Promise<RunResult> {
       clearTimeout(timer);
       const durationMs = Date.now() - start;
       const exitCode = proc.exitCode ?? -1;
+      const peakMb = readPeakMemoryMb(cgroup);
+      cleanupCgroup(cgroup);
 
       const decoder = new TextDecoder();
       const stdout = decoder.decode(
@@ -336,9 +346,9 @@ async function runSnippet(req: RunRequest): Promise<RunResult> {
         output: stdout,
         stderr,
         duration_ms: durationMs,
-        peak_memory_mb: 0, // not available without cgroups
+        peak_memory_mb: peakMb,
         exit_code: exitCode,
-        error: exitCode !== 0 ? "non-zero exit" : "",
+        error: exitCode !== 0 ? (isOomExit(exitCode) ? "oom" : "non-zero exit") : "",
       };
     } catch (err: any) {
       clearTimeout(timer);
@@ -401,11 +411,12 @@ async function runSnippetStream(req: RunRequest): Promise<ReadableStream<Uint8Ar
         const harnessCode = buildStreamHarnessCode(snippetPath, req.input, req.egress_policy);
         await writeFile(harnessPath, harnessCode, "utf8");
 
-        const timeoutMs = req.timeout_ms > 0 ? req.timeout_ms : 30_000;
+        const timeoutMs = req.timeout_ms > 0 ? req.timeout_ms : 60_000;
         const abortController = new AbortController();
         const timer = setTimeout(() => abortController.abort(), timeoutMs);
 
         let proc: ReturnType<typeof Bun.spawn> | null = null;
+        let cgroup: string | null = null;
 
         try {
           proc = Bun.spawn(["bun", "run", harnessPath], {
@@ -414,6 +425,11 @@ async function runSnippetStream(req: RunRequest): Promise<ReadableStream<Uint8Ar
             stderr: "pipe",
             signal: abortController.signal,
           });
+
+          if (proc.pid) {
+            const cpuPct = req.max_cpu_percent && req.max_cpu_percent > 0 ? req.max_cpu_percent : 10;
+            cgroup = applyLimits(proc.pid, req.max_memory_mb, cpuPct);
+          }
 
           // Read stdout line by line and emit SSE events.
           const reader = proc.stdout!.getReader();
@@ -468,6 +484,8 @@ async function runSnippetStream(req: RunRequest): Promise<ReadableStream<Uint8Ar
           controller.enqueue(
             encoder.encode(`data: ${JSON.stringify({ chunk: "", done: true, error: errMsg })}\n\n`)
           );
+        } finally {
+          cleanupCgroup(cgroup);
         }
       } catch (err: any) {
         controller.enqueue(

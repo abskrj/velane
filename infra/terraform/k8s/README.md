@@ -210,6 +210,50 @@ AWS ALB (single load balancer, ACM cert)
 
 ---
 
+## Local deploy (recommended for now)
+
+From the repo root, with AWS creds in `.env`:
+
+```bash
+bash infra/scripts/deploy-local.sh          # uses latest git tag, or sha-<commit>
+bash infra/scripts/deploy-local.sh 0.5.10   # pin a specific image tag
+```
+
+This updates image tags in `terraform.tfvars`, refreshes kubeconfig, and runs `tofu apply`.
+
+---
+
+## CI/CD (GitHub Actions)
+
+Pushes to `main` build Docker images, then `.github/workflows/deploy-aws.yml` runs OpenTofu against this stack on EKS.
+
+### One-time setup
+
+1. **Remote state** — CI needs S3-backed state (local `terraform.tfstate` is not available in Actions):
+   ```bash
+   cd infra/terraform/k8s
+   cp backend.hcl.example backend.hcl   # edit bucket/table names
+   tofu init -backend-config=backend.hcl -migrate-state
+   ```
+
+2. **GitHub repository secrets** — copy values from your local `.env` and `terraform.tfvars`:
+
+   | Secret | Source |
+   |--------|--------|
+   | `AWS_ACCESS_KEY_ID` | `.env` |
+   | `AWS_SECRET_ACCESS_KEY` | `.env` |
+   | `AWS_REGION` | e.g. `us-east-1` |
+   | `EKS_CLUSTER_NAME` | e.g. `velane-us-east-1` |
+   | `TF_STATE_BUCKET` | S3 bucket from `backend.hcl` |
+   | `TF_STATE_LOCK_TABLE` | DynamoDB table from `backend.hcl` |
+   | `K8S_TFVARS` | Full contents of your local `terraform.tfvars` |
+
+3. **Manual deploy** — Actions → *Deploy to AWS* → *Run workflow* (optional `image_tag` override).
+
+Image tags default to the semver tag created by the build workflow, falling back to `sha-<commit>`.
+
+---
+
 ## Updating a deployment
 
 To deploy a new image tag:

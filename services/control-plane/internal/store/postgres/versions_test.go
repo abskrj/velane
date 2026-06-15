@@ -9,7 +9,7 @@ import (
 
 func setupSnippetForVersions(t *testing.T, store interface {
 	CreateTenant(ctx context.Context, name, slug string) (*models.Tenant, error)
-	CreateSnippet(ctx context.Context, tenantID, name, slug, language, createdBy string) (*models.Snippet, error)
+	CreateSnippet(ctx context.Context, tenantID, name, language, createdBy string) (*models.Snippet, error)
 }) (tenantID, snippetID string) {
 	t.Helper()
 	ctx := context.Background()
@@ -17,7 +17,7 @@ func setupSnippetForVersions(t *testing.T, store interface {
 	if err != nil {
 		t.Fatalf("CreateTenant: %v", err)
 	}
-	sn, err := store.CreateSnippet(ctx, tenant.ID, "Version Snippet", uniqueSlug(t, "ver-sn"), "bun", "user-1")
+	sn, err := store.CreateSnippet(ctx, tenant.ID, "Version Snippet", "bun", "user-1")
 	if err != nil {
 		t.Fatalf("CreateSnippet: %v", err)
 	}
@@ -114,7 +114,7 @@ func TestPublishVersion_SetsStatusAndEnvironmentPointer(t *testing.T) {
 	ctx := context.Background()
 
 	tenant, _ := store.CreateTenant(ctx, "Publish Org", uniqueSlug(t, "pub-org"))
-	sn, _ := store.CreateSnippet(ctx, tenant.ID, "Pub Snippet", uniqueSlug(t, "pub-sn"), "bun", "user-1")
+	sn, _ := store.CreateSnippet(ctx, tenant.ID, "Pub Snippet", "bun", "user-1")
 
 	v, err := store.CreateVersion(ctx, sn.ID, "published code", "{}", "{}", "user-1", 5000, 128, 100)
 	if err != nil {
@@ -145,7 +145,7 @@ func TestPublishVersion_ArchivesOldPublishedVersion(t *testing.T) {
 	ctx := context.Background()
 
 	tenant, _ := store.CreateTenant(ctx, "Archive Org", uniqueSlug(t, "arch-org"))
-	sn, _ := store.CreateSnippet(ctx, tenant.ID, "Archive Snippet", uniqueSlug(t, "arch-sn"), "bun", "user-1")
+	sn, _ := store.CreateSnippet(ctx, tenant.ID, "Archive Snippet", "bun", "user-1")
 
 	v1, _ := store.CreateVersion(ctx, sn.ID, "v1 code", "{}", "{}", "user-1", 5000, 128, 100)
 	_, err := store.PublishVersion(ctx, v1.ID, "prod")

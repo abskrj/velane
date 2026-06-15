@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/rand"
 	"time"
@@ -22,6 +23,7 @@ type EventStream interface {
 // Store is the subset of *postgres.Store that the Scheduler depends on.
 // Keeping this narrow makes the scheduler straightforward to test with a mock.
 type Store interface {
+	GetSnippetByID(ctx context.Context, id string) (*models.Snippet, error)
 	GetSnippetBySlug(ctx context.Context, tenantID, slug string) (*models.Snippet, error)
 	GetSnippetEnvironment(ctx context.Context, snippetID, env string) (*models.SnippetEnvironment, error)
 	GetVersion(ctx context.Context, id string) (*models.SnippetVersion, error)
@@ -149,13 +151,26 @@ func (s *Scheduler) SetObserver(observer observability.InvocationObserver) {
 	s.observer = observer
 }
 
+func (s *Scheduler) resolveSnippet(ctx context.Context, tenantID, slugOrID string) (*models.Snippet, error) {
+	if sn, err := s.store.GetSnippetByID(ctx, slugOrID); err == nil {
+		if sn.TenantID != tenantID {
+			return nil, ErrAccessDenied
+		}
+		return sn, nil
+	}
+	return s.store.GetSnippetBySlug(ctx, tenantID, slugOrID)
+}
+
 // resolveVersion resolves the snippet and version for a request.
 // If req.PinnedVersion > 0, fetches that specific version number.
 // Otherwise uses the active version from the snippet environment, applying
 // canary routing when configured.
 func (s *Scheduler) resolveVersion(ctx context.Context, req InvokeRequest) (*models.Snippet, *models.SnippetVersion, error) {
-	snippet, err := s.store.GetSnippetBySlug(ctx, req.TenantID, req.SnippetSlug)
+	snippet, err := s.resolveSnippet(ctx, req.TenantID, req.SnippetSlug)
 	if err != nil {
+		if errors.Is(err, ErrAccessDenied) {
+			return nil, nil, err
+		}
 		return nil, nil, fmt.Errorf("snippet not found: %w", err)
 	}
 
@@ -267,6 +282,7 @@ func (s *Scheduler) Invoke(ctx context.Context, req InvokeRequest) (*models.Invo
 		Input:         input,
 		TimeoutMs:     version.TimeoutMs,
 		MaxMemoryMB:   version.MaxMemoryMB,
+		MaxCPUPercent: version.MaxCPUPercent,
 		SecretEnvVars: secrets,
 		Libraries:     libs,
 		EgressPolicy:  buildEgressPolicy(tenant.EgressPolicy),
@@ -362,6 +378,7 @@ func (s *Scheduler) InvokeAsync(ctx context.Context, req InvokeRequest, callback
 		Input:         input,
 		TimeoutMs:     version.TimeoutMs,
 		MaxMemoryMB:   version.MaxMemoryMB,
+		MaxCPUPercent: version.MaxCPUPercent,
 		CallbackURL:   callbackURL,
 		Env:           req.Env,
 		SecretEnvVars: secrets,
@@ -443,6 +460,7 @@ func (s *Scheduler) InvokeQueued(ctx context.Context, req InvokeRequest) (*model
 		Input:         input,
 		TimeoutMs:     version.TimeoutMs,
 		MaxMemoryMB:   version.MaxMemoryMB,
+		MaxCPUPercent: version.MaxCPUPercent,
 		Env:           req.Env,
 		SecretEnvVars: secrets,
 		Libraries:     libs,
@@ -498,6 +516,7 @@ func (s *Scheduler) InvokeStream(ctx context.Context, req InvokeRequest) (<-chan
 		Input:         input,
 		TimeoutMs:     version.TimeoutMs,
 		MaxMemoryMB:   version.MaxMemoryMB,
+		MaxCPUPercent: version.MaxCPUPercent,
 		SecretEnvVars: secrets,
 		Libraries:     streamLibs,
 		EgressPolicy:  buildEgressPolicy(tenant.EgressPolicy),

@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/abskrj/velane/services/control-plane/internal/ids"
 	"github.com/abskrj/velane/services/control-plane/internal/models"
 )
 
@@ -24,8 +25,9 @@ func (s *Store) AppendAuditLog(ctx context.Context, entry models.AuditEntry) err
 	}
 
 	_, err := s.pool.Exec(ctx,
-		`INSERT INTO audit_log (tenant_id, actor_id, actor_type, action, resource_id, metadata)
-		 VALUES ($1, $2, $3, $4, $5, $6)`,
+		`INSERT INTO audit_log (id, tenant_id, actor_id, actor_type, action, resource_id, metadata)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		ids.New(),
 		entry.TenantID,
 		entry.ActorID,
 		entry.ActorType,

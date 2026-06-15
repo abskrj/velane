@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/abskrj/velane/services/control-plane/internal/ids"
 	"github.com/abskrj/velane/services/control-plane/internal/models"
 )
 
@@ -78,10 +79,10 @@ func (s *Store) CreateSecret(ctx context.Context, tenantID string, snippetID *st
 	}
 
 	row := s.pool.QueryRow(ctx,
-		`INSERT INTO secrets (tenant_id, snippet_id, name, value_encrypted, is_secret, environments)
-		 VALUES ($1, $2, $3, $4, $5, $6)
+		`INSERT INTO secrets (id, tenant_id, snippet_id, name, value_encrypted, is_secret, environments)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7)
 		 RETURNING id, tenant_id, snippet_id, name, is_secret, environments, created_at, updated_at`,
-		tenantID, snippetID, name, encrypted, isSecret, environments,
+		ids.New(), tenantID, snippetID, name, encrypted, isSecret, environments,
 	)
 
 	sec, err := scanSecret(row)

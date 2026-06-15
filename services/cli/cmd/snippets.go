@@ -33,9 +33,9 @@ var snippetsListCmd = &cobra.Command{
 		}
 
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "ID\tNAME\tSLUG\tLANGUAGE\tCREATED")
+		fmt.Fprintln(w, "ID\tNAME\tLANGUAGE\tCREATED")
 		for _, sn := range snippets {
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", sn.ID, sn.Name, sn.Slug, sn.Language, sn.CreatedAt)
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", sn.ID, sn.Name, sn.Language, sn.CreatedAt)
 		}
 		return w.Flush()
 	},
@@ -54,10 +54,7 @@ var snippetsPushCmd = &cobra.Command{
 
 		lang := detectLanguage(filePath)
 		snippetName := strings.TrimSuffix(filepath.Base(filePath), filepath.Ext(filePath))
-		snippetSlugFlag, _ := cmd.Flags().GetString("slug")
-		if snippetSlugFlag == "" {
-			snippetSlugFlag = snippetName
-		}
+		workflowIDFlag, _ := cmd.Flags().GetString("id")
 		publishEnv, _ := cmd.Flags().GetString("publish")
 
 		c, err := newClient()
@@ -68,22 +65,24 @@ var snippetsPushCmd = &cobra.Command{
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		// Try to find an existing snippet by slug to update, otherwise create.
-		snippets, err := c.ListSnippets(ctx)
-		if err != nil {
-			return err
-		}
-
 		var snippetID string
-		for _, sn := range snippets {
-			if sn.Slug == snippetSlugFlag {
-				snippetID = sn.ID
-				break
+		if workflowIDFlag != "" {
+			snippetID = workflowIDFlag
+		} else {
+			snippets, err := c.ListSnippets(ctx)
+			if err != nil {
+				return err
+			}
+			for _, sn := range snippets {
+				if sn.Name == snippetName {
+					snippetID = sn.ID
+					break
+				}
 			}
 		}
 
 		if snippetID == "" {
-			sn, err := c.CreateSnippet(ctx, snippetName, snippetSlugFlag, lang)
+			sn, err := c.CreateSnippet(ctx, snippetName, lang)
 			if err != nil {
 				return fmt.Errorf("create snippet: %w", err)
 			}
@@ -126,7 +125,6 @@ var snippetsGetCmd = &cobra.Command{
 		}
 		fmt.Printf("ID:       %s\n", sn.ID)
 		fmt.Printf("Name:     %s\n", sn.Name)
-		fmt.Printf("Slug:     %s\n", sn.Slug)
 		fmt.Printf("Language: %s\n", sn.Language)
 		fmt.Printf("Created:  %s\n", sn.CreatedAt)
 		return nil
@@ -151,7 +149,7 @@ var snippetsDeleteCmd = &cobra.Command{
 }
 
 func init() {
-	snippetsPushCmd.Flags().String("slug", "", "Snippet slug (defaults to filename without extension)")
+	snippetsPushCmd.Flags().String("id", "", "Existing workflow ID to update (defaults to matching name)")
 	snippetsPushCmd.Flags().String("publish", "", "Publish to environment after push (dev|staging|prod)")
 
 	snippetsCmd.AddCommand(snippetsListCmd)

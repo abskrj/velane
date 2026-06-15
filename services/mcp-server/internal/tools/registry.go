@@ -93,6 +93,24 @@ func toWorkflowSlug(args map[string]any, required bool) (string, error) {
 	return toString(args, "snippet_slug", required)
 }
 
+func toWorkflowInvokeTarget(args map[string]any) (string, error) {
+	id, err := toWorkflowID(args, false)
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(id) != "" {
+		return id, nil
+	}
+	slug, err := toWorkflowSlug(args, false)
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(slug) != "" {
+		return slug, nil
+	}
+	return "", fmt.Errorf("workflow_id is required")
+}
+
 func toString(args map[string]any, key string, required bool) (string, error) {
 	v, ok := args[key]
 	if !ok || v == nil {

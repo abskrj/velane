@@ -26,6 +26,7 @@ type runRequest struct {
 	Input         string            `json:"input"`
 	TimeoutMs     int               `json:"timeout_ms"`
 	MaxMemoryMB   int               `json:"max_memory_mb"`
+	MaxCPUPercent int               `json:"max_cpu_percent"`
 	SecretEnvVars map[string]string `json:"secret_env_vars,omitempty"`
 	Libraries     map[string]string `json:"libraries,omitempty"`
 	EgressPolicy  *egressPolicy     `json:"egress_policy,omitempty"`
@@ -68,6 +69,7 @@ func buildRunRequest(spec executor.RunSpec) runRequest {
 		Input:         spec.Input,
 		TimeoutMs:     spec.TimeoutMs,
 		MaxMemoryMB:   spec.MaxMemoryMB,
+		MaxCPUPercent: spec.MaxCPUPercent,
 		SecretEnvVars: spec.SecretEnvVars,
 		Libraries:     spec.Libraries,
 	}

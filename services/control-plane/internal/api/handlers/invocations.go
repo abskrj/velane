@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -214,11 +215,19 @@ func wantsSSE(r *http.Request) bool {
 	return strings.Contains(strings.ToLower(r.Header.Get("Accept")), "text/event-stream")
 }
 
+func writeInvokeError(w http.ResponseWriter, log *zap.Logger, slug string, err error) {
+	if errors.Is(err, scheduler.ErrAccessDenied) {
+		writeError(w, http.StatusForbidden, "access denied")
+		return
+	}
+	log.Error("invoke failed", zap.String("slug", slug), zap.Error(err))
+	writeError(w, http.StatusBadRequest, err.Error())
+}
+
 func (h *InvocationsHandler) invokeSyncMode(w http.ResponseWriter, r *http.Request, req scheduler.InvokeRequest) {
 	invocation, err := h.scheduler.Invoke(r.Context(), req)
 	if err != nil {
-		h.log.Error("invoke failed", zap.String("slug", req.SnippetSlug), zap.Error(err))
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeInvokeError(w, h.log, req.SnippetSlug, err)
 		return
 	}
 
@@ -265,8 +274,7 @@ const (
 func (h *InvocationsHandler) invokeQueuedMode(w http.ResponseWriter, r *http.Request, req scheduler.InvokeRequest, sse bool) {
 	invocation, err := h.scheduler.InvokeQueued(r.Context(), req)
 	if err != nil {
-		h.log.Error("invoke queued failed", zap.String("slug", req.SnippetSlug), zap.Error(err))
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeInvokeError(w, h.log, req.SnippetSlug, err)
 		return
 	}
 
@@ -395,8 +403,7 @@ func (h *InvocationsHandler) invokeQueuedMode(w http.ResponseWriter, r *http.Req
 func (h *InvocationsHandler) invokeAsyncMode(w http.ResponseWriter, r *http.Request, req scheduler.InvokeRequest, callbackURL string) {
 	invocation, err := h.scheduler.InvokeAsync(r.Context(), req, callbackURL)
 	if err != nil {
-		h.log.Error("invoke async failed", zap.String("slug", req.SnippetSlug), zap.Error(err))
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeInvokeError(w, h.log, req.SnippetSlug, err)
 		return
 	}
 
@@ -416,8 +423,7 @@ func (h *InvocationsHandler) invokeStreamMode(w http.ResponseWriter, r *http.Req
 
 	ch, invocation, err := h.scheduler.InvokeStream(r.Context(), req)
 	if err != nil {
-		h.log.Error("invoke stream failed", zap.String("slug", req.SnippetSlug), zap.Error(err))
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeInvokeError(w, h.log, req.SnippetSlug, err)
 		return
 	}
 

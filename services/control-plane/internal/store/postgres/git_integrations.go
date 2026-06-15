@@ -4,16 +4,17 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/abskrj/velane/services/control-plane/internal/ids"
 	"github.com/abskrj/velane/services/control-plane/internal/models"
 )
 
 // CreateGitIntegration inserts a new git integration for a snippet.
 func (s *Store) CreateGitIntegration(ctx context.Context, tenantID, snippetID, provider, repoURL, secret string) (*models.GitIntegration, error) {
 	row := s.pool.QueryRow(ctx,
-		`INSERT INTO git_integrations (tenant_id, snippet_id, provider, repo_url, secret)
-		 VALUES ($1, $2, $3, $4, $5)
+		`INSERT INTO git_integrations (id, tenant_id, snippet_id, provider, repo_url, secret)
+		 VALUES ($1, $2, $3, $4, $5, $6)
 		 RETURNING id, tenant_id, snippet_id, provider, repo_url, secret, created_at`,
-		tenantID, snippetID, provider, repoURL, secret,
+		ids.New(), tenantID, snippetID, provider, repoURL, secret,
 	)
 	return scanGitIntegration(row)
 }

@@ -18,6 +18,7 @@ var testEncKey = make([]byte, 32)
 // --- Mocks ---
 
 type mockStore struct {
+	getSnippetByID           func(ctx context.Context, id string) (*models.Snippet, error)
 	getSnippetBySlug         func(ctx context.Context, tenantID, slug string) (*models.Snippet, error)
 	getSnippetEnvironment    func(ctx context.Context, snippetID, env string) (*models.SnippetEnvironment, error)
 	getVersion               func(ctx context.Context, id string) (*models.SnippetVersion, error)
@@ -30,6 +31,12 @@ type mockStore struct {
 	getTenantByID            func(ctx context.Context, id string) (*models.Tenant, error)
 }
 
+func (m *mockStore) GetSnippetByID(ctx context.Context, id string) (*models.Snippet, error) {
+	if m.getSnippetByID != nil {
+		return m.getSnippetByID(ctx, id)
+	}
+	return nil, errors.New("not found")
+}
 func (m *mockStore) GetSnippetBySlug(ctx context.Context, tenantID, slug string) (*models.Snippet, error) {
 	return m.getSnippetBySlug(ctx, tenantID, slug)
 }

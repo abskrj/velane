@@ -43,6 +43,5 @@ export interface InvocationResult {
 
 export interface CreateSnippetInput {
   name: string
-  slug: string
-  language: string
+  language: 'bun' | 'python'
 }

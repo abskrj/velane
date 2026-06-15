@@ -144,6 +144,7 @@ func newRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logge
 		r.Get("/v1/tenant/egress", tenantsH.GetEgressPolicy)
 		r.With(middleware.RequireScope("admin", log)).
 			Put("/v1/tenant/egress", tenantsH.UpdateEgressPolicy)
+		r.Get("/v1/tenant/runtime-limits", tenantsH.GetRuntimeLimits)
 
 		// Branding.
 		r.With(middleware.RequireScope("invoke", log)).

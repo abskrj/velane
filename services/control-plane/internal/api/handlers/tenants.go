@@ -184,3 +184,14 @@ func (h *TenantsHandler) UpdateEgressPolicy(w http.ResponseWriter, r *http.Reque
 
 	writeJSON(w, http.StatusOK, updated.EgressPolicy)
 }
+
+// GetRuntimeLimits handles GET /v1/tenant/runtime-limits.
+// Returns per-tenant caps (read-only for tenant users).
+func (h *TenantsHandler) GetRuntimeLimits(w http.ResponseWriter, r *http.Request) {
+	authTenant := middleware.TenantFromContext(r.Context())
+	if authTenant == nil {
+		writeError(w, http.StatusUnauthorized, "unauthenticated")
+		return
+	}
+	writeJSON(w, http.StatusOK, authTenant.RuntimeLimits.Normalize())
+}

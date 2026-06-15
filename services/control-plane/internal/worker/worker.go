@@ -132,6 +132,7 @@ func specForJob(job *redisstore.Job) executor.RunSpec {
 		Input:         job.Input,
 		TimeoutMs:     job.TimeoutMs,
 		MaxMemoryMB:   job.MaxMemoryMB,
+		MaxCPUPercent: job.MaxCPUPercent,
 		SecretEnvVars: job.SecretEnvVars,
 		Libraries:     job.Libraries,
 	}

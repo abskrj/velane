@@ -155,7 +155,7 @@ func TestGetSecretsForInvocation_SnippetSpecific(t *testing.T) {
 		t.Fatalf("create tenant: %v", err)
 	}
 
-	snippet, err := store.CreateSnippet(ctx, tenant.ID, "My Snippet", uniqueSlug(t, "inv-sec-snip"), "bun", "")
+	snippet, err := store.CreateSnippet(ctx, tenant.ID, "My Snippet", "bun", "")
 	if err != nil {
 		t.Fatalf("create snippet: %v", err)
 	}
@@ -193,7 +193,7 @@ func TestGetSecretsForInvocation_TenantWide(t *testing.T) {
 		t.Fatalf("create tenant: %v", err)
 	}
 
-	snippet, err := store.CreateSnippet(ctx, tenant.ID, "TW Snippet", uniqueSlug(t, "tw-sec-snip"), "bun", "")
+	snippet, err := store.CreateSnippet(ctx, tenant.ID, "TW Snippet", "bun", "")
 	if err != nil {
 		t.Fatalf("create snippet: %v", err)
 	}
@@ -226,7 +226,7 @@ func TestGetSecretsForInvocation_EnvironmentFilter(t *testing.T) {
 		t.Fatalf("create tenant: %v", err)
 	}
 
-	snippet, err := store.CreateSnippet(ctx, tenant.ID, "EnvF Snippet", uniqueSlug(t, "envf-sec-snip"), "bun", "")
+	snippet, err := store.CreateSnippet(ctx, tenant.ID, "EnvF Snippet", "bun", "")
 	if err != nil {
 		t.Fatalf("create snippet: %v", err)
 	}

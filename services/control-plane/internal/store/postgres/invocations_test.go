@@ -24,7 +24,7 @@ func TestCreateInvocation(t *testing.T) {
 	ctx := context.Background()
 
 	tenant, _ := store.CreateTenant(ctx, "Inv Org", uniqueSlug(t, "inv-org"))
-	sn, _ := store.CreateSnippet(ctx, tenant.ID, "Inv Snippet", uniqueSlug(t, "inv-sn"), "bun", "user-1")
+	sn, _ := store.CreateSnippet(ctx, tenant.ID, "Inv Snippet", "bun", "user-1")
 	v, _ := store.CreateVersion(ctx, sn.ID, "code", "{}", "{}", "user-1", 5000, 128, 100)
 
 	inv, err := store.CreateInvocation(ctx, sn.ID, v.ID, "prod", tenant.ID, `{"prompt":"hello"}`)
@@ -51,7 +51,7 @@ func TestUpdateInvocationResult(t *testing.T) {
 	ctx := context.Background()
 
 	tenant, _ := store.CreateTenant(ctx, "Update Inv Org", uniqueSlug(t, "updinv-org"))
-	sn, _ := store.CreateSnippet(ctx, tenant.ID, "Upd Snippet", uniqueSlug(t, "updinv-sn"), "bun", "user-1")
+	sn, _ := store.CreateSnippet(ctx, tenant.ID, "Upd Snippet", "bun", "user-1")
 	v, _ := store.CreateVersion(ctx, sn.ID, "code", "{}", "{}", "user-1", 5000, 128, 100)
 	inv, _ := store.CreateInvocation(ctx, sn.ID, v.ID, "prod", tenant.ID, `{}`)
 
@@ -94,7 +94,7 @@ func TestUpdateInvocationResult_Timeout(t *testing.T) {
 	ctx := context.Background()
 
 	tenant, _ := store.CreateTenant(ctx, "Timeout Org", uniqueSlug(t, "timeout-org"))
-	sn, _ := store.CreateSnippet(ctx, tenant.ID, "Timeout Snippet", uniqueSlug(t, "timeout-sn"), "python", "user-1")
+	sn, _ := store.CreateSnippet(ctx, tenant.ID, "Timeout Snippet", "python", "user-1")
 	v, _ := store.CreateVersion(ctx, sn.ID, "code", "{}", "{}", "user-1", 1000, 64, 50)
 	inv, _ := store.CreateInvocation(ctx, sn.ID, v.ID, "prod", tenant.ID, `{}`)
 
@@ -111,7 +111,7 @@ func TestListInvocationsBySnippet(t *testing.T) {
 	ctx := context.Background()
 
 	tenant, _ := store.CreateTenant(ctx, "List Inv Org", uniqueSlug(t, "listinv-org"))
-	sn, _ := store.CreateSnippet(ctx, tenant.ID, "List Inv Snippet", uniqueSlug(t, "listinv-sn"), "bun", "user-1")
+	sn, _ := store.CreateSnippet(ctx, tenant.ID, "List Inv Snippet", "bun", "user-1")
 	v, _ := store.CreateVersion(ctx, sn.ID, "code", "{}", "{}", "user-1", 5000, 128, 100)
 
 	for i := 0; i < 5; i++ {

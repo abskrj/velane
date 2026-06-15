@@ -5,16 +5,17 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/abskrj/velane/services/control-plane/internal/ids"
 	"github.com/abskrj/velane/services/control-plane/internal/models"
 )
 
 // CreateTenant inserts a new tenant row and returns the created record.
 func (s *Store) CreateTenant(ctx context.Context, name, slug string) (*models.Tenant, error) {
 	row := s.pool.QueryRow(ctx,
-		`INSERT INTO tenants (name, slug)
-		 VALUES ($1, $2)
-		 RETURNING id, name, slug, created_at, egress_policy, replay_enabled, branding`,
-		name, slug,
+		`INSERT INTO tenants (id, name, slug)
+		 VALUES ($1, $2, $3)
+		 RETURNING id, name, slug, created_at, egress_policy, replay_enabled, branding, runtime_limits`,
+		ids.New(), name, slug,
 	)
 
 	return scanTenant(row)
@@ -23,7 +24,7 @@ func (s *Store) CreateTenant(ctx context.Context, name, slug string) (*models.Te
 // GetTenantByID retrieves a tenant by its primary key.
 func (s *Store) GetTenantByID(ctx context.Context, id string) (*models.Tenant, error) {
 	row := s.pool.QueryRow(ctx,
-		`SELECT id, name, slug, created_at, egress_policy, replay_enabled, branding FROM tenants WHERE id = $1`,
+		`SELECT id, name, slug, created_at, egress_policy, replay_enabled, branding, runtime_limits FROM tenants WHERE id = $1`,
 		id,
 	)
 
@@ -37,7 +38,7 @@ func (s *Store) GetTenantByID(ctx context.Context, id string) (*models.Tenant, e
 // GetTenantBySlug retrieves a tenant by its unique URL slug.
 func (s *Store) GetTenantBySlug(ctx context.Context, slug string) (*models.Tenant, error) {
 	row := s.pool.QueryRow(ctx,
-		`SELECT id, name, slug, created_at, egress_policy, replay_enabled, branding FROM tenants WHERE slug = $1`,
+		`SELECT id, name, slug, created_at, egress_policy, replay_enabled, branding, runtime_limits FROM tenants WHERE slug = $1`,
 		slug,
 	)
 
@@ -58,7 +59,7 @@ func (s *Store) UpdateEgressPolicy(ctx context.Context, tenantID string, policy 
 	row := s.pool.QueryRow(ctx,
 		`UPDATE tenants SET egress_policy = $2
 		 WHERE id = $1
-		 RETURNING id, name, slug, created_at, egress_policy, replay_enabled, branding`,
+		 RETURNING id, name, slug, created_at, egress_policy, replay_enabled, branding, runtime_limits`,
 		tenantID, policyJSON,
 	)
 
@@ -75,7 +76,7 @@ func (s *Store) UpdateReplayEnabled(ctx context.Context, tenantID string, enable
 		`UPDATE tenants
 		 SET replay_enabled = $2
 		 WHERE id = $1
-		 RETURNING id, name, slug, created_at, egress_policy, replay_enabled, branding`,
+		 RETURNING id, name, slug, created_at, egress_policy, replay_enabled, branding, runtime_limits`,
 		tenantID, enabled,
 	)
 
@@ -91,7 +92,8 @@ func scanTenant(s scannable) (*models.Tenant, error) {
 	var t models.Tenant
 	var egressJSON []byte
 	var brandingJSON []byte
-	if err := s.Scan(&t.ID, &t.Name, &t.Slug, &t.CreatedAt, &egressJSON, &t.ReplayEnabled, &brandingJSON); err != nil {
+	var runtimeLimitsJSON []byte
+	if err := s.Scan(&t.ID, &t.Name, &t.Slug, &t.CreatedAt, &egressJSON, &t.ReplayEnabled, &brandingJSON, &runtimeLimitsJSON); err != nil {
 		return nil, err
 	}
 	if len(egressJSON) > 0 {
@@ -104,5 +106,11 @@ func scanTenant(s scannable) (*models.Tenant, error) {
 			return nil, fmt.Errorf("unmarshal branding: %w", err)
 		}
 	}
+	if len(runtimeLimitsJSON) > 0 {
+		if err := json.Unmarshal(runtimeLimitsJSON, &t.RuntimeLimits); err != nil {
+			return nil, fmt.Errorf("unmarshal runtime_limits: %w", err)
+		}
+	}
+	t.RuntimeLimits = t.RuntimeLimits.Normalize()
 	return &t, nil
 }

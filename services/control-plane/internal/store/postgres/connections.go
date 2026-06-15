@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/abskrj/velane/services/control-plane/internal/ids"
 	"github.com/abskrj/velane/services/control-plane/internal/models"
 )
 
@@ -14,8 +15,8 @@ import (
 func (s *Store) UpsertConnection(ctx context.Context, tenantID, provider, alias, providerConfigKey string, credentialProfileID *string, displayName string) (*models.Connection, error) {
 	now := time.Now()
 	row := s.pool.QueryRow(ctx,
-		`INSERT INTO connections (tenant_id, provider, alias, provider_config_key, credential_profile_id, nango_connection_id, display_name, created_at, updated_at)
-		 VALUES ($1, $2, $3, $4, $5, NULL, $6, $7, $7)
+		`INSERT INTO connections (id, tenant_id, provider, alias, provider_config_key, credential_profile_id, nango_connection_id, display_name, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, NULL, $7, $8, $8)
 		 ON CONFLICT (tenant_id, provider, alias) DO UPDATE
 		   SET display_name = EXCLUDED.display_name,
 		       provider_config_key = EXCLUDED.provider_config_key,
@@ -23,7 +24,7 @@ func (s *Store) UpsertConnection(ctx context.Context, tenantID, provider, alias,
 		       updated_at   = EXCLUDED.updated_at
 		 RETURNING id, tenant_id, provider, alias, provider_config_key, credential_profile_id,
 		           COALESCE(nango_connection_id, ''), display_name, created_at, updated_at`,
-		tenantID, provider, alias, providerConfigKey, credentialProfileID, displayName, now,
+		ids.New(), tenantID, provider, alias, providerConfigKey, credentialProfileID, displayName, now,
 	)
 	var c models.Connection
 	if err := row.Scan(&c.ID, &c.TenantID, &c.Provider, &c.Alias, &c.ProviderConfigKey, &c.CredentialProfileID,

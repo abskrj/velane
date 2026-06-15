@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/abskrj/velane/services/control-plane/internal/ids"
 	"github.com/abskrj/velane/services/control-plane/internal/models"
 )
 
@@ -47,10 +48,10 @@ func (s *Store) CreateEmbedToken(
 	}
 
 	row := s.pool.QueryRow(ctx,
-		`INSERT INTO embed_tokens (tenant_id, token_hash, allowed_snippet_ids, expires_at, created_by)
-		 VALUES ($1, $2, $3, now() + $4::interval, $5)
+		`INSERT INTO embed_tokens (id, tenant_id, token_hash, allowed_snippet_ids, expires_at, created_by)
+		 VALUES ($1, $2, $3, $4, now() + $5::interval, $6)
 		 RETURNING id, tenant_id, allowed_snippet_ids, expires_at, revoked_at, created_by, last_used_at, created_at`,
-		tenantID, hashOpaqueToken(plain), allowedJSON, formatInterval(ttl), createdBy,
+		ids.New(), tenantID, hashOpaqueToken(plain), allowedJSON, formatInterval(ttl), createdBy,
 	)
 	token, err := scanEmbedToken(row)
 	if err != nil {

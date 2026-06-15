@@ -4,13 +4,14 @@ import "time"
 
 // Tenant represents an isolated organisation namespace within velane.
 type Tenant struct {
-	ID            string       `json:"id"`
-	Name          string       `json:"name"`
-	Slug          string       `json:"slug"`
-	CreatedAt     time.Time    `json:"created_at"`
-	EgressPolicy  EgressPolicy `json:"egress_policy"`
-	ReplayEnabled bool         `json:"replay_enabled"`
-	Branding      Branding     `json:"branding"`
+	ID             string         `json:"id"`
+	Name           string         `json:"name"`
+	Slug           string         `json:"slug"`
+	CreatedAt      time.Time      `json:"created_at"`
+	EgressPolicy   EgressPolicy   `json:"egress_policy"`
+	ReplayEnabled  bool           `json:"replay_enabled"`
+	Branding       Branding       `json:"branding"`
+	RuntimeLimits  RuntimeLimits  `json:"runtime_limits"`
 }
 
 // Branding controls visual identity for embed surfaces.

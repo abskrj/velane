@@ -82,10 +82,10 @@ func (c *Client) GetSnippet(_ context.Context, id string) (*Snippet, error) {
 }
 
 // CreateSnippet creates a new snippet.
-func (c *Client) CreateSnippet(_ context.Context, name, slug, lang string) (*Snippet, error) {
+func (c *Client) CreateSnippet(_ context.Context, name, lang string) (*Snippet, error) {
 	var sn Snippet
 	resp, err := c.http.R().
-		SetBody(map[string]string{"name": name, "slug": slug, "language": lang}).
+		SetBody(map[string]string{"name": name, "language": lang}).
 		SetResult(&sn).
 		Post("/v1/snippets")
 	if err != nil {

@@ -157,13 +157,18 @@ func (h *VersionsHandler) CreateVersion(w http.ResponseWriter, r *http.Request) 
 		req.OutputSchema = "{}"
 	}
 	if req.TimeoutMs <= 0 {
-		req.TimeoutMs = 30000
+		req.TimeoutMs = 60000
 	}
 	if req.MaxMemoryMB <= 0 {
-		req.MaxMemoryMB = 128
+		req.MaxMemoryMB = 200
 	}
 	if req.MaxCPUPercent <= 0 {
-		req.MaxCPUPercent = 100
+		req.MaxCPUPercent = 10
+	}
+
+	if err := tenant.RuntimeLimits.ValidateVersionRuntime(req.TimeoutMs, req.MaxMemoryMB, req.MaxCPUPercent); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
 	}
 
 	version, err := h.store.CreateVersion(r.Context(),

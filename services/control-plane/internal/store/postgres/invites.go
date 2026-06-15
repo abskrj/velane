@@ -5,16 +5,17 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/abskrj/velane/services/control-plane/internal/ids"
 	"github.com/abskrj/velane/services/control-plane/internal/models"
 )
 
 // CreateInvite inserts a new invite_tokens row.
 func (s *Store) CreateInvite(ctx context.Context, tenantID, email, role, tokenHash string, expiresAt time.Time) (*models.InviteToken, error) {
 	row := s.pool.QueryRow(ctx,
-		`INSERT INTO invite_tokens (tenant_id, email, role, token_hash, expires_at)
-		 VALUES ($1, $2, $3, $4, $5)
+		`INSERT INTO invite_tokens (id, tenant_id, email, role, token_hash, expires_at)
+		 VALUES ($1, $2, $3, $4, $5, $6)
 		 RETURNING id, tenant_id, email, role, token_hash, expires_at, accepted_at, created_at`,
-		tenantID, email, role, tokenHash, expiresAt,
+		ids.New(), tenantID, email, role, tokenHash, expiresAt,
 	)
 	return scanInviteToken(row)
 }

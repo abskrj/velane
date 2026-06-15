@@ -92,7 +92,7 @@ func (h *WebhookHandler) GitWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	version, err := h.store.CreateVersion(r.Context(),
-		snippet.ID, payload.SnippetCode, "{}", "{}", "git-webhook", 30000, 128, 100,
+		snippet.ID, payload.SnippetCode, "{}", "{}", "git-webhook", 60000, 200, 10,
 	)
 	if err != nil {
 		h.log.Error("webhook: create version failed", zap.Error(err))

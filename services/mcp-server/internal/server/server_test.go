@@ -180,6 +180,50 @@ func TestResourcesReadRuntimeContract(t *testing.T) {
 	if !strings.Contains(string(raw), "Velane Runtime Contract") {
 		t.Fatalf("expected runtime contract content: %s", string(raw))
 	}
+	if !strings.Contains(string(raw), "Mastra") {
+		t.Fatalf("expected runtime contract to mention Mastra: %s", string(raw))
+	}
+}
+
+func TestResourcesReadAgentFrameworks(t *testing.T) {
+	srv := server.New(tools.NewRegistry(controlplane.New("http://localhost:1")))
+	params := map[string]any{"uri": "velane://runtime/agent-frameworks"}
+	pb, _ := json.Marshal(params)
+	resp := srv.HandleRequest(context.Background(), "Bearer test", protocol.Request{
+		JSONRPC: "2.0",
+		ID:      1,
+		Method:  "resources/read",
+		Params:  pb,
+	})
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: %+v", resp.Error)
+	}
+	raw, _ := json.Marshal(resp.Result)
+	if !strings.Contains(string(raw), "LangGraph") {
+		t.Fatalf("expected agent framework content: %s", string(raw))
+	}
+}
+
+func TestToolsCallGetAgentFrameworkDocs(t *testing.T) {
+	srv := server.New(tools.NewRegistry(controlplane.New("http://localhost:1")))
+	params := map[string]any{
+		"name":      "get_agent_framework_docs",
+		"arguments": map[string]any{},
+	}
+	pb, _ := json.Marshal(params)
+	resp := srv.HandleRequest(context.Background(), "Bearer test", protocol.Request{
+		JSONRPC: "2.0",
+		ID:      1,
+		Method:  "tools/call",
+		Params:  pb,
+	})
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: %+v", resp.Error)
+	}
+	raw, _ := json.Marshal(resp.Result)
+	if !strings.Contains(string(raw), "@mastra/core") {
+		t.Fatalf("expected Mastra in tool result: %s", string(raw))
+	}
 }
 
 func TestResourcesReadWorkflowCatalogTruncates(t *testing.T) {
@@ -239,5 +283,30 @@ func TestPromptsGet(t *testing.T) {
 	raw, _ := json.Marshal(resp.Result)
 	if !strings.Contains(string(raw), "list_connections") || !strings.Contains(string(raw), "github") {
 		t.Fatalf("expected workflow prompt content: %s", string(raw))
+	}
+}
+
+func TestPromptsGetCreateAgentWorkflow(t *testing.T) {
+	srv := server.New(tools.NewRegistry(controlplane.New("http://localhost:1")))
+	params := map[string]any{
+		"name": "create_agent_workflow",
+		"arguments": map[string]any{
+			"goal":     "summarize support tickets",
+			"language": "bun",
+		},
+	}
+	pb, _ := json.Marshal(params)
+	resp := srv.HandleRequest(context.Background(), "Bearer test", protocol.Request{
+		JSONRPC: "2.0",
+		ID:      1,
+		Method:  "prompts/get",
+		Params:  pb,
+	})
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: %+v", resp.Error)
+	}
+	raw, _ := json.Marshal(resp.Result)
+	if !strings.Contains(string(raw), "get_agent_framework_docs") || !strings.Contains(string(raw), "Mastra") {
+		t.Fatalf("expected agent workflow prompt: %s", string(raw))
 	}
 }

@@ -39,6 +39,15 @@ var legacyPromptNames = map[string]string{
 func NewRegistry() *Registry {
 	r := &Registry{prompts: map[string]Prompt{}}
 	r.add(Prompt{
+		Name:        "create_agent_workflow",
+		Description: "Create an AI agent workflow using Mastra (bun) or LangGraph (python). Do not hand-roll custom agent loops.",
+		Arguments: []Argument{
+			{Name: "goal", Description: "What the agent should do.", Required: true},
+			{Name: "language", Description: "bun (Mastra) or python (LangGraph). Default bun.", Required: false},
+			{Name: "env", Description: "Validation environment, usually dev.", Required: false},
+		},
+	})
+	r.add(Prompt{
 		Name:        "create_integration_workflow",
 		Description: "Create a Velane workflow that uses a connected integration and validate it in dev.",
 		Arguments: []Argument{
@@ -88,6 +97,8 @@ func (r *Registry) Get(name string, args map[string]any) (Prompt, []Message, err
 
 	var text string
 	switch name {
+	case "create_agent_workflow":
+		text = createAgentWorkflowPrompt(args)
 	case "create_integration_workflow":
 		text = createIntegrationWorkflowPrompt(args)
 	case "debug_failed_invocation":
@@ -110,6 +121,36 @@ func (r *Registry) Get(name string, args map[string]any) (Prompt, []Message, err
 func (r *Registry) add(prompt Prompt) {
 	r.prompts[prompt.Name] = prompt
 	r.order = append(r.order, prompt.Name)
+}
+
+func createAgentWorkflowPrompt(args map[string]any) string {
+	goal := argString(args, "goal", "<goal>")
+	language := argString(args, "language", "bun")
+	env := argString(args, "env", "dev")
+	framework := "Mastra (@mastra/core/agent)"
+	if language == "python" {
+		framework = "LangGraph (langgraph)"
+	}
+
+	return strings.TrimSpace(fmt.Sprintf(`
+Create a Velane %s AI agent workflow.
+
+Goal: %s
+Validation environment: %s
+Required framework: %s
+
+Follow this workflow:
+
+1. Call get_agent_framework_docs before writing any code.
+2. Use %s — do NOT hand-roll OpenAI/Anthropic fetch loops or custom agent classes.
+3. create_workflow with language=%s (workflow ID is assigned automatically).
+4. update_draft with framework-based handler code. Set runtime limits for agents (e.g. max_memory_mb 512, timeout_ms 120000).
+5. Store provider API keys as tenant secrets (OPENAI_API_KEY, etc.).
+6. invoke_workflow in %s and inspect output, stderr, and dev logs.
+7. Do not publish until dev validation succeeds.
+
+Return workflow ID, framework used, input/output shape, validation result, and next publish step.
+`, language, goal, env, framework, framework, language, env))
 }
 
 func createIntegrationWorkflowPrompt(args map[string]any) string {

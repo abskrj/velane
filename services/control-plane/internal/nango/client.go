@@ -321,6 +321,38 @@ func (c *Client) ListProviders(ctx context.Context) ([]models.NangoProvider, err
 	return providers, nil
 }
 
+// GetProviderDetail fetches a single provider from Nango's GET /providers/{provider}.
+// This returns richer metadata than the list endpoint, including docs URL and proxy base_url.
+func (c *Client) GetProviderDetail(ctx context.Context, providerKey string) (*models.NangoProvider, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/providers/"+providerKey, nil)
+	if err != nil {
+		return nil, err
+	}
+	c.setAuth(req)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("nango GetProviderDetail: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, fmt.Errorf("provider %q not found", providerKey)
+	}
+	if resp.StatusCode >= 300 {
+		raw, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("nango GetProviderDetail %d: %s", resp.StatusCode, raw)
+	}
+
+	var envelope struct {
+		Data models.NangoProvider `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
+		return nil, fmt.Errorf("nango GetProviderDetail decode: %w", err)
+	}
+	return &envelope.Data, nil
+}
+
 // GetProvider returns metadata for a single provider from the cached list.
 func (c *Client) GetProvider(ctx context.Context, providerKey string) (*models.NangoProvider, error) {
 	providers, err := c.ListProviders(ctx)

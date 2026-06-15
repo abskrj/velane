@@ -20,15 +20,16 @@ type Endpoint struct {
 
 // ProviderDoc is the full documentation entry for one provider.
 type ProviderDoc struct {
-	Provider        string     `json:"provider"`
-	Name            string     `json:"name"`
-	BaseURL         string     `json:"base_url"`
-	DocsURL         string     `json:"docs_url"`
-	AuthMode        string     `json:"auth_mode"`
-	CommonEndpoints []Endpoint `json:"common_endpoints"`
-	BunExample      string     `json:"bun_example"`
-	PythonExample   string     `json:"python_example"`
-	Note            string     `json:"note,omitempty"`
+	Provider            string     `json:"provider"`
+	Name                string     `json:"name"`
+	BaseURL             string     `json:"base_url"`
+	DocsURL             string     `json:"docs_url"`
+	AuthMode            string     `json:"auth_mode"`
+	CommonEndpoints     []Endpoint `json:"common_endpoints"`
+	BunExample          string     `json:"bun_example"`
+	PythonExample       string     `json:"python_example"`
+	NangoDocsMarkdown   string     `json:"nango_docs_markdown,omitempty"`
+	Note                string     `json:"note,omitempty"`
 }
 
 type meta struct {

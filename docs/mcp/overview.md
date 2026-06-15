@@ -62,6 +62,7 @@ Current resources:
 | URI | Purpose |
 |---|---|
 | `velane://runtime/contract` | Workflow handler shapes, integration helper usage, invocation/logging rules, and recommended MCP workflow. |
+| `velane://runtime/agent-frameworks` | Mastra (Bun) and LangGraph (Python) — **read before writing AI agent workflows**. |
 | `velane://workflows` | Compact first page of workflows. The response is bounded and omits code. Use `get_workflow` for code, versions, and active environments. |
 | `velane://connections` | Compact first page of connected integrations. Use `list_connections` for filtering and pagination. |
 
@@ -73,6 +74,7 @@ Current prompts:
 
 | Prompt | Purpose |
 |---|---|
+| `create_agent_workflow` | Guides an agent to use Mastra/LangGraph (not custom loops) for LLM/agent workflows. |
 | `create_integration_workflow` | Guides an agent through connection discovery, provider docs lookup, workflow creation/update, dev invocation, and validation. |
 | `debug_failed_invocation` | Guides an agent through `get_invocation` / `get_logs`, code inspection, draft patching, and dev reruns. |
 | `publish_after_validation` | Guides an agent to validate a specific version before publishing it to a target environment. |
@@ -91,7 +93,7 @@ Current prompts:
 
 - workflows: create, update draft, publish, list, get
 - invoke: sync/async/stream invocation
-- integrations: list tenant connections and provider docs
+- integrations: list tenant connections, provider docs, and **agent framework docs** (`get_agent_framework_docs`)
 - operations: logs, metrics, secrets
 
 ## Practical guidance

@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/abskrj/velane/services/mcp-server/internal/agentdocs"
 	"github.com/abskrj/velane/services/mcp-server/internal/controlplane"
 )
 
@@ -90,12 +91,29 @@ Call get_integration_docs(provider) to look up endpoints for any provider.`,
 			if err != nil {
 				return nil, err
 			}
+			provider = strings.TrimSpace(strings.ToLower(provider))
 			var out map[string]any
 			path := "/v1/integrations/" + url.PathEscape(provider) + "/docs"
 			if err := r.client.Get(ctx, authHeader, path, &out); err != nil {
 				return nil, err
 			}
 			return out, nil
+		},
+	})
+
+	r.add(Tool{
+		Name: "get_agent_framework_docs",
+		Description: `Returns Mastra (Bun) and LangGraph (Python) patterns for AI agent workflows.
+
+Call this BEFORE create_workflow / update_draft when building chatbots, tool-using agents, or multi-step LLM flows.
+Do not hand-roll custom agent loops — use the preinstalled frameworks.`,
+		InputSchema: map[string]any{"type": "object", "properties": map[string]any{}},
+		Handle: func(_ context.Context, _ string, _ map[string]any) (any, error) {
+			return map[string]any{
+				"bun_framework":    "Mastra (@mastra/core/agent)",
+				"python_framework": "LangGraph (langgraph)",
+				"docs_markdown":    agentdocs.Doc,
+			}, nil
 		},
 	})
 
@@ -167,7 +185,7 @@ Call get_integration_docs(provider) to look up endpoints for any provider.`,
 
 	r.add(Tool{
 		Name:        "create_workflow",
-		Description: "Create a workflow. The workflow ID (UUID) is assigned automatically.",
+		Description: "Create a workflow. The workflow ID (UUID) is assigned automatically. For AI agent workflows, call get_agent_framework_docs first and use Mastra (bun) or LangGraph (python).",
 		InputSchema: map[string]any{
 			"type":     "object",
 			"required": []string{"name", "language"},
@@ -201,12 +219,17 @@ Call get_integration_docs(provider) to look up endpoints for any provider.`,
 		Name: "update_draft",
 		Description: `Create a new workflow version from source code.
 
-Built-in import always available in workflow code (no install needed):
-  Bun:    import { integration } from '@velane/integrations'
-  Python: from velane.integrations import integration
+Built-in imports (no install needed):
+  Integrations — Bun: import { integration } from '@velane/integrations'
+                 Python: from velane.integrations import integration
+  AI agents    — Bun: Mastra — import { Agent } from '@mastra/core/agent'
+                 Python: LangGraph — from langgraph.graph import StateGraph
 
-Call list_connections to see which OAuth providers are connected for this tenant.
-Call get_integration_docs(provider) for endpoint reference and working code examples.`,
+For chat/tool-using/LLM agent workflows you MUST use Mastra or LangGraph.
+Call get_agent_framework_docs before writing agent code. Do not hand-roll custom agent loops.
+
+Call list_connections / get_integration_docs for OAuth provider APIs.
+For agent workflows set higher limits via timeout_ms, max_memory_mb (e.g. 512), max_cpu_percent.`,
 		InputSchema: map[string]any{
 			"type":     "object",
 			"required": []string{"workflow_id", "code"},

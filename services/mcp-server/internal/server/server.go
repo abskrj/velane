@@ -163,10 +163,99 @@ func formatToolResult(toolName string, result any) (map[string]any, string) {
 
 	var obj map[string]any
 	if err := json.Unmarshal(b, &obj); err == nil && obj != nil {
-		return obj, fmt.Sprintf("%s completed successfully\n%s", toolName, string(b))
+		text := fmt.Sprintf("%s completed successfully\n%s", toolName, string(b))
+		if toolName == "get_integration_docs" {
+			text = formatIntegrationDocsText(obj)
+		}
+		return obj, text
 	}
 
 	return map[string]any{"value": result}, fmt.Sprintf("%s completed successfully", toolName)
+}
+
+func formatIntegrationDocsText(doc map[string]any) string {
+	provider, _ := doc["provider"].(string)
+	name, _ := doc["name"].(string)
+	baseURL, _ := doc["base_url"].(string)
+	docsURL, _ := doc["docs_url"].(string)
+	authMode, _ := doc["auth_mode"].(string)
+	note, _ := doc["note"].(string)
+	bunEx, _ := doc["bun_example"].(string)
+	pyEx, _ := doc["python_example"].(string)
+
+	var b strings.Builder
+	b.WriteString("# Integration docs: ")
+	if name != "" {
+		b.WriteString(name)
+	} else {
+		b.WriteString(provider)
+	}
+	if provider != "" {
+		b.WriteString(" (")
+		b.WriteString(provider)
+		b.WriteString(")")
+	}
+	b.WriteString("\n\n")
+	if baseURL != "" {
+		b.WriteString("Base URL: ")
+		b.WriteString(baseURL)
+		b.WriteString("\n")
+	}
+	if docsURL != "" {
+		b.WriteString("Official docs: ")
+		b.WriteString(docsURL)
+		b.WriteString("\n")
+	}
+	if authMode != "" {
+		b.WriteString("Auth: ")
+		b.WriteString(authMode)
+		b.WriteString("\n")
+	}
+	if note != "" {
+		b.WriteString("\n")
+		b.WriteString(note)
+		b.WriteString("\n")
+	}
+
+	endpoints, ok := doc["common_endpoints"].([]any)
+	if ok && len(endpoints) > 0 {
+		b.WriteString("\n## Common endpoints\n")
+		for _, ep := range endpoints {
+			m, ok := ep.(map[string]any)
+			if !ok {
+				continue
+			}
+			method, _ := m["method"].(string)
+			path, _ := m["path"].(string)
+			desc, _ := m["description"].(string)
+			b.WriteString("- ")
+			b.WriteString(method)
+			b.WriteString(" ")
+			b.WriteString(path)
+			if desc != "" {
+				b.WriteString(" — ")
+				b.WriteString(desc)
+			}
+			b.WriteString("\n")
+		}
+	}
+
+	if bunEx != "" {
+		b.WriteString("\n## Bun example\n```typescript\n")
+		b.WriteString(bunEx)
+		b.WriteString("\n```\n")
+	}
+	if pyEx != "" {
+		b.WriteString("\n## Python example\n```python\n")
+		b.WriteString(pyEx)
+		b.WriteString("\n```\n")
+	}
+	if nangoMD, _ := doc["nango_docs_markdown"].(string); nangoMD != "" {
+		b.WriteString("\n## Nango provider guide\n\n")
+		b.WriteString(nangoMD)
+		b.WriteString("\n")
+	}
+	return strings.TrimSpace(b.String())
 }
 
 func listResultKey(toolName string) string {

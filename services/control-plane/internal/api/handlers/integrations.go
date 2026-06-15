@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/base64"
 	"fmt"
 	"io"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/abskrj/velane/services/control-plane/internal/models"
 	"github.com/abskrj/velane/services/control-plane/internal/nango"
+	"github.com/abskrj/velane/services/control-plane/internal/nangodocs"
 	"github.com/abskrj/velane/services/control-plane/internal/providers"
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
@@ -142,6 +144,7 @@ func (h *IntegrationsHandler) ListProviders(w http.ResponseWriter, r *http.Reque
 		AuthMode         string                            `json:"auth_mode"`
 		Categories       []string                          `json:"categories"`
 		DefaultScopes    []string                          `json:"default_scopes,omitempty"`
+		DocsURL          string                            `json:"docs,omitempty"`
 		LogoURL          string                            `json:"logo_url,omitempty"`
 		ConnectionConfig map[string]models.ConnectionField `json:"connection_config,omitempty"`
 		Credentials      map[string]models.ConnectionField `json:"credentials,omitempty"`
@@ -157,6 +160,7 @@ func (h *IntegrationsHandler) ListProviders(w http.ResponseWriter, r *http.Reque
 				Name:       p.Name,
 				AuthMode:   p.AuthMode,
 				Categories: p.Categories,
+				DocsURL:    providers.DocsURL(p.UniqueKey),
 			})
 		}
 	} else {
@@ -164,12 +168,17 @@ func (h *IntegrationsHandler) ListProviders(w http.ResponseWriter, r *http.Reque
 		// so the frontend can build dynamic configuration forms.
 		out = make([]providerOut, 0, len(list))
 		for _, p := range list {
+			docsURL := p.DocsURL
+			if docsURL == "" {
+				docsURL = providers.DocsURL(p.UniqueKey)
+			}
 			out = append(out, providerOut{
 				UniqueKey:        p.UniqueKey,
 				Name:             p.Name,
 				AuthMode:         p.AuthMode,
 				Categories:       p.Categories,
 				DefaultScopes:    p.DefaultScopes,
+				DocsURL:          docsURL,
 				LogoURL:          h.rewriteLogoURL(p.LogoURL),
 				ConnectionConfig: p.ConnectionConfig,
 				Credentials:      p.Credentials,
@@ -227,60 +236,90 @@ func parseProvidersOffset(raw string) int {
 }
 
 // GetProviderDocs handles GET /v1/integrations/{provider}/docs.
-// Returns structured API documentation: base URL, common endpoints, code examples.
-// For providers in the bundled metadata, returns rich docs. For others, falls back
-// to Nango metadata with a generic usage example.
+// Returns structured API documentation merged from Velane bundled metadata (when available),
+// Nango provider metadata (docs URL, proxy base_url), and markdown fetched from nango.dev.
 func (h *IntegrationsHandler) GetProviderDocs(w http.ResponseWriter, r *http.Request) {
-	providerKey := chi.URLParam(r, "provider")
+	rawKey := chi.URLParam(r, "provider")
+	providerKey, inCatalog := providers.ResolveKey(rawKey)
 
-	// Tier 1: bundled metadata (rich docs for top providers).
-	if doc := providers.Get(providerKey); doc != nil {
-		writeJSON(w, http.StatusOK, doc)
-		return
-	}
-
-	// Tier 2: check the static catalog for the display name and auth mode,
-	// then try Nango for a docs URL. Never fail if Nango is unavailable.
-	var (
-		name     = providerKey
-		authMode = "OAUTH2"
-		docsURL  = ""
-	)
-	for _, c := range providers.Catalog {
-		if c.UniqueKey == providerKey {
-			name = c.Name
-			authMode = c.AuthMode
-			break
+	doc := providers.Get(providerKey)
+	if doc == nil {
+		doc = &providers.ProviderDoc{
+			Provider:        providerKey,
+			CommonEndpoints: []providers.Endpoint{},
+			BunExample: fmt.Sprintf(
+				"import { integration } from '@velane/integrations'\nconst client = integration('%s')",
+				providerKey,
+			),
+			PythonExample: fmt.Sprintf(
+				"from velane.integrations import integration\nclient = integration(\"%s\")",
+				providerKey,
+			),
+			Note: "Full endpoint list not bundled. See nango_docs_markdown for Nango's provider guide.",
 		}
 	}
-	if name == providerKey {
-		// Not in catalog at all — genuinely unknown.
-		writeError(w, http.StatusNotFound, "unknown provider: "+providerKey)
+
+	if inCatalog {
+		for _, c := range providers.Catalog {
+			if c.UniqueKey == providerKey {
+				if doc.Name == "" {
+					doc.Name = c.Name
+				}
+				if doc.AuthMode == "" {
+					doc.AuthMode = c.AuthMode
+				}
+				break
+			}
+		}
+	}
+
+	nangoFound := h.mergeNangoProvider(r.Context(), doc)
+
+	if doc.DocsURL == "" {
+		doc.DocsURL = providers.DocsURL(providerKey)
+	}
+
+	if md, err := nangodocs.FetchMarkdown(r.Context(), doc.DocsURL, providerKey); err == nil {
+		doc.NangoDocsMarkdown = md
+	} else {
+		h.log.Debug("nango docs markdown fetch failed (non-fatal)",
+			zap.String("provider", providerKey),
+			zap.Error(err),
+		)
+	}
+
+	if !inCatalog && !nangoFound && doc.NangoDocsMarkdown == "" && len(doc.CommonEndpoints) == 0 {
+		writeError(w, http.StatusNotFound, "unknown provider: "+rawKey)
 		return
 	}
 
-	// Best-effort Nango lookup for docs URL — ignore errors.
-	if np, err := h.nango.GetProvider(r.Context(), providerKey); err == nil {
-		docsURL = np.DocsURL
-	} else {
-		h.log.Debug("nango GetProvider unavailable (non-fatal)", zap.String("provider", providerKey), zap.Error(err))
+	writeJSON(w, http.StatusOK, doc)
+}
+
+func (h *IntegrationsHandler) mergeNangoProvider(ctx context.Context, doc *providers.ProviderDoc) bool {
+	np, err := h.nango.GetProviderDetail(ctx, doc.Provider)
+	if err != nil {
+		np, err = h.nango.GetProvider(ctx, doc.Provider)
+		if err != nil {
+			h.log.Debug("nango provider lookup unavailable (non-fatal)",
+				zap.String("provider", doc.Provider),
+				zap.Error(err),
+			)
+			return false
+		}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
-		"provider":         providerKey,
-		"name":             name,
-		"base_url":         "",
-		"docs_url":         docsURL,
-		"auth_mode":        authMode,
-		"common_endpoints": []any{},
-		"note":             "Full endpoint list not bundled. Refer to the provider's official API docs.",
-		"bun_example": fmt.Sprintf(
-			"import { integration } from '@velane/integrations'\nconst client = integration('%s')",
-			providerKey,
-		),
-		"python_example": fmt.Sprintf(
-			"from velane.integrations import integration\nclient = integration(\"%s\")",
-			providerKey,
-		),
-	})
+	if np.Name != "" {
+		doc.Name = np.Name
+	}
+	if np.AuthMode != "" {
+		doc.AuthMode = np.AuthMode
+	}
+	if np.DocsURL != "" {
+		doc.DocsURL = np.DocsURL
+	}
+	if base := np.APIBaseURL(); base != "" {
+		doc.BaseURL = base
+	}
+	return true
 }

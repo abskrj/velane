@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/abskrj/velane/services/mcp-server/internal/agentdocs"
 	"github.com/abskrj/velane/services/mcp-server/internal/controlplane"
 )
 
@@ -44,7 +45,12 @@ func (r *Registry) List() []Resource {
 			MimeType:    "text/markdown",
 		},
 		{
-			URI:         "velane://workflows",
+			URI:         "velane://runtime/agent-frameworks",
+			Name:        "Agent framework guide",
+			Description: "Mastra (Bun) and LangGraph (Python) — required for AI agent workflows. Read before writing agent code.",
+			MimeType:    "text/markdown",
+		},
+		{
 			Name:        "Workflow catalog",
 			Description: "Compact first page of workflows for this tenant. Use get_workflow for code and versions.",
 			MimeType:    "application/json",
@@ -65,6 +71,12 @@ func (r *Registry) Read(ctx context.Context, authHeader, uri string) ([]Content,
 			URI:      uri,
 			MimeType: "text/markdown",
 			Text:     runtimeContract,
+		}}, nil
+	case "velane://runtime/agent-frameworks":
+		return []Content{{
+			URI:      uri,
+			MimeType: "text/markdown",
+			Text:     agentdocs.Doc,
 		}}, nil
 	case "velane://workflows", "velane://snippets":
 		text, err := r.readWorkflowCatalog(ctx, authHeader)
@@ -198,6 +210,17 @@ github = integration("github")
 user = github.get("/user")
 ` + "```" + `
 
+## AI agent workflows (Mastra / LangGraph)
+
+For chatbots, tool-using agents, or multi-step LLM reasoning, **use the preinstalled frameworks**. Do **not** hand-roll fetch calls to OpenAI/Anthropic or custom agent classes.
+
+- **Bun**: Mastra — ` + "`import { Agent } from '@mastra/core/agent'`" + `
+- **Python**: LangGraph — ` + "`from langgraph.graph import StateGraph`" + `
+
+Read ` + "`velane://runtime/agent-frameworks`" + ` or call **get_agent_framework_docs** before writing agent code.
+
+Set higher runtime limits in update_draft for agent workflows (e.g. max_memory_mb 512+, timeout_ms 120000).
+
 ## Environments and logs
 
 - Validate in dev first, then promote to staging or prod.
@@ -214,4 +237,6 @@ Prefer this order for integration-heavy work:
 3. Create or update a draft workflow.
 4. Invoke in dev and inspect logs/output.
 5. Publish the exact validated version_number.
+
+For **agent/LLM workflows**, read velane://runtime/agent-frameworks (or get_agent_framework_docs) first, then use Mastra (bun) or LangGraph (python).
 `

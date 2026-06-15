@@ -26,8 +26,22 @@ type NangoProvider struct {
 	DefaultScopes    []string                   `json:"default_scopes,omitempty"`
 	DocsURL          string                     `json:"docs,omitempty"`
 	LogoURL          string                     `json:"logo_url,omitempty"`
+	Proxy            *NangoProviderProxy        `json:"proxy,omitempty"`
 	ConnectionConfig map[string]ConnectionField `json:"connection_config,omitempty"`
 	Credentials      map[string]ConnectionField `json:"credentials,omitempty"`
+}
+
+// NangoProviderProxy is the proxy section of a Nango provider definition.
+type NangoProviderProxy struct {
+	BaseURL string `json:"base_url"`
+}
+
+// APIBaseURL returns the provider API base URL from the Nango proxy config.
+func (p *NangoProvider) APIBaseURL() string {
+	if p == nil || p.Proxy == nil {
+		return ""
+	}
+	return p.Proxy.BaseURL
 }
 
 // ConnectionField describes one field in a provider's connection_config or credentials schema.

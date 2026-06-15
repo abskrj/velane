@@ -251,12 +251,40 @@ func setupWithNango(t *testing.T) *testEnv {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"data":[` +
-				`{"name":"github","display_name":"GitHub","auth_mode":"OAUTH2","categories":["developer-tools"]},` +
+				`{"name":"github","display_name":"GitHub","auth_mode":"OAUTH2","categories":["developer-tools"],"docs":"https://nango.dev/docs/api-integrations/github","proxy":{"base_url":"https://api.github.com"}},` +
 				`{"name":"slack","display_name":"Slack","auth_mode":"OAUTH2","categories":["communication"]},` +
-				`{"name":"figma","display_name":"Figma","auth_mode":"OAUTH2","categories":["design"]},` +
+				`{"name":"figma","display_name":"Figma","auth_mode":"OAUTH2","categories":["design"],"docs":"https://nango.dev/docs/api-integrations/figma"},` +
 				`{"name":"8x8","display_name":"8x8","auth_mode":"OAUTH2_CC","categories":["communication"]},` +
 				`{"name":"google-gemini","display_name":"Google Gemini","auth_mode":"API_KEY","categories":["dev-tools"],"credentials":{"apiKey":{"type":"string","title":"API Key"}}}` +
 				`]}`))
+
+		// GET /providers/{provider} — single provider detail.
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/providers/"):
+			key := strings.TrimPrefix(r.URL.Path, "/providers/")
+			detail := map[string]any{
+				"name":         key,
+				"display_name": key,
+				"auth_mode":    "OAUTH2",
+				"docs":         "https://nango.dev/docs/api-integrations/" + key,
+			}
+			if key == "github" {
+				detail["display_name"] = "GitHub"
+				detail["proxy"] = map[string]string{"base_url": "https://api.github.com"}
+			}
+			if key == "figma" {
+				detail["display_name"] = "Figma"
+			}
+			if key == "nonexistent-xyz" {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			if _, ok := providerAuthModes[key]; !ok && key != "figma" && key != "github" {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": detail})
 
 		// GET /proxy/* — forward as a JSON response from the mock provider.
 		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/proxy/"):
@@ -1102,6 +1130,39 @@ func TestIntegrations_GetBundledDocs(t *testing.T) {
 	if body["bun_example"] == nil || body["bun_example"] == "" {
 		t.Error("bun_example must be set in bundled docs")
 	}
+}
+
+func TestIntegrations_GetBundledDocsCaseInsensitive(t *testing.T) {
+	env := setupWithNango(t)
+	rec := env.do(t, http.MethodGet, "/v1/integrations/GitHub/docs", env.manageKey, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d; want 200\nbody: %s", rec.Code, rec.Body.String())
+	}
+	body := decodeJSON(t, rec)
+	if body["provider"] != "github" {
+		t.Errorf("provider = %q; want github", body["provider"])
+	}
+}
+
+func TestIntegrations_ListProvidersIncludesDocs(t *testing.T) {
+	env := setupWithNango(t)
+	rec := env.do(t, http.MethodGet, "/v1/integrations?q=github&limit=5", env.manageKey, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d; want 200", rec.Code)
+	}
+	var list []map[string]any
+	if err := json.NewDecoder(rec.Body).Decode(&list); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	for _, p := range list {
+		if p["unique_key"] == "github" {
+			if docs, _ := p["docs"].(string); docs == "" {
+				t.Error("expected docs URL for github in list providers")
+			}
+			return
+		}
+	}
+	t.Fatal("github not found in provider list")
 }
 
 func TestIntegrations_GetFallbackDocs(t *testing.T) {

@@ -56,7 +56,7 @@ func (s *Store) CreateSnippet(ctx context.Context, tenantID, name, language, cre
 func (s *Store) GetSnippetByID(ctx context.Context, id string) (*models.Snippet, error) {
 	row := s.pool.QueryRow(ctx,
 		`SELECT id, tenant_id, name, slug, language, created_at, created_by
-		 FROM snippets WHERE id = $1`,
+		 FROM snippets WHERE id = $1 AND deleted_at IS NULL`,
 		id,
 	)
 	return scanSnippet(row)
@@ -66,17 +66,17 @@ func (s *Store) GetSnippetByID(ctx context.Context, id string) (*models.Snippet,
 func (s *Store) GetSnippetBySlug(ctx context.Context, tenantID, slug string) (*models.Snippet, error) {
 	row := s.pool.QueryRow(ctx,
 		`SELECT id, tenant_id, name, slug, language, created_at, created_by
-		 FROM snippets WHERE tenant_id = $1 AND slug = $2`,
+		 FROM snippets WHERE tenant_id = $1 AND slug = $2 AND deleted_at IS NULL`,
 		tenantID, slug,
 	)
 	return scanSnippet(row)
 }
 
-// ListSnippets returns all snippets belonging to a tenant.
+// ListSnippets returns all non-archived snippets belonging to a tenant.
 func (s *Store) ListSnippets(ctx context.Context, tenantID string) ([]*models.Snippet, error) {
 	rows, err := s.pool.Query(ctx,
 		`SELECT id, tenant_id, name, slug, language, created_at, created_by
-		 FROM snippets WHERE tenant_id = $1
+		 FROM snippets WHERE tenant_id = $1 AND deleted_at IS NULL
 		 ORDER BY created_at DESC`,
 		tenantID,
 	)
@@ -96,10 +96,9 @@ func (s *Store) ListSnippets(ctx context.Context, tenantID string) ([]*models.Sn
 	return snippets, rows.Err()
 }
 
-// DeleteSnippet removes a snippet (cascades to versions, environments,
-// invocations via FK).
+// DeleteSnippet soft-deletes a snippet by setting deleted_at.
 func (s *Store) DeleteSnippet(ctx context.Context, id string) error {
-	_, err := s.pool.Exec(ctx, `DELETE FROM snippets WHERE id = $1`, id)
+	_, err := s.pool.Exec(ctx, `UPDATE snippets SET deleted_at = now() WHERE id = $1`, id)
 	return err
 }
 

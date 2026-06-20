@@ -949,7 +949,7 @@ export default function Home() {
                   </p>
                 </div>
                 <a
-                  href="mailto:abskrj@icloud.com?subject=Velane%20Commercial%20License"
+                  href="mailto:abhi@velane.sh?subject=Velane%20Commercial%20License"
                   className="block w-full rounded-lg bg-zinc-900 px-4 py-2.5 text-center text-sm font-medium text-white transition-colors hover:bg-zinc-800"
                 >
                   Contact for a license

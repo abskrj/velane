@@ -190,4 +190,4 @@ tofu -chdir=../aws-eks output -raw acm_certificate_arn
 ## License
 
 Dual-licensed: AGPL-3.0 (open source) + commercial license for proprietary use.
-Contact: abskrj@icloud.com
+Contact: abhi@velane.sh

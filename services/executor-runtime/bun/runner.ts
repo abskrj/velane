@@ -38,7 +38,6 @@
 
 import { randomBytes } from "node:crypto";
 import { mkdtemp, writeFile, mkdir, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { applyLimits, cleanupCgroup, isOomExit, readPeakMemoryMb } from "./cgroup_limits";
 
@@ -255,7 +254,7 @@ async function writeLibraries(workDir: string, libraries: Record<string, string>
 
 async function runSnippet(req: RunRequest): Promise<RunResult> {
   const id = randomBytes(8).toString("hex");
-  const workDir = await mkdtemp(join(tmpdir(), `rune_${id}_`));
+  const workDir = await mkdtemp(join("/app/tmp", `rune_${id}_`));
   const snippetPath = join(workDir, "snippet.ts");
   const harnessPath = join(workDir, "harness.ts");
 
@@ -394,7 +393,7 @@ async function runSnippet(req: RunRequest): Promise<RunResult> {
  */
 async function runSnippetStream(req: RunRequest): Promise<ReadableStream<Uint8Array>> {
   const id = randomBytes(8).toString("hex");
-  const workDir = await mkdtemp(join(tmpdir(), `rune_${id}_`));
+  const workDir = await mkdtemp(join("/app/tmp", `rune_${id}_`));
   const snippetPath = join(workDir, "snippet.ts");
   const harnessPath = join(workDir, "harness.ts");
 
@@ -500,6 +499,8 @@ async function runSnippetStream(req: RunRequest): Promise<ReadableStream<Uint8Ar
     },
   });
 }
+
+await mkdir("/app/tmp", { recursive: true });
 
 const server = Bun.serve({
   port: PORT,

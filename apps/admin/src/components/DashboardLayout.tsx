@@ -172,7 +172,7 @@ export default function DashboardLayout() {
     <div className="flex h-screen bg-gray-50">
       <RouteDocumentTitle />
       {/* Sidebar */}
-      <aside className="flex w-64 flex-col border-r border-gray-200 bg-white">
+      {!isEditorRoute && <aside className="flex w-64 flex-col border-r border-gray-200 bg-white">
         <div className="flex h-14 items-center gap-2.5 border-b border-gray-200 px-5">
           <img
             src={velaneLogo}
@@ -252,7 +252,7 @@ export default function DashboardLayout() {
             </button>
           </div>
         )}
-      </aside>
+      </aside>}
 
       {/* Main content */}
       <main className={clsx('relative flex-1 overflow-auto', isEditorRoute ? 'flex flex-col p-0' : 'p-8')}>

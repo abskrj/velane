@@ -440,6 +440,11 @@ export const api = {
     return request('DELETE', `/v1/embed/tokens/${id}`, undefined, 'apikey')
   },
 
+  // Instance
+  async getInstanceInfo(): Promise<{ features: string[] }> {
+    return request('GET', '/v1/instance/info', undefined, 'none')
+  },
+
   // Invocation
   async invokeSnippet(snippetSlug: string, input: string, env = 'dev'): Promise<InvocationResult> {
     return request('POST', `/v1/invoke/${snippetSlug}?env=${env}`, JSON.parse(input || '{}'), 'apikey')

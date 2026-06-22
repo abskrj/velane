@@ -10,6 +10,7 @@ import (
 	"github.com/abskrj/velane/services/control-plane/internal/auth"
 	"github.com/abskrj/velane/services/control-plane/internal/auth/oauth"
 	"github.com/abskrj/velane/services/control-plane/internal/hub"
+	"github.com/abskrj/velane/services/control-plane/internal/license"
 	"github.com/abskrj/velane/services/control-plane/internal/nango"
 	"github.com/abskrj/velane/services/control-plane/internal/platformlibs"
 	"github.com/abskrj/velane/services/control-plane/internal/scheduler"
@@ -20,16 +21,16 @@ import (
 )
 
 // NewRouter builds and returns the fully configured chi router.
-func NewRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logger, encKey []byte, authProvider auth.Provider, nangoClient *nango.Client, nangoInternalURL, nangoConnectURL, nangoApiURL, nangoWebhookSecret, nangoSecretKey, mcpPublicURL string, platLibs []platformlibs.PlatformLib) http.Handler {
-	return newRouter(store, sched, log, encKey, authProvider, nil, nangoClient, nangoInternalURL, nangoConnectURL, nangoApiURL, nangoWebhookSecret, nangoSecretKey, mcpPublicURL, platLibs, handlers.OAuthConfig{})
+func NewRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logger, encKey []byte, authProvider auth.Provider, nangoClient *nango.Client, nangoInternalURL, nangoConnectURL, nangoApiURL, nangoWebhookSecret, nangoSecretKey, mcpPublicURL string, platLibs []platformlibs.PlatformLib, licMgr *license.Manager) http.Handler {
+	return newRouter(store, sched, log, encKey, authProvider, nil, nangoClient, nangoInternalURL, nangoConnectURL, nangoApiURL, nangoWebhookSecret, nangoSecretKey, mcpPublicURL, platLibs, handlers.OAuthConfig{}, licMgr)
 }
 
 // NewRouterWithJWT builds the router and wires the RSA public key for the JWKS endpoint.
-func NewRouterWithJWT(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logger, encKey []byte, authProvider auth.Provider, pubKey *rsa.PublicKey, nangoClient *nango.Client, nangoInternalURL, nangoConnectURL, nangoApiURL, nangoWebhookSecret, nangoSecretKey, mcpPublicURL string, platLibs []platformlibs.PlatformLib, oauthCfg handlers.OAuthConfig) http.Handler {
-	return newRouter(store, sched, log, encKey, authProvider, pubKey, nangoClient, nangoInternalURL, nangoConnectURL, nangoApiURL, nangoWebhookSecret, nangoSecretKey, mcpPublicURL, platLibs, oauthCfg)
+func NewRouterWithJWT(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logger, encKey []byte, authProvider auth.Provider, pubKey *rsa.PublicKey, nangoClient *nango.Client, nangoInternalURL, nangoConnectURL, nangoApiURL, nangoWebhookSecret, nangoSecretKey, mcpPublicURL string, platLibs []platformlibs.PlatformLib, oauthCfg handlers.OAuthConfig, licMgr *license.Manager) http.Handler {
+	return newRouter(store, sched, log, encKey, authProvider, pubKey, nangoClient, nangoInternalURL, nangoConnectURL, nangoApiURL, nangoWebhookSecret, nangoSecretKey, mcpPublicURL, platLibs, oauthCfg, licMgr)
 }
 
-func newRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logger, encKey []byte, authProvider auth.Provider, pubKey *rsa.PublicKey, nangoClient *nango.Client, nangoInternalURL, nangoConnectURL, nangoApiURL, nangoWebhookSecret, nangoSecretKey, mcpPublicURL string, platLibs []platformlibs.PlatformLib, oauthCfg handlers.OAuthConfig) http.Handler {
+func newRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logger, encKey []byte, authProvider auth.Provider, pubKey *rsa.PublicKey, nangoClient *nango.Client, nangoInternalURL, nangoConnectURL, nangoApiURL, nangoWebhookSecret, nangoSecretKey, mcpPublicURL string, platLibs []platformlibs.PlatformLib, oauthCfg handlers.OAuthConfig, licMgr *license.Manager) http.Handler {
 	r := chi.NewRouter()
 
 	// Global middleware.
@@ -66,6 +67,7 @@ func newRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logge
 	usageH := handlers.NewUsageHandler(store, log)
 	apikeysH := handlers.NewAPIKeysHandler(store, log).WithAuditor(auditor)
 	auditH := handlers.NewAuditHandler(store, log)
+	instanceH := handlers.NewInstanceHandler(licMgr, log)
 
 	// Health check — no auth.
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -73,6 +75,9 @@ func newRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logge
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	})
+
+	// Instance info — public, no auth. Used by the frontend to determine deployment mode and licensed features.
+	r.Get("/v1/instance/info", instanceH.GetInfo)
 
 	// Bootstrap endpoint — intentionally unauthenticated.
 	r.Post("/v1/tenants", tenantsH.CreateTenant)

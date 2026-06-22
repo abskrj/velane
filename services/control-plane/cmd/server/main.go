@@ -16,6 +16,7 @@ import (
 	"github.com/abskrj/velane/services/control-plane/internal/executor"
 	"github.com/abskrj/velane/services/control-plane/internal/executor/firecracker"
 	"github.com/abskrj/velane/services/control-plane/internal/executor/remote"
+	"github.com/abskrj/velane/services/control-plane/internal/license"
 	"github.com/abskrj/velane/services/control-plane/internal/nango"
 	"github.com/abskrj/velane/services/control-plane/internal/observability"
 	"github.com/abskrj/velane/services/control-plane/internal/platformlibs"
@@ -134,6 +135,9 @@ func main() {
 		go runStaleInvocationReaper(ctx, store, log)
 	}
 
+	// --- License manager ---
+	licMgr := license.NewManager(cfg.LicenseKey, log)
+
 	// --- Router ---
 	oauthCfg := handlers.OAuthConfig{
 		PublicBaseURL:           cfg.PublicBaseURL,
@@ -142,7 +146,7 @@ func main() {
 		GitHubOAuthClientID:     cfg.GitHubOAuthClientID,
 		GitHubOAuthClientSecret: cfg.GitHubOAuthClientSecret,
 	}
-	router := api.NewRouterWithJWT(store, sched, log, encKey, authProvider, pubKey, nangoClient, cfg.NangoInternalURL, cfg.NangoConnectURL, cfg.NangoApiURL, cfg.NangoWebhookSecret, cfg.NangoSecretKey, cfg.MCPPublicURL, platLibs, oauthCfg)
+	router := api.NewRouterWithJWT(store, sched, log, encKey, authProvider, pubKey, nangoClient, cfg.NangoInternalURL, cfg.NangoConnectURL, cfg.NangoApiURL, cfg.NangoWebhookSecret, cfg.NangoSecretKey, cfg.MCPPublicURL, platLibs, oauthCfg, licMgr)
 
 	// --- HTTP server ---
 	srv := &http.Server{

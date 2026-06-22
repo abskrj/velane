@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate, useSearchParams } from 'react-router-dom'
+import { InstanceProvider } from './contexts/InstanceContext'
 import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
 import DashboardLayout from './components/DashboardLayout'
@@ -28,6 +29,7 @@ function RootRedirect() {
 
 export default function App() {
   return (
+    <InstanceProvider>
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<RootRedirect />} />
@@ -58,5 +60,6 @@ export default function App() {
         </Route>
       </Routes>
     </BrowserRouter>
+    </InstanceProvider>
   )
 }

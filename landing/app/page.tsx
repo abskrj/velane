@@ -166,11 +166,11 @@ export default function Home() {
         <section className="relative flex min-h-[calc(100vh-65px)] flex-col justify-center overflow-hidden py-20 md:py-32">
           <div
             aria-hidden="true"
-            className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle,rgb(0_0_0/0.08)_1px,transparent_1px)] [background-size:24px_24px] [mask-image:radial-gradient(ellipse_70%_70%_at_35%_45%,transparent_25%,black_75%)]"
+            className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_right,rgb(0_0_0/0.06)_1px,transparent_1px),linear-gradient(to_bottom,rgb(0_0_0/0.06)_1px,transparent_1px)] [background-size:28px_28px] [mask-image:radial-gradient(ellipse_90%_90%_at_50%_50%,black_20%,transparent_90%)]"
           />
           <div
             aria-hidden="true"
-            className="pointer-events-none absolute left-[-10%] top-1/2 h-[36rem] w-[36rem] -translate-y-1/2 rounded-full bg-white blur-3xl"
+            className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_52%_68%_at_28%_45%,rgba(250,250,250,0.98)_0%,transparent_68%)]"
           />
           <div className="relative mx-auto grid w-full max-w-5xl gap-16 px-6 md:grid-cols-2 md:items-center">
             <div className="max-w-xl">
@@ -418,8 +418,12 @@ export default function Home() {
         </section>
 
         {/* How it works */}
-        <section className="border-y border-black/5 bg-zinc-50 py-24">
-          <div className="mx-auto w-full max-w-5xl px-6">
+        <section className="relative border-y border-black/5 bg-zinc-50 py-24 overflow-hidden">
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_right,rgb(0_0_0/0.04)_1px,transparent_1px),linear-gradient(to_bottom,rgb(0_0_0/0.04)_1px,transparent_1px)] [background-size:28px_28px]"
+          />
+          <div className="relative mx-auto w-full max-w-5xl px-6">
             <div className="mb-12 max-w-2xl">
               <p className="mb-3 text-xs font-semibold uppercase tracking-[0.2em] text-zinc-400">
                 How it works
@@ -500,8 +504,12 @@ export default function Home() {
         </section>
 
         {/* Technical proof — dark */}
-        <section className="bg-zinc-900 py-24 text-white selection:bg-zinc-700">
-          <div className="mx-auto w-full max-w-5xl px-6">
+        <section className="relative overflow-hidden bg-zinc-900 py-24 text-white selection:bg-zinc-700">
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_right,rgb(255_255_255/0.03)_1px,transparent_1px),linear-gradient(to_bottom,rgb(255_255_255/0.03)_1px,transparent_1px)] [background-size:28px_28px]"
+          />
+          <div className="relative mx-auto w-full max-w-5xl px-6">
             <div className="mb-12">
               <p className="mb-3 text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">
                 Setup
@@ -576,17 +584,12 @@ export default function Home() {
                   </span>
                 </div>
                 <pre className="overflow-x-auto p-6 font-mono text-sm leading-relaxed text-zinc-300">
-                  <span className="text-zinc-500">
-                    {"// No credentials — proxy injects auth\n"}
-                  </span>
-                  <span className="text-pink-400">const</span>
-                  {" PROXY = process.env."}
-                  <span className="text-blue-400">VELANE_PROXY_URL</span>
-                  {";\n"}
-                  <span className="text-pink-400">const</span>
-                  {" TENANT = process.env."}
-                  <span className="text-blue-400">VELANE_TENANT_ID</span>
-                  {";\n\n"}
+                  <span className="text-pink-400">import</span>
+                  {" { integration } "}
+                  <span className="text-pink-400">from</span>
+                  {" "}
+                  <span className="text-emerald-300">&apos;@velane/integrations&apos;</span>
+                  {"\n\n"}
                   <span className="text-pink-400">export default async</span>
                   {" "}
                   <span className="text-yellow-300">function</span>
@@ -595,39 +598,41 @@ export default function Home() {
                   {"({ customerId }) {\n"}
                   {"  "}
                   <span className="text-pink-400">const</span>
+                  {" stripe  = integration("}
+                  <span className="text-emerald-300">&apos;stripe&apos;</span>
+                  {")\n"}
+                  {"  "}
+                  <span className="text-pink-400">const</span>
+                  {" hubspot = integration("}
+                  <span className="text-emerald-300">&apos;hubspot&apos;</span>
+                  {")\n\n"}
+                  {"  "}
+                  <span className="text-pink-400">const</span>
                   {" customer = "}
                   <span className="text-pink-400">await</span>
-                  {" fetch(\n"}
-                  {"    `"}
+                  {" stripe."}
+                  <span className="text-blue-300">get</span>
+                  {"(`"}
                   <span className="text-emerald-300">
-                    {"${PROXY}/v1/proxy/stripe/v1/customers/${customerId}"}
+                    {"/v1/customers/${customerId}"}
                   </span>
-                  {"`,\n"}
-                  {"    "}
-                  {"{ headers: { "}
-                  <span className="text-emerald-300">
-                    &apos;X-Velane-Tenant&apos;
-                  </span>
-                  {": TENANT } }\n"}
-                  {"  ).then(r =&gt; r.json());\n\n"}
+                  {"`)\n\n"}
                   {"  "}
                   <span className="text-pink-400">await</span>
-                  {" fetch(`"}
+                  {" hubspot."}
+                  <span className="text-blue-300">post</span>
+                  {"("}
                   <span className="text-emerald-300">
-                    {"${PROXY}/v1/proxy/hubspot/crm/v3/objects/contacts"}
+                    &apos;/crm/v3/objects/contacts&apos;
                   </span>
-                  {"`,\n"}
-                  {"    "}
-                  {"{ method: "}
-                  <span className="text-emerald-300">&apos;POST&apos;</span>
-                  {", body: JSON.stringify({\n"}
-                  {"        properties: { email: customer.email },\n"}
-                  {"    }) });\n\n"}
+                  {", {\n"}
+                  {"    properties: { email: customer.email },\n"}
+                  {"  })\n\n"}
                   {"  "}
                   <span className="text-pink-400">return</span>
                   {" { synced: "}
                   <span className="text-blue-400">true</span>
-                  {" };\n}"}
+                  {" }\n}"}
                 </pre>
               </div>
             </div>
@@ -938,9 +943,8 @@ export default function Home() {
                   </h3>
                   <div className="mt-4 flex items-baseline gap-1">
                     <span className="text-4xl font-medium tracking-tight text-zinc-900">
-                      $5,000
+                      Contact us
                     </span>
-                    <span className="text-sm text-zinc-400">/ year</span>
                   </div>
                   <p className="mt-3 text-sm leading-relaxed text-zinc-500">
                     Self-host Velane in a proprietary product without the
@@ -987,11 +991,11 @@ export default function Home() {
         <section className="relative overflow-hidden py-32 text-center">
           <div
             aria-hidden="true"
-            className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle,rgb(0_0_0/0.08)_1px,transparent_1px)] [background-size:24px_24px] [mask-image:radial-gradient(ellipse_55%_55%_at_50%_50%,transparent_30%,black_80%)]"
+            className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_right,rgb(0_0_0/0.06)_1px,transparent_1px),linear-gradient(to_bottom,rgb(0_0_0/0.06)_1px,transparent_1px)] [background-size:28px_28px] [mask-image:radial-gradient(ellipse_90%_90%_at_50%_50%,black_20%,transparent_90%)]"
           />
           <div
             aria-hidden="true"
-            className="pointer-events-none absolute left-1/2 top-1/2 h-[32rem] w-[44rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-white blur-3xl"
+            className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_55%_70%_at_50%_50%,rgba(250,250,250,0.98)_0%,transparent_68%)]"
           />
           <div className="relative mx-auto w-full max-w-5xl px-6">
             <h2 className="text-4xl font-medium tracking-tight text-zinc-900">

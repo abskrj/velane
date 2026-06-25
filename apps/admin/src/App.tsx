@@ -3,11 +3,11 @@ import { InstanceProvider } from './contexts/InstanceContext'
 import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
 import DashboardLayout from './components/DashboardLayout'
+import SettingsLayout from './components/SettingsLayout'
 import OverviewPage from './pages/OverviewPage'
 import APIKeysPage from './pages/APIKeysPage'
 import TeamPage from './pages/TeamPage'
 import BrandingPage from './pages/BrandingPage'
-import UsagePage from './pages/UsagePage'
 import EgressPage from './pages/EgressPage'
 import SnippetsPage from './pages/SnippetsPage'
 import SnippetEditorPage from './pages/SnippetEditorPage'
@@ -46,19 +46,21 @@ export default function App() {
         >
           <Route index element={<Navigate to="overview" replace />} />
           <Route path="overview" element={<OverviewPage />} />
-          <Route path="api-keys" element={<APIKeysPage />} />
-          <Route path="team" element={<TeamPage />} />
-          <Route path="branding" element={<BrandingPage />} />
-          <Route path="usage" element={<UsagePage />} />
-          <Route path="egress" element={<EgressPage />} />
           <Route path="snippets" element={<SnippetsPage />} />
           <Route path="snippets/:id" element={<SnippetEditorPage />} />
           <Route path="snippets/:id/settings" element={<WorkflowSettingsPage />} />
           <Route path="integrations" element={<IntegrationsPage />} />
           <Route path="mcp" element={<MCPPage />} />
           <Route path="variables" element={<VariablesPage />} />
-          <Route path="embed" element={<EmbedPage />} />
           <Route path="billing" element={<BillingPage />} />
+          <Route path="settings" element={<SettingsLayout />}>
+            <Route index element={<Navigate to="api-keys" replace />} />
+            <Route path="api-keys" element={<APIKeysPage />} />
+            <Route path="team" element={<TeamPage />} />
+            <Route path="branding" element={<BrandingPage />} />
+            <Route path="egress" element={<EgressPage />} />
+            <Route path="embed" element={<EmbedPage />} />
+          </Route>
         </Route>
       </Routes>
     </BrowserRouter>

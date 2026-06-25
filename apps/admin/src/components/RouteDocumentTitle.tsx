@@ -10,12 +10,13 @@ const dashboardRoutes: { path: string; title: string }[] = [
   { path: '/dashboard/integrations', title: 'Integrations' },
   { path: '/dashboard/mcp', title: 'MCP' },
   { path: '/dashboard/variables', title: 'Variables' },
-  { path: '/dashboard/api-keys', title: 'API Keys' },
-  { path: '/dashboard/team', title: 'Team' },
-  { path: '/dashboard/branding', title: 'Branding' },
-  { path: '/dashboard/usage', title: 'Usage' },
-  { path: '/dashboard/egress', title: 'Egress Policy' },
-  { path: '/dashboard/embed', title: 'Embed' },
+  { path: '/dashboard/settings/api-keys', title: 'API Keys' },
+  { path: '/dashboard/settings/team', title: 'Team' },
+  { path: '/dashboard/settings/branding', title: 'Branding' },
+  { path: '/dashboard/settings/egress', title: 'Egress Policy' },
+  { path: '/dashboard/settings/embed', title: 'Embed' },
+  { path: '/dashboard/settings', title: 'Settings' },
+  { path: '/dashboard/billing', title: 'Billing' },
 ]
 
 function titleForPath(pathname: string): string | null {

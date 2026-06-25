@@ -363,3 +363,9 @@ variable "nango_db_name" {
   type        = string
   default     = "nango"
 }
+
+variable "velane_cloud" {
+  description = "Set VELANE_CLOUD=true on the control-plane to enable cloud-only features (billing UI, tenant plan API)."
+  type        = bool
+  default     = false
+}

@@ -4,9 +4,9 @@
 tidy:
 	cd services/control-plane && go mod tidy
 
-## up: start all services using pre-built GHCR images
-##     Run "make tidy" first to ensure go.sum is up to date.
+## up: pull latest GHCR images and start all services
 up:
+	docker compose pull
 	docker compose up -d
 
 ## dev: build images and start all services in detached mode for local development

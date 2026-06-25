@@ -14,7 +14,7 @@ func (s *Store) CreateTenant(ctx context.Context, name, slug string) (*models.Te
 	row := s.pool.QueryRow(ctx,
 		`INSERT INTO tenants (id, name, slug)
 		 VALUES ($1, $2, $3)
-		 RETURNING id, name, slug, created_at, egress_policy, replay_enabled, branding, runtime_limits`,
+		 RETURNING id, name, slug, created_at, egress_policy, replay_enabled, branding, runtime_limits, license_key`,
 		ids.New(), name, slug,
 	)
 
@@ -24,7 +24,7 @@ func (s *Store) CreateTenant(ctx context.Context, name, slug string) (*models.Te
 // GetTenantByID retrieves a tenant by its primary key.
 func (s *Store) GetTenantByID(ctx context.Context, id string) (*models.Tenant, error) {
 	row := s.pool.QueryRow(ctx,
-		`SELECT id, name, slug, created_at, egress_policy, replay_enabled, branding, runtime_limits FROM tenants WHERE id = $1`,
+		`SELECT id, name, slug, created_at, egress_policy, replay_enabled, branding, runtime_limits, license_key FROM tenants WHERE id = $1`,
 		id,
 	)
 
@@ -38,7 +38,7 @@ func (s *Store) GetTenantByID(ctx context.Context, id string) (*models.Tenant, e
 // GetTenantBySlug retrieves a tenant by its unique URL slug.
 func (s *Store) GetTenantBySlug(ctx context.Context, slug string) (*models.Tenant, error) {
 	row := s.pool.QueryRow(ctx,
-		`SELECT id, name, slug, created_at, egress_policy, replay_enabled, branding, runtime_limits FROM tenants WHERE slug = $1`,
+		`SELECT id, name, slug, created_at, egress_policy, replay_enabled, branding, runtime_limits, license_key FROM tenants WHERE slug = $1`,
 		slug,
 	)
 
@@ -59,7 +59,7 @@ func (s *Store) UpdateEgressPolicy(ctx context.Context, tenantID string, policy 
 	row := s.pool.QueryRow(ctx,
 		`UPDATE tenants SET egress_policy = $2
 		 WHERE id = $1
-		 RETURNING id, name, slug, created_at, egress_policy, replay_enabled, branding, runtime_limits`,
+		 RETURNING id, name, slug, created_at, egress_policy, replay_enabled, branding, runtime_limits, license_key`,
 		tenantID, policyJSON,
 	)
 
@@ -76,7 +76,7 @@ func (s *Store) UpdateReplayEnabled(ctx context.Context, tenantID string, enable
 		`UPDATE tenants
 		 SET replay_enabled = $2
 		 WHERE id = $1
-		 RETURNING id, name, slug, created_at, egress_policy, replay_enabled, branding, runtime_limits`,
+		 RETURNING id, name, slug, created_at, egress_policy, replay_enabled, branding, runtime_limits, license_key`,
 		tenantID, enabled,
 	)
 
@@ -87,13 +87,22 @@ func (s *Store) UpdateReplayEnabled(ctx context.Context, tenantID string, enable
 	return t, nil
 }
 
+// SetTenantLicenseKey sets or clears the license UUID for a tenant.
+func (s *Store) SetTenantLicenseKey(ctx context.Context, tenantID string, licenseKey *string) error {
+	_, err := s.pool.Exec(ctx,
+		`UPDATE tenants SET license_key = $2 WHERE id = $1`,
+		tenantID, licenseKey,
+	)
+	return err
+}
+
 // scanTenant scans a tenant row including the egress_policy JSONB column.
 func scanTenant(s scannable) (*models.Tenant, error) {
 	var t models.Tenant
 	var egressJSON []byte
 	var brandingJSON []byte
 	var runtimeLimitsJSON []byte
-	if err := s.Scan(&t.ID, &t.Name, &t.Slug, &t.CreatedAt, &egressJSON, &t.ReplayEnabled, &brandingJSON, &runtimeLimitsJSON); err != nil {
+	if err := s.Scan(&t.ID, &t.Name, &t.Slug, &t.CreatedAt, &egressJSON, &t.ReplayEnabled, &brandingJSON, &runtimeLimitsJSON, &t.LicenseKey); err != nil {
 		return nil, err
 	}
 	if len(egressJSON) > 0 {

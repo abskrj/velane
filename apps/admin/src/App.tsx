@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate, useSearchParams } from 'react-router-dom'
+import { InstanceProvider } from './contexts/InstanceContext'
 import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
 import DashboardLayout from './components/DashboardLayout'
@@ -16,6 +17,7 @@ import EmbedEntryPage from './pages/EmbedEntryPage'
 import VariablesPage from './pages/VariablesPage'
 import IntegrationsPage from './pages/IntegrationsPage'
 import MCPPage from './pages/MCPPage'
+import BillingPage from './pages/BillingPage'
 import ProtectedRoute from './components/ProtectedRoute'
 
 function RootRedirect() {
@@ -28,6 +30,7 @@ function RootRedirect() {
 
 export default function App() {
   return (
+    <InstanceProvider>
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<RootRedirect />} />
@@ -55,8 +58,10 @@ export default function App() {
           <Route path="mcp" element={<MCPPage />} />
           <Route path="variables" element={<VariablesPage />} />
           <Route path="embed" element={<EmbedPage />} />
+          <Route path="billing" element={<BillingPage />} />
         </Route>
       </Routes>
     </BrowserRouter>
+    </InstanceProvider>
   )
 }

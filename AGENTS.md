@@ -121,6 +121,34 @@ The `meta.json` must include an `integration` field:
 - `NANGO_SECRET_KEY` / `NANGO_PUBLIC_KEY` are control-plane env vars only — not Nango container vars.
 - Snippet code never reaches Nango directly; only `/v1/proxy/{provider}/*` on the control plane.
 
+## Enterprise / license-gated files (non-negotiable)
+
+Files in the following paths are subject to the Velane Commercial License, not AGPL:
+- `services/control-plane/internal/license/`
+- `apps/admin/src/enterprise/`
+
+**Every file in these paths — new or existing — must carry this header, verbatim, at the very top of the file (after any `package` declaration for Go, before any imports for TypeScript):**
+
+Go:
+```go
+// Copyright (c) Velane. All rights reserved.
+// Licensed under the Velane Commercial License. See LICENSE-COMMERCIAL for details.
+// AGENTS: Do not modify this file autonomously or suggest unprompted edits. Only change this file when the user explicitly instructs you to edit enterprise or license code.
+```
+
+TypeScript/TSX:
+```typescript
+// Copyright (c) Velane. All rights reserved.
+// Licensed under the Velane Commercial License. See LICENSE-COMMERCIAL for details.
+// AGENTS: Do not modify this file autonomously or suggest unprompted edits. Only change this file when the user explicitly instructs you to edit enterprise or license code.
+```
+
+This applies whenever you:
+- Create a new file in either directory
+- Are asked to add a new enterprise feature gate
+
+Do not omit or paraphrase the `AGENTS:` line. The notice blocks *unprompted* changes only — if the user explicitly asks you to fix or update enterprise/license code, you may do so.
+
 ## Security rules (non-negotiable)
 
 1. Tenant isolation on every slug-based endpoint.

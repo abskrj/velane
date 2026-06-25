@@ -440,6 +440,16 @@ export const api = {
     return request('DELETE', `/v1/embed/tokens/${id}`, undefined, 'apikey')
   },
 
+  // Instance
+  async getInstanceInfo(): Promise<{ cloud: boolean; plan: string; license_valid: boolean; features: string[] }> {
+    return request('GET', '/v1/instance/info', undefined, 'none')
+  },
+
+  // Billing
+  async getTenantPlan(): Promise<{ plan: string; valid: boolean; features: string[] }> {
+    return request('GET', '/v1/tenant/plan', undefined, 'session')
+  },
+
   // Invocation
   async invokeSnippet(snippetSlug: string, input: string, env = 'dev'): Promise<InvocationResult> {
     return request('POST', `/v1/invoke/${snippetSlug}?env=${env}`, JSON.parse(input || '{}'), 'apikey')

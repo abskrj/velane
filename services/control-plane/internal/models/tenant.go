@@ -12,6 +12,7 @@ type Tenant struct {
 	ReplayEnabled  bool           `json:"replay_enabled"`
 	Branding       Branding       `json:"branding"`
 	RuntimeLimits  RuntimeLimits  `json:"runtime_limits"`
+	LicenseKey     *string        `json:"license_key,omitempty"`
 }
 
 // Branding controls visual identity for embed surfaces.

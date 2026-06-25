@@ -53,6 +53,10 @@ type Config struct {
 	MCPPublicURL       string // MCP_PUBLIC_URL — public URL used by IDE clients (e.g. https://mcp.example.com/mcp)
 	InternalProxyURL   string // URL executors use to reach the control plane proxy, e.g. http://control-plane:8080
 
+	// License
+	LicenseKey string // VELANE_LICENSE_KEY: instance-level license UUID (optional)
+	CloudMode  bool   // VELANE_CLOUD: when true the dashboard shows billing UI (cloud-hosted deployments only)
+
 	// Executor selection (Phase 9)
 	ExecutorType            string // "process" (default) | "firecracker"
 	FirecrackerBinary       string // path to firecracker binary, default "/usr/local/bin/firecracker"
@@ -101,6 +105,8 @@ func Load() Config {
 		NangoWebhookSecret:      os.Getenv("NANGO_WEBHOOK_SECRET"),
 		MCPPublicURL:            strings.TrimSpace(os.Getenv("MCP_PUBLIC_URL")),
 		InternalProxyURL:        getEnv("INTERNAL_PROXY_URL", "http://control-plane:8080"),
+		LicenseKey:              os.Getenv("VELANE_LICENSE_KEY"),
+		CloudMode:               os.Getenv("VELANE_CLOUD") == "true",
 		ExecutorType:            getEnv("EXECUTOR_TYPE", "process"),
 		FirecrackerBinary:       getEnv("FIRECRACKER_BINARY", "/usr/local/bin/firecracker"),
 		FirecrackerJailerBinary: getEnv("FIRECRACKER_JAILER_BINARY", "/usr/local/bin/jailer"),

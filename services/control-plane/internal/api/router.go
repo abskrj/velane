@@ -21,16 +21,16 @@ import (
 )
 
 // NewRouter builds and returns the fully configured chi router.
-func NewRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logger, encKey []byte, authProvider auth.Provider, nangoClient *nango.Client, nangoInternalURL, nangoConnectURL, nangoApiURL, nangoWebhookSecret, nangoSecretKey, mcpPublicURL string, platLibs []platformlibs.PlatformLib, licMgr *license.Manager) http.Handler {
+func NewRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logger, encKey []byte, authProvider auth.Provider, nangoClient *nango.Client, nangoInternalURL, nangoConnectURL, nangoApiURL, nangoWebhookSecret, nangoSecretKey, mcpPublicURL string, platLibs []platformlibs.PlatformLib, licMgr *license.Manager) *chi.Mux {
 	return newRouter(store, sched, log, encKey, authProvider, nil, nangoClient, nangoInternalURL, nangoConnectURL, nangoApiURL, nangoWebhookSecret, nangoSecretKey, mcpPublicURL, platLibs, handlers.OAuthConfig{}, licMgr)
 }
 
 // NewRouterWithJWT builds the router and wires the RSA public key for the JWKS endpoint.
-func NewRouterWithJWT(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logger, encKey []byte, authProvider auth.Provider, pubKey *rsa.PublicKey, nangoClient *nango.Client, nangoInternalURL, nangoConnectURL, nangoApiURL, nangoWebhookSecret, nangoSecretKey, mcpPublicURL string, platLibs []platformlibs.PlatformLib, oauthCfg handlers.OAuthConfig, licMgr *license.Manager) http.Handler {
+func NewRouterWithJWT(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logger, encKey []byte, authProvider auth.Provider, pubKey *rsa.PublicKey, nangoClient *nango.Client, nangoInternalURL, nangoConnectURL, nangoApiURL, nangoWebhookSecret, nangoSecretKey, mcpPublicURL string, platLibs []platformlibs.PlatformLib, oauthCfg handlers.OAuthConfig, licMgr *license.Manager) *chi.Mux {
 	return newRouter(store, sched, log, encKey, authProvider, pubKey, nangoClient, nangoInternalURL, nangoConnectURL, nangoApiURL, nangoWebhookSecret, nangoSecretKey, mcpPublicURL, platLibs, oauthCfg, licMgr)
 }
 
-func newRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logger, encKey []byte, authProvider auth.Provider, pubKey *rsa.PublicKey, nangoClient *nango.Client, nangoInternalURL, nangoConnectURL, nangoApiURL, nangoWebhookSecret, nangoSecretKey, mcpPublicURL string, platLibs []platformlibs.PlatformLib, oauthCfg handlers.OAuthConfig, licMgr *license.Manager) http.Handler {
+func newRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logger, encKey []byte, authProvider auth.Provider, pubKey *rsa.PublicKey, nangoClient *nango.Client, nangoInternalURL, nangoConnectURL, nangoApiURL, nangoWebhookSecret, nangoSecretKey, mcpPublicURL string, platLibs []platformlibs.PlatformLib, oauthCfg handlers.OAuthConfig, licMgr *license.Manager) *chi.Mux {
 	r := chi.NewRouter()
 
 	// Global middleware.

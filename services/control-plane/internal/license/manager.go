@@ -6,6 +6,7 @@ package license
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"go.uber.org/zap"
@@ -15,6 +16,7 @@ type Manager struct {
 	instanceKey string
 	client      *client
 	cache       *cache
+	planCache   sync.Map // license key → plan string
 	validator   *validator
 	log         *zap.Logger
 }
@@ -121,6 +123,31 @@ func (m *Manager) featuresForKey(ctx context.Context, key string) ([]string, err
 	// Also keep a stale copy for 24hr grace period if the server goes down.
 	m.cache.set(key, result.Features, result.ExpiresAt)
 	m.cache.set(key+":stale", result.Features, time.Now().Add(24*time.Hour))
+	m.planCache.Store(key, result.Plan)
 
 	return result.Features, nil
+}
+
+// TenantStatus returns the plan, features, and validity for a given license key.
+// Returns ("free", nil, false) when the key is empty or invalid.
+func (m *Manager) TenantStatus(ctx context.Context, licenseKey string) (plan string, features []string, valid bool) {
+	if licenseKey == "" {
+		return "free", nil, false
+	}
+	feats, err := m.featuresForKey(ctx, licenseKey)
+	if err != nil || feats == nil {
+		return "free", nil, false
+	}
+	if p, ok := m.planCache.Load(licenseKey); ok {
+		plan = p.(string)
+	}
+	if plan == "" {
+		plan = "pro"
+	}
+	return plan, feats, true
+}
+
+// InstanceStatus returns the plan, features, and validity for the instance-level license key.
+func (m *Manager) InstanceStatus(ctx context.Context) (plan string, features []string, valid bool) {
+	return m.TenantStatus(ctx, m.instanceKey)
 }

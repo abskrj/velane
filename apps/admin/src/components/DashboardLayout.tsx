@@ -15,6 +15,7 @@ import {
   Terminal,
   Check,
   ChevronsUpDown,
+  CreditCard,
 } from 'lucide-react'
 import clsx from 'clsx'
 import velaneLogo from '../assets/velane_sh.png'
@@ -22,20 +23,22 @@ import RouteDocumentTitle from './RouteDocumentTitle'
 import { api } from '../lib/api'
 import { useEmbedMode } from '../hooks/useEmbedMode'
 import { useSessionRefresh } from '../hooks/useSessionRefresh'
+import { useInstance } from '../contexts/InstanceContext'
 import type { OrgMembership } from '../types'
 
 const allNavItems = [
-  { to: '/dashboard/overview', label: 'Overview', icon: LayoutDashboard, embedHidden: false },
-  { to: '/dashboard/snippets', label: 'Workflows', icon: Code, embedHidden: false },
-  { to: '/dashboard/integrations', label: 'Integrations', icon: Plug, embedHidden: false },
-  { to: '/dashboard/mcp', label: 'MCP', icon: Terminal, embedHidden: false },
-  { to: '/dashboard/variables', label: 'Variables', icon: Lock, embedHidden: false },
-  { to: '/dashboard/api-keys', label: 'API Keys', icon: Key, embedHidden: true },
-  { to: '/dashboard/team', label: 'Team', icon: Users, embedHidden: true },
-  { to: '/dashboard/branding', label: 'Branding', icon: Paintbrush, embedHidden: true },
-  { to: '/dashboard/usage', label: 'Usage', icon: BarChart2, embedHidden: false },
-  { to: '/dashboard/egress', label: 'Egress Policy', icon: Shield, embedHidden: true },
-  { to: '/dashboard/embed', label: 'Embed', icon: MonitorSmartphone, embedHidden: true },
+  { to: '/dashboard/overview', label: 'Overview', icon: LayoutDashboard, embedHidden: false, cloudOnly: false },
+  { to: '/dashboard/snippets', label: 'Workflows', icon: Code, embedHidden: false, cloudOnly: false },
+  { to: '/dashboard/integrations', label: 'Integrations', icon: Plug, embedHidden: false, cloudOnly: false },
+  { to: '/dashboard/mcp', label: 'MCP', icon: Terminal, embedHidden: false, cloudOnly: false },
+  { to: '/dashboard/variables', label: 'Variables', icon: Lock, embedHidden: false, cloudOnly: false },
+  { to: '/dashboard/api-keys', label: 'API Keys', icon: Key, embedHidden: true, cloudOnly: false },
+  { to: '/dashboard/team', label: 'Team', icon: Users, embedHidden: true, cloudOnly: false },
+  { to: '/dashboard/branding', label: 'Branding', icon: Paintbrush, embedHidden: true, cloudOnly: false },
+  { to: '/dashboard/usage', label: 'Usage', icon: BarChart2, embedHidden: false, cloudOnly: false },
+  { to: '/dashboard/egress', label: 'Egress Policy', icon: Shield, embedHidden: true, cloudOnly: false },
+  { to: '/dashboard/embed', label: 'Embed', icon: MonitorSmartphone, embedHidden: true, cloudOnly: false },
+  { to: '/dashboard/billing', label: 'Billing', icon: CreditCard, embedHidden: true, cloudOnly: true },
 ]
 
 function slugifyOrgName(value: string) {
@@ -54,6 +57,7 @@ export default function DashboardLayout() {
   const isEmbedMode = useEmbedMode()
   useSessionRefresh()
   const isEditorRoute = /^\/dashboard\/snippets\/.+/.test(location.pathname)
+  const { cloud } = useInstance()
   const [orgs, setOrgs] = useState<OrgMembership[]>([])
   const [orgsLoading, setOrgsLoading] = useState(!isEmbedMode)
   const [orgsError, setOrgsError] = useState('')
@@ -65,7 +69,9 @@ export default function DashboardLayout() {
   const [createOrgError, setCreateOrgError] = useState('')
   const [creatingOrg, setCreatingOrg] = useState(false)
 
-  const navItems = allNavItems.filter(item => !isEmbedMode || !item.embedHidden)
+  const navItems = allNavItems.filter(item =>
+    (!isEmbedMode || !item.embedHidden) && (!item.cloudOnly || cloud)
+  )
   const currentOrg = useMemo(
     () => orgs.find(org => org.slug === activeOrgSlug) ?? orgs[0] ?? null,
     [activeOrgSlug, orgs],

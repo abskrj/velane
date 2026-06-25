@@ -68,6 +68,7 @@ func newRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logge
 	apikeysH := handlers.NewAPIKeysHandler(store, log).WithAuditor(auditor)
 	auditH := handlers.NewAuditHandler(store, log)
 	instanceH := handlers.NewInstanceHandler(licMgr, log)
+	billingH := handlers.NewBillingHandler(store, licMgr, log)
 
 	// Health check — no auth.
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -166,6 +167,9 @@ func newRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logge
 			Delete("/v1/tenant/members/{userID}", membersH.RemoveMember)
 		r.With(middleware.RequireScope("admin", log)).
 			Get("/v1/tenant/members/invites", membersH.ListInvites)
+
+		// Plan / billing (cloud mode only — returns free plan when VELANE_CLOUD is not set).
+		r.Get("/v1/tenant/plan", billingH.GetPlan)
 
 		// Usage aggregation.
 		r.With(middleware.RequireScope("admin", log)).

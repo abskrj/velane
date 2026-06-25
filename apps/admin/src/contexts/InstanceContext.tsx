@@ -2,10 +2,13 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from '
 import { api } from '../lib/api'
 
 interface InstanceInfo {
+  cloud: boolean
+  plan: string
+  licenseValid: boolean
   features: string[]
 }
 
-const defaultInfo: InstanceInfo = { features: [] }
+const defaultInfo: InstanceInfo = { cloud: false, plan: 'free', licenseValid: false, features: [] }
 
 const InstanceContext = createContext<InstanceInfo>(defaultInfo)
 
@@ -14,7 +17,12 @@ export function InstanceProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     api.getInstanceInfo().then((res) => {
-      setInfo({ features: res.features })
+      setInfo({
+        cloud: res.cloud ?? false,
+        plan: res.plan ?? 'free',
+        licenseValid: res.license_valid ?? false,
+        features: res.features ?? [],
+      })
     }).catch(() => {
       // Non-fatal — default to no licensed features
     })

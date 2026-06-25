@@ -441,8 +441,13 @@ export const api = {
   },
 
   // Instance
-  async getInstanceInfo(): Promise<{ features: string[] }> {
+  async getInstanceInfo(): Promise<{ cloud: boolean; plan: string; license_valid: boolean; features: string[] }> {
     return request('GET', '/v1/instance/info', undefined, 'none')
+  },
+
+  // Billing
+  async getTenantPlan(): Promise<{ plan: string; valid: boolean; features: string[] }> {
+    return request('GET', '/v1/tenant/plan', undefined, 'session')
   },
 
   // Invocation

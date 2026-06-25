@@ -17,6 +17,7 @@ import EmbedEntryPage from './pages/EmbedEntryPage'
 import VariablesPage from './pages/VariablesPage'
 import IntegrationsPage from './pages/IntegrationsPage'
 import MCPPage from './pages/MCPPage'
+import BillingPage from './pages/BillingPage'
 import ProtectedRoute from './components/ProtectedRoute'
 
 function RootRedirect() {
@@ -57,6 +58,7 @@ export default function App() {
           <Route path="mcp" element={<MCPPage />} />
           <Route path="variables" element={<VariablesPage />} />
           <Route path="embed" element={<EmbedPage />} />
+          <Route path="billing" element={<BillingPage />} />
         </Route>
       </Routes>
     </BrowserRouter>

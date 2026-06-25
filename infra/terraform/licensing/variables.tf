@@ -61,6 +61,12 @@ variable "image_pull_policy" {
   default     = "IfNotPresent"
 }
 
+variable "ghcr_token" {
+  description = "GitHub Personal Access Token with read:packages scope — used as imagePullSecret for the GHCR image."
+  type        = string
+  sensitive   = true
+}
+
 variable "tags" {
   description = "Extra tags applied to all AWS resources."
   type        = map(string)

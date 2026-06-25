@@ -55,6 +55,7 @@ type Config struct {
 
 	// License
 	LicenseKey string // VELANE_LICENSE_KEY: instance-level license UUID (optional)
+	CloudMode  bool   // VELANE_CLOUD: when true the dashboard shows billing UI (cloud-hosted deployments only)
 
 	// Executor selection (Phase 9)
 	ExecutorType            string // "process" (default) | "firecracker"
@@ -105,6 +106,7 @@ func Load() Config {
 		MCPPublicURL:            strings.TrimSpace(os.Getenv("MCP_PUBLIC_URL")),
 		InternalProxyURL:        getEnv("INTERNAL_PROXY_URL", "http://control-plane:8080"),
 		LicenseKey:              os.Getenv("VELANE_LICENSE_KEY"),
+		CloudMode:               os.Getenv("VELANE_CLOUD") == "true",
 		ExecutorType:            getEnv("EXECUTOR_TYPE", "process"),
 		FirecrackerBinary:       getEnv("FIRECRACKER_BINARY", "/usr/local/bin/firecracker"),
 		FirecrackerJailerBinary: getEnv("FIRECRACKER_JAILER_BINARY", "/usr/local/bin/jailer"),

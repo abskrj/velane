@@ -52,17 +52,23 @@ resource "random_password" "db" {
   special = false
 }
 
+data "aws_vpc" "eks" {
+  id = data.aws_eks_cluster.main.vpc_config[0].vpc_id
+}
+
 resource "aws_security_group" "licensing_db" {
   name        = "velane-licensing-db-sg"
   description = "Allow licensing server pods to reach the licensing RDS instance."
   vpc_id      = data.aws_eks_cluster.main.vpc_config[0].vpc_id
 
+  # Pod IPs come from secondary ENIs that don't inherit the node SG,
+  # so allow the full VPC CIDR (private subnet — not reachable from internet).
   ingress {
-    description     = "Postgres from EKS nodes"
-    from_port       = 5432
-    to_port         = 5432
-    protocol        = "tcp"
-    security_groups = [data.aws_security_group.nodes.id]
+    description = "Postgres from VPC (EKS pods)"
+    from_port   = 5432
+    to_port     = 5432
+    protocol    = "tcp"
+    cidr_blocks = [data.aws_vpc.eks.cidr_block]
   }
 
   egress {
@@ -127,8 +133,29 @@ resource "kubernetes_secret_v1" "licensing" {
   type = "Opaque"
 
   data = {
-    DATABASE_URL    = "postgres://licensing:${random_password.db.result}@${aws_db_instance.licensing.address}:5432/licensing"
+    DATABASE_URL    = "postgres://licensing:${random_password.db.result}@${aws_db_instance.licensing.address}:5432/licensing?sslmode=require"
     PRIVATE_KEY_PEM = var.private_key_pem
+  }
+}
+
+resource "kubernetes_secret_v1" "ghcr_pull" {
+  metadata {
+    name      = "ghcr-pull-secret"
+    namespace = kubernetes_namespace_v1.licensing.metadata[0].name
+  }
+
+  type = "kubernetes.io/dockerconfigjson"
+
+  data = {
+    ".dockerconfigjson" = jsonencode({
+      auths = {
+        "ghcr.io" = {
+          username = "abskrj"
+          password = var.ghcr_token
+          auth     = base64encode("abskrj:${var.ghcr_token}")
+        }
+      }
+    })
   }
 }
 
@@ -156,6 +183,10 @@ resource "kubernetes_deployment_v1" "licensing" {
       }
 
       spec {
+        image_pull_secrets {
+          name = kubernetes_secret_v1.ghcr_pull.metadata[0].name
+        }
+
         container {
           name              = "license-server"
           image             = var.license_server_image
@@ -249,6 +280,7 @@ resource "kubernetes_ingress_v1" "licensing" {
         "alb.ingress.kubernetes.io/target-type"      = "ip"
         "alb.ingress.kubernetes.io/listen-ports"     = local.alb_listen_ports
         "alb.ingress.kubernetes.io/group.name"       = "velane"
+        "alb.ingress.kubernetes.io/healthcheck-path" = "/healthz"
       },
       local.tls_enabled ? {
         "alb.ingress.kubernetes.io/certificate-arn" = var.acm_certificate_arn

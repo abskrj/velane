@@ -1,0 +1,21 @@
+# Copy to terraform.tfvars and fill in real values. Never commit terraform.tfvars.
+
+region               = "us-east-1"
+cluster_name         = "velane-us-east-1"
+base_domain          = "velane.sh"
+license_server_image = "ghcr.io/abskrj/velane-licensing:latest"
+acm_certificate_arn  = ""   # from: tofu -chdir=../aws-eks output -raw acm_certificate_arn
+
+# Output of: license keygen  (velane-licensing repo)
+# Store in AWS Secrets Manager; paste here only during tofu apply
+private_key_pem = <<EOT
+-----BEGIN PRIVATE KEY-----
+<paste private key here>
+-----END PRIVATE KEY-----
+EOT
+
+# Optional overrides
+db_instance_class    = "db.t4g.micro"
+db_allocated_storage = 20
+kubeconfig_path      = "~/.kube/config"
+kubeconfig_context   = ""

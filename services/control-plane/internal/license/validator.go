@@ -16,7 +16,9 @@ import (
 
 // PublicKeyPEM is the Ed25519 public key that signs license tokens.
 // Replace with the PUBLIC KEY block from: license keygen (velane-licensing repo).
-var PublicKeyPEM = []byte(``)
+var PublicKeyPEM = []byte(`-----BEGIN PUBLIC KEY-----
+MCowBQYDK2VwAyEAYYumGHg3/4haq+rNaHMAzqmGJ+9PMBRHGPBrBjWPq5o=
+-----END PUBLIC KEY-----`)
 
 type validator struct {
 	key ed25519.PublicKey

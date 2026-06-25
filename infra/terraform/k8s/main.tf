@@ -412,6 +412,10 @@ resource "kubernetes_deployment_v1" "control_plane" {
             value = local.effective_public_base_url
           }
           env {
+            name  = "VELANE_CLOUD"
+            value = var.velane_cloud ? "true" : "false"
+          }
+          env {
             name = "GOOGLE_OAUTH_CLIENT_ID"
             value_from {
               secret_key_ref {

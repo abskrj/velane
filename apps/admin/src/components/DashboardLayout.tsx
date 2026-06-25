@@ -2,20 +2,15 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard,
-  Key,
-  Users,
-  Paintbrush,
-  BarChart2,
-  Shield,
   Code,
-  MonitorSmartphone,
-  LogOut,
-  Lock,
   Plug,
   Terminal,
+  Lock,
+  Settings,
+  CreditCard,
+  LogOut,
   Check,
   ChevronsUpDown,
-  CreditCard,
 } from 'lucide-react'
 import clsx from 'clsx'
 import velaneLogo from '../assets/velane_sh.png'
@@ -32,12 +27,7 @@ const allNavItems = [
   { to: '/dashboard/integrations', label: 'Integrations', icon: Plug, embedHidden: false, cloudOnly: false },
   { to: '/dashboard/mcp', label: 'MCP', icon: Terminal, embedHidden: false, cloudOnly: false },
   { to: '/dashboard/variables', label: 'Variables', icon: Lock, embedHidden: false, cloudOnly: false },
-  { to: '/dashboard/api-keys', label: 'API Keys', icon: Key, embedHidden: true, cloudOnly: false },
-  { to: '/dashboard/team', label: 'Team', icon: Users, embedHidden: true, cloudOnly: false },
-  { to: '/dashboard/branding', label: 'Branding', icon: Paintbrush, embedHidden: true, cloudOnly: false },
-  { to: '/dashboard/usage', label: 'Usage', icon: BarChart2, embedHidden: false, cloudOnly: false },
-  { to: '/dashboard/egress', label: 'Egress Policy', icon: Shield, embedHidden: true, cloudOnly: false },
-  { to: '/dashboard/embed', label: 'Embed', icon: MonitorSmartphone, embedHidden: true, cloudOnly: false },
+  { to: '/dashboard/settings', label: 'Settings', icon: Settings, embedHidden: true, cloudOnly: false },
   { to: '/dashboard/billing', label: 'Billing', icon: CreditCard, embedHidden: true, cloudOnly: true },
 ]
 

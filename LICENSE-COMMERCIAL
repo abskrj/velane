@@ -1,0 +1,89 @@
+VELANE COMMERCIAL LICENSE
+Version 1.0 — Effective 2026
+
+Copyright (c) Velane (Abhishek Raj). All rights reserved.
+
+──────────────────────────────────────────────────────────────────────
+
+1. DEFINITIONS
+
+"Software" means the Velane platform and all source code, binaries,
+documentation, and assets in this repository.
+
+"Licensor" means Abhishek Raj, trading as Velane (abhi@velane.sh).
+
+"Commercial Use" means any use of the Software that is intended for
+or results in commercial advantage or monetary compensation, including
+but not limited to: running the Software in a production environment,
+offering the Software's functionality as a hosted or managed service,
+or incorporating the Software into a product or service that is sold
+or licensed to third parties.
+
+"Non-commercial use" means use solely for personal projects,
+academic research, open-source projects released under an OSI-approved
+license, or internal evaluation and development where the Software is
+not accessible by paying customers or end users of a live service.
+
+──────────────────────────────────────────────────────────────────────
+
+2. OPEN-SOURCE USE (AGPL-3.0)
+
+If your use of the Software is non-commercial, you may use, modify,
+and distribute it under the terms of the GNU Affero General Public
+License v3.0 (AGPL-3.0), a copy of which is included in the LICENSE
+file. The AGPL requires that any modified version you run as a
+network service be made available as open source under the same terms.
+
+──────────────────────────────────────────────────────────────────────
+
+3. COMMERCIAL USE REQUIRES A LICENSE
+
+Any Commercial Use of the Software requires a separate written
+Commercial License agreement with the Licensor. Without such an
+agreement, Commercial Use is prohibited.
+
+A Commercial License grants you:
+
+  (a) the right to use the Software in production without the
+      copyleft obligations of the AGPL;
+  (b) the right to run the Software as a hosted or managed service
+      for third parties;
+  (c) access to enterprise features (audit log, SSO, custom roles,
+      and future additions) as specified in the agreement;
+  (d) defined support and SLA terms as agreed.
+
+To obtain a Commercial License, contact: abhi@velane.sh
+
+──────────────────────────────────────────────────────────────────────
+
+4. RETAINED RIGHTS
+
+The Licensor reserves all rights not expressly granted in this license
+or in a separate Commercial License agreement. No right is granted to
+use any trademark, service mark, or trade name of the Licensor.
+
+──────────────────────────────────────────────────────────────────────
+
+5. CONTRIBUTIONS
+
+By submitting a pull request or patch to this repository, you grant
+the Licensor a perpetual, worldwide, royalty-free license to use,
+reproduce, modify, and distribute your contribution under any license
+the Licensor chooses, including the AGPL-3.0 and this Commercial
+License. You represent that you have the right to grant this license.
+
+──────────────────────────────────────────────────────────────────────
+
+6. DISCLAIMER OF WARRANTIES
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE LICENSOR BE LIABLE FOR ANY
+CLAIM, DAMAGES, OR OTHER LIABILITY ARISING FROM THE USE OF THE
+SOFTWARE.
+
+──────────────────────────────────────────────────────────────────────
+
+Contact: abhi@velane.sh
+Website: https://velane.sh

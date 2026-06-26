@@ -1,71 +1,88 @@
-# Velane
+<p align="center">
+  <img src="./landing/public/logo.png" alt="Velane" height="60" />
+</p>
 
-**AI Agent Code Runtime** — write Bun or Python snippets, expose them as POST APIs, connect to 800+ integrations, and run at scale in secure sandboxed runtimes.
+<p align="center">
+  <b>The code runtime for AI agents.</b><br/>
+  Deploy a Bun or Python function as a secure HTTP endpoint in seconds — versioned, sandboxed, with 800+ OAuth integrations baked in.
+</p>
 
-Velane is an open-source, multi-tenant platform that lets AI agents deploy code snippets as callable HTTP endpoints — with versioning, secrets injection, canary traffic splitting, streaming, an admin dashboard, native MCP integration for Cursor and Claude Code, and **built-in OAuth connections to over 800 third-party services** (Salesforce, GitHub, Slack, HubSpot, Stripe, Notion, Linear, and hundreds more).
+<p align="center">
+  <a href="https://github.com/abskrj/velane/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-blue" alt="License" /></a>
+  <a href="https://docs.velane.sh"><img src="https://img.shields.io/badge/docs-velane.sh-black" alt="Docs" /></a>
+  <a href="https://github.com/abskrj/velane/stargazers"><img src="https://img.shields.io/github/stars/abskrj/velane?style=flat" alt="Stars" /></a>
+</p>
 
----
+<br/>
 
-## Features
-
-- **800+ integrations** — connect Salesforce, GitHub, Slack, HubSpot, Stripe, Notion, Linear, Zendesk, Airtable, and hundreds more via OAuth. Snippet code calls any provider's native API through a unified `integration()` client — no credentials in code, no SDK installs
-- **Snippet runtime** — execute Bun (TypeScript) or Python snippets via `POST /v1/invoke/{snippet}`
-- **Sync, async, and streaming** — synchronous blocking, background async with webhook callbacks, and `text/event-stream` streaming
-- **Three environments** — `dev` → `staging` → `prod` promotion flow
-- **Versioned deployments** — each publish creates an immutable version; instant rollback to any prior version
-- **Canary traffic splitting** — send X% of prod traffic to a new version while the rest hits stable
-- **Secrets injection** — AES-256-GCM encrypted key-value pairs injected as env vars at invocation time; values never returned by the API
-- **Egress policy** — per-tenant IP/CIDR and domain blocklist enforced inside the executor
-- **Observability** — per-invocation logs (S3/MinIO), metrics (ClickHouse), and invocation replay
-- **Admin portal** — self-serve dashboard for snippet editing, API key management, team invites, branding, usage, and egress config
-- **Embeddable dashboard** — iframe-safe read-only snippet browser with white-label theming
-- **MCP server** — connect Cursor or Claude Code directly to Velane to generate and deploy snippets without leaving your IDE
-- **Git push-to-deploy** — connect a GitHub repo; push to `main` → staging, tag `v*` → prod
-- **JWT auth** — RS256 access tokens (15 min) + refresh tokens; JWKS endpoint for third-party verification
-- **Firecracker executor** — optional VM-boundary isolation via AWS Firecracker (requires KVM; enabled with `EXECUTOR_TYPE=firecracker`)
-- **Seccomp profiles** — syscall allowlist applied to executor containers in production
+![Velane admin portal](./docs/static/velane_sh.png)
 
 ---
-
-## 800+ Integrations
-
-Velane connects to any OAuth-supported service through a built-in proxy — your snippet code never handles tokens directly.
 
 ```typescript
-// Bun — works the same way for all 800+ providers
+// Write a snippet — it's a live HTTP endpoint the moment you publish it
 import { integration } from '@velane/integrations'
 
-const gh     = integration('github')
-const sf     = integration('salesforce')
-const slack  = integration('slack')
+export default async function handler(input: { caseId: string }) {
+  const sf    = integration('salesforce')
+  const slack = integration('slack')
 
-// GitHub — list repos
-const repos = await gh.get('/user/repos')
+  const case_ = await sf.get(`/services/data/v60.0/sobjects/Case/${input.caseId}`)
 
-// Salesforce — create a case
-const newCase = await sf.post('/services/data/v60.0/sobjects/Case', {
-  Subject: 'Login issue',
-  Status:  'New',
-})
+  await slack.post('/chat.postMessage', {
+    channel: '#support',
+    text: `Case ${case_.CaseNumber} is ${case_.Status}`,
+  })
 
-// Slack — post a message
-await slack.post('/chat.postMessage', {
-  channel: '#alerts',
-  text:    `Case created: ${newCase.id}`,
-})
+  return case_
+}
 ```
 
-```python
-# Python — identical pattern
-from velane.integrations import integration
+No credentials in code. No SDK installs. No infra to wire up.
 
-gh    = integration("github")
-repos = gh.get("/user/repos")
+---
+
+## Quickstart
+
+```bash
+git clone https://github.com/abskrj/velane.git && cd velane
 ```
 
-**Setup:** Go to **Integrations** in the admin portal, click **Configure** on any provider to enter your OAuth app credentials, then click **Connect** to complete the OAuth flow. No SDK installs, no credential management in snippet code.
+Uncomment the bootstrap block in `docker-compose.yml`:
 
-Supported categories include CRM, ticketing, project management, communication, payments, storage, marketing, analytics, developer tools, and more. Full provider list at [nango.dev/integrations](https://www.nango.dev/integrations).
+```yaml
+BOOTSTRAP_EMAIL: admin@example.com
+BOOTSTRAP_PASSWORD: changeme123
+BOOTSTRAP_TENANT: myorg
+```
+
+```bash
+docker compose up --build
+```
+
+Open the admin portal at **http://localhost:8092** and log in. That's it.
+
+| Service | URL |
+|---|---|
+| Admin portal | http://localhost:8092 |
+| API | http://localhost:8080 |
+| MCP server | http://localhost:8090 |
+
+---
+
+## What you get
+
+- **800+ OAuth integrations** — Salesforce, GitHub, Slack, HubSpot, Stripe, Notion, Linear, and more. Tokens are injected automatically; your snippet code never touches credentials
+- **Three environments** — `dev` → `staging` → `prod` with instant rollback to any prior version
+- **Canary traffic splitting** — route X% of prod traffic to a new version
+- **Sync, async, and streaming** — blocking, background with webhook callback, and `text/event-stream`
+- **Secrets** — AES-256-GCM encrypted key-value pairs injected as env vars at invocation time
+- **Egress policy** — per-tenant IP/CIDR and domain blocklist enforced inside the executor
+- **Observability** — per-invocation logs, metrics, and replay
+- **Embeddable dashboard** — white-label iframe viewer with short-lived embed tokens
+- **Git push-to-deploy** — push to `main` → staging, tag `v*` → prod
+- **Firecracker** — optional VM-boundary isolation via AWS Firecracker (requires KVM)
+- **MCP server** — connect Cursor or Claude Code directly to generate and deploy snippets
 
 ---
 
@@ -101,151 +118,7 @@ Supported categories include CRM, ticketing, project management, communication, 
 
 ---
 
-## Quickstart
-
-### Prerequisites
-
-- [Docker](https://docs.docker.com/get-docker/) + Docker Compose
-- Node.js 24 LTS (24.16.0 recommended) and npm (frontend dev only)
-- Go 1.26.3+ (CLI or control plane dev only)
-
-### 1. Clone and configure
-
-```bash
-git clone https://github.com/abskrj/velane.git
-cd velane
-```
-
-Open `docker-compose.yml` and uncomment the bootstrap vars to seed your first admin user:
-
-```yaml
-# services > control-plane > environment
-BOOTSTRAP_EMAIL: admin@example.com
-BOOTSTRAP_PASSWORD: changeme123
-BOOTSTRAP_TENANT: myorg
-```
-
-### 2. Start everything
-
-```bash
-docker compose up --build
-```
-
-All services start, database migrations run automatically, and the admin user + tenant are created on first boot. Once `control-plane` logs `http server listening`, you're ready.
-
-### 3. Open the UIs
-
-| Interface | URL | Description |
-|-----------|-----|-------------|
-| **Admin portal** | http://localhost:8092 | Snippet editor, integrations, team, branding, usage |
-| **Embed dashboard** | http://localhost:8091 | Read-only iframe snippet viewer |
-| API | http://localhost:8080 | REST API |
-| MCP server | http://localhost:8090 | Cursor / Claude Code integration |
-| MinIO console | http://localhost:9001 | Log storage (minioadmin / minioadmin) |
-
-Log into the admin portal at http://localhost:8092 with the credentials from the bootstrap step.
-
----
-
-## Writing your first snippet
-
-### Via the admin portal
-
-1. Open http://localhost:8092 and log in
-2. Go to **Snippets → New Snippet**
-3. Name it, pick a language (Bun or Python), write your code in the Monaco editor
-4. Click **Publish → dev**
-5. Use the **Test** panel to invoke it inline
-
-### Via the API
-
-```bash
-KEY=vl_xxxx   # your API key
-
-# Create a snippet
-SNIPPET=$(curl -s -X POST http://localhost:8080/v1/snippets \
-  -H "Authorization: Bearer $KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"name":"hello","language":"bun"}' | jq -r .id)
-
-# Push code as a new version
-VER=$(curl -s -X POST http://localhost:8080/v1/snippets/$SNIPPET/versions \
-  -H "Authorization: Bearer $KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"code":"export default async (req) => ({ hello: req.name })"}' | jq -r .version_number)
-
-# Publish to dev
-curl -s -X POST "http://localhost:8080/v1/snippets/$SNIPPET/versions/$VER/publish?env=dev" \
-  -H "Authorization: Bearer $KEY"
-
-# Invoke it
-curl -s -X POST http://localhost:8080/v1/invoke/$SNIPPET \
-  -H "Authorization: Bearer $KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"name":"world"}' | jq
-# → { "hello": "world" }
-```
-
-### Via the CLI
-
-```bash
-cd services/cli && go build -o velane .
-
-./velane login --key vl_xxxx --tenant myorg --api-url http://localhost:8080
-./velane snippets push handler.ts --publish dev
-./velane invoke <snippet-id> --input '{"name":"world"}'
-./velane invoke <snippet-id> --stream   # SSE streaming
-```
-
----
-
-## Connecting an integration
-
-1. In the admin portal, go to **Integrations**
-2. Find a provider (e.g. Salesforce) and click **Configure**
-3. The modal shows the **OAuth redirect URL** to register in your OAuth app settings — copy it
-4. Create an OAuth app in the provider's developer console and paste the client ID / secret back
-5. Click **Save**, then **Connect** to complete the OAuth flow
-6. In snippet code, use `integration('salesforce')` — tokens are injected automatically
-
-```typescript
-import { integration } from '@velane/integrations'
-
-export default async function handler(input: { caseId: string }) {
-  const sf = integration('salesforce')
-  return await sf.get(`/services/data/v60.0/sobjects/Case/${input.caseId}`)
-}
-```
-
----
-
-## Invocation modes
-
-```bash
-# Synchronous (default) — blocks until result
-curl -X POST http://localhost:8080/v1/invoke/$SNIPPET \
-  -H "Authorization: Bearer $KEY" -d '{"name":"world"}'
-
-# Async — returns 202 immediately, fires webhook on completion
-curl -X POST http://localhost:8080/v1/invoke/$SNIPPET \
-  -H "Authorization: Bearer $KEY" \
-  -H "X-Invoke-Mode: async" \
-  -d '{"name":"world","callback_url":"https://yourserver.com/webhook"}'
-
-# Streaming — text/event-stream
-curl -X POST http://localhost:8080/v1/invoke/$SNIPPET \
-  -H "Authorization: Bearer $KEY" \
-  -H "X-Invoke-Mode: stream" \
-  -d '{}'
-
-# Pinned version
-curl -X POST "http://localhost:8080/v1/invoke/$SNIPPET?version=v2" \
-  -H "Authorization: Bearer $KEY" -d '{}'
-```
-
----
-
-## MCP Integration (Cursor / Claude Code)
+## MCP (Cursor / Claude Code)
 
 Add to `.cursor/mcp.json` or `~/.claude/mcp.json`:
 
@@ -260,300 +133,40 @@ Add to `.cursor/mcp.json` or `~/.claude/mcp.json`:
 }
 ```
 
-Available tools: `list_snippets`, `get_snippet`, `create_snippet`, `update_draft`, `publish_snippet`, `invoke_snippet`, `get_logs`, `list_secrets`, `set_secret`, `get_metrics`, `list_connections`, `get_integration_docs`.
+Your AI assistant can now list, create, update, publish, and invoke snippets without leaving the editor.
 
 ---
 
-## Embeddable Dashboard
-
-Issue a short-lived embed token and drop it into any page:
+## CLI
 
 ```bash
-TOKEN=$(curl -s -X POST http://localhost:8080/v1/embed/tokens \
-  -H "Authorization: Bearer $KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"tenant_slug":"myorg","ttl_seconds":86400}' | jq -r .token)
-```
+cd services/cli && go build -o velane .
 
-```html
-<iframe
-  src="http://localhost:8091?token=et_xxxx"
-  width="100%"
-  height="700"
-  frameborder="0"
-/>
-```
-
-Theming (logo, accent colour, font) is configured in the admin portal under **Branding** and applied automatically.
-
----
-
-## Git Push-to-Deploy
-
-Connect a snippet to a GitHub repo:
-
-```bash
-curl -s -X POST http://localhost:8080/v1/snippets/$SNIPPET/git-integration \
-  -H "Authorization: Bearer $KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"provider":"github","repo_url":"https://github.com/you/repo"}' | jq
-# returns { "secret": "whsec_..." } — add as a GitHub webhook secret
-```
-
-Configure your GitHub webhook to point at `http://your-host:8080/v1/webhooks/git/$SNIPPET_ID`.
-
-| Push target | Deploys to |
-|-------------|-----------|
-| `main` / `master` | staging |
-| Any other branch | dev |
-| Tag `v*` | prod |
-
----
-
-## API Reference
-
-### Authentication
-
-| Token type | Header | Used for |
-|-----------|--------|---------|
-| API key | `Authorization: Bearer vl_xxxx` | All management + invocation |
-| JWT access token | `Authorization: Bearer <jwt>` | Admin portal sessions |
-| Embed token | `Authorization: Bearer et_xxxx` | Embed endpoints only |
-
-Tenant context is resolved server-side from your authenticated API key/session (and active org for session auth).
-
-### Endpoints
-
-```
-# Snippets
-POST   /v1/snippets
-GET    /v1/snippets
-GET    /v1/snippets/{id}
-DELETE /v1/snippets/{id}
-
-# Versions
-POST   /v1/snippets/{id}/versions
-GET    /v1/snippets/{id}/versions
-POST   /v1/snippets/{id}/versions/{n}/publish   ?env=dev|staging|prod
-
-# Invocation
-POST   /v1/invoke/{snippet}                      X-Invoke-Mode: sync|async|stream
-GET    /v1/invocations/{id}                      poll async result
-POST   /v1/invocations/{id}/replay
-
-# Canary
-POST   /v1/snippets/{id}/canary                  { version_id, percent }
-DELETE /v1/snippets/{id}/canary
-
-# Secrets
-POST   /v1/secrets
-GET    /v1/secrets
-DELETE /v1/secrets/{id}
-
-# Integrations (800+ OAuth providers)
-GET    /v1/integrations                          provider catalog
-GET    /v1/integrations/configured               configured providers for this tenant
-POST   /v1/integrations/configured               configure a provider (OAuth credentials)
-DELETE /v1/integrations/configured/{key}
-GET    /v1/integrations/{provider}/docs          endpoints + code example for a provider
-GET    /v1/connect/info                          OAuth redirect URL to register with providers
-GET    /v1/tenant/connections                    connected accounts
-POST   /v1/tenant/connections/session            open OAuth Connect UI
-POST   /v1/tenant/connections                    record a completed connection
-DELETE /v1/tenant/connections/{provider}
-
-# Observability
-GET    /v1/logs/snippets/{id}                    ?limit&env&status
-GET    /v1/metrics/snippets/{id}                 ?window=1h|24h|7d
-
-# Tenants
-POST   /v1/tenants
-GET    /v1/tenant/egress
-PUT    /v1/tenant/egress
-GET    /v1/tenant/branding
-PUT    /v1/tenant/branding
-GET    /v1/tenant/members
-POST   /v1/tenant/members/invite
-DELETE /v1/tenant/members/{userID}
-GET    /v1/tenant/usage                          ?window=24h|7d|30d
-GET    /v1/tenant/audit-log                      ?limit&action&before (admin scope)
-GET    /v1/tenant/api-keys
-POST   /v1/tenant/api-keys
-DELETE /v1/tenant/api-keys/{id}
-
-# Embed
-POST   /v1/embed/tokens
-GET    /v1/embed/bootstrap
-GET    /v1/embed/snippets
-GET    /v1/embed/snippets/{id}
-GET    /v1/embed/snippets/{id}/metrics
-GET    /v1/embed/snippets/{id}/logs
-
-# Auth
-POST   /v1/admin/auth/register
-POST   /v1/admin/auth/login
-POST   /v1/admin/auth/logout
-POST   /v1/admin/auth/refresh
-GET    /v1/admin/auth/me
-GET    /.well-known/jwks.json
+./velane login --key vl_xxxx --tenant myorg --api-url http://localhost:8080
+./velane snippets push handler.ts --publish dev
+./velane invoke <snippet-id> --input '{"caseId":"500xx"}'
+./velane invoke <snippet-id> --stream
 ```
 
 ---
 
-## Project Structure
+## Docs
 
-```
-velane/
-├── services/
-│   ├── control-plane/          # Go API server (chi, pgx, zap)
-│   │   ├── cmd/server/         # main.go, bootstrap.go
-│   │   └── internal/
-│   │       ├── api/            # router, handlers, middleware
-│   │       ├── auth/           # JWT + password auth providers
-│   │       ├── audit/          # append-only audit logger
-│   │       ├── config/         # env-based config
-│   │       ├── executor/       # Executor interface + remote/firecracker impls
-│   │       ├── models/         # domain types
-│   │       ├── nango/          # Nango API client (OAuth proxy)
-│   │       ├── observability/  # post-invocation pipeline
-│   │       ├── scheduler/      # sync/async/stream invocation
-│   │       ├── store/
-│   │       │   ├── postgres/   # all DB queries + migrations
-│   │       │   └── redis/      # job queue + warm pool
-│   │       ├── tenantprovider/ # shared vs namespaced executor routing
-│   │       └── worker/         # async job processor + webhook delivery
-│   ├── executor-runtime/
-│   │   ├── bun/                # Bun HTTP server (runner.ts)
-│   │   └── python/             # Python FastAPI server (runner.py)
-│   ├── mcp-server/             # MCP protocol server (HTTP/SSE + stdio)
-│   └── cli/                    # velane CLI (cobra)
-├── apps/
-│   ├── admin/                  # Admin portal — snippet editor + management (Vite + React)
-│   └── embed-dashboard/        # Embeddable iframe viewer (Vite + React)
-├── platform-libraries/         # Built-in Bun + Python libraries (auto-loaded)
-└── scripts/
-    └── load-test.js            # k6 load test for the invoke API
-```
-
----
-
-## Development
-
-### Running tests
-
-```bash
-# Control plane unit tests (no external services required)
-cd services/control-plane
-go test ./...
-
-# With integration tests (requires Postgres + Redis)
-TEST_DATABASE_URL=postgres://velane:velane@localhost:5432/velane \
-TEST_REDIS_URL=localhost:6379 \
-go test ./...
-
-# MCP server
-cd services/mcp-server && go test ./...
-```
-
-### Load testing
-
-```bash
-# Requires k6 (brew install k6)
-k6 run scripts/load-test.js
-
-# Higher load
-VUS=50 DURATION=60s k6 run scripts/load-test.js
-```
-
-### Running frontends locally
-
-```bash
-# Admin portal — http://localhost:5173
-cd apps/admin && npm install && npm run dev
-
-# Embed dashboard — http://localhost:5174
-cd apps/embed-dashboard && npm install && npm run dev
-```
-
-Both proxy `/api/*` to `http://localhost:8080` automatically.
-
-### Useful make targets
-
-```bash
-make up      # docker compose up --build -d
-make down    # docker compose down -v
-make logs    # tail control-plane logs
-make build   # compile control-plane locally
-make tidy    # go mod tidy
-```
-
----
-
-## Configuration
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `DATABASE_URL` | `postgres://velane:velane@localhost:5432/velane` | Postgres DSN |
-| `REDIS_URL` | `localhost:6379` | Redis address |
-| `BUN_EXECUTOR_URL` | `http://localhost:8081` | Bun executor URL |
-| `PYTHON_EXECUTOR_URL` | `http://localhost:8082` | Python executor URL |
-| `PORT` | `8080` | API listen port |
-| `WORKER_COUNT` | `5` | Async worker concurrency |
-| `ENCRYPTION_KEY` | *(ephemeral)* | 64-char hex AES-256 key for secret encryption |
-| `JWT_PRIVATE_KEY` | *(ephemeral)* | RS256 private key PEM |
-| `EXECUTOR_TYPE` | `process` | `process` or `firecracker` |
-| `S3_ENDPOINT` | *(AWS)* | S3-compatible endpoint (e.g. `http://minio:9000`) |
-| `S3_BUCKET` | `velane-logs` | Bucket for invocation logs |
-| `CLICKHOUSE_ADDR` | — | ClickHouse native address |
-| `REPLAY_ENABLED` | `false` | Store input payloads for invocation replay |
-| `BOOTSTRAP_EMAIL` | — | First-boot admin email (remove after first start) |
-| `BOOTSTRAP_PASSWORD` | — | First-boot admin password (remove after first start) |
-| `BOOTSTRAP_TENANT` | `default` | First-boot tenant slug |
-| `NANGO_SECRET_KEY` | — | Nango API secret key for OAuth proxy |
-| `NANGO_WEBHOOK_SECRET` | — | Signing secret for Nango webhook verification |
-| `NANGO_CONNECT_URL` | `http://localhost:3009` | Browser-accessible Nango Connect UI URL |
-| `NANGO_API_URL` | `http://localhost:3003` | Browser-accessible Nango API URL |
-
-> **Production:** Always set `ENCRYPTION_KEY` and `JWT_PRIVATE_KEY` to stable values. Ephemeral fallbacks mean secrets cannot be decrypted and all JWTs are invalidated on every restart.
-
----
-
-## Firecracker (VM-boundary isolation)
-
-For hardware-level isolation, Velane supports [AWS Firecracker](https://firecracker-microvm.github.io/) microVMs:
-
-```yaml
-EXECUTOR_TYPE: firecracker
-FIRECRACKER_BINARY: /usr/local/bin/firecracker
-FIRECRACKER_JAILER_BINARY: /usr/local/bin/jailer
-FIRECRACKER_BUN_ROOTFS: /images/bun-rootfs.ext4
-FIRECRACKER_PYTHON_ROOTFS: /images/python-rootfs.ext4
-FIRECRACKER_KERNEL_IMAGE: /images/vmlinux
-```
-
-Requires `/dev/kvm` — runs on bare metal servers, AWS metal instances (e.g. `c5.metal`), GCP bare metal, and Hetzner dedicated. Falls back gracefully with a clear error on non-KVM hosts.
-
----
-
-## Roadmap
-
-- [ ] OIDC / OAuth2 social login (Google, GitHub)
-- [ ] SAML for enterprise SSO
-- [x] Multiple connections per provider per tenant (e.g. two Salesforce orgs)
-- [ ] Real ClickHouse metrics writes (currently Postgres-backed stubs)
-- [ ] Real S3/MinIO log writes (interfaces wired, writes stubbed)
-- [ ] Firecracker rootfs image builder
-- [ ] Kubernetes Helm chart
-- [ ] Terraform modules (AWS / GCP)
-- [ ] OpenAPI spec generation from snippet code
+Full API reference, configuration, deployment guides (EKS, Docker, Firecracker), and integration setup at **[docs.velane.sh](https://docs.velane.sh)**.
 
 ---
 
 ## Contributing
 
-1. Fork the repo
-2. Create a branch: `git checkout -b feat/my-feature`
-3. Run tests: `cd services/control-plane && go test ./...`
-4. Open a pull request
+```bash
+cd services/control-plane && go test ./...   # Go tests
+cd apps/admin && npx tsc --noEmit            # Frontend type check
+```
 
-All Go changes must pass `go vet ./...` and `go test ./...`. Frontend changes should build without TypeScript errors (`tsc --noEmit`).
+Open an issue first for non-trivial changes. PRs should pass `go vet ./...` and `go test ./...`.
+
+---
+
+## License
+
+Free for open-source use under [AGPL-3.0](./LICENSE). Commercial use requires the [Velane Commercial License](./LICENSE-COMMERCIAL) — contact [abhi@velane.sh](mailto:abhi@velane.sh).

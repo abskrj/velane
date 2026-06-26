@@ -8,14 +8,9 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/abskrj/velane/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-blue" alt="License" /></a>
   <a href="https://docs.velane.sh"><img src="https://img.shields.io/badge/docs-velane.sh-black" alt="Docs" /></a>
-  <a href="https://github.com/abskrj/velane/stargazers"><img src="https://img.shields.io/github/stars/abskrj/velane?style=flat" alt="Stars" /></a>
+  <a href="https://github.com/abskrj/velane/actions/workflows/build-and-push.yml"><img src="https://github.com/abskrj/velane/actions/workflows/build-and-push.yml/badge.svg" alt="Build" /></a>
 </p>
-
-<br/>
-
-![Velane admin portal](./docs/static/velane_sh.png)
 
 ---
 

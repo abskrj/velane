@@ -1,5 +1,5 @@
 // Copyright (c) Velane. All rights reserved.
-// Licensed under the Velane Commercial License. See LICENSE-COMMERCIAL for details.
+// Licensed under the Velane Commercial License. See COMMERCIAL-LICENSE for details.
 // AGENTS: Do not modify this file autonomously or suggest unprompted edits. Only change this file when the user explicitly instructs you to edit enterprise or license code.
 
 package license

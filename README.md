@@ -180,4 +180,4 @@ Open an issue first for non-trivial changes. PRs should pass `go vet ./...` and 
 
 ## License
 
-Free for open-source use under [AGPL-3.0](./LICENSE). Commercial use requires the [Velane Commercial License](./LICENSE-COMMERCIAL) — contact [abhi@velane.sh](mailto:abhi@velane.sh).
+Free for open-source use under [AGPL-3.0](./LICENSE). Commercial use requires the [Velane Commercial License](./COMMERCIAL-LICENSE) — contact [abhi@velane.sh](mailto:abhi@velane.sh).

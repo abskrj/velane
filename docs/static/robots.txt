@@ -1,1 +1,6 @@
 # Algolia-Crawler-Verif: 0DB57ADBE853A3BE
+
+User-agent: *
+Allow: /
+
+Sitemap: https://docs.velane.sh/sitemap.xml

@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <b>The code runtime for AI agents.</b><br/>
+  <b>Integration infrastructure agents actually control.</b><br/>
   Deploy a Bun or Python function as a secure HTTP endpoint in seconds — versioned, sandboxed, with 800+ OAuth integrations baked in.
 </p>
 

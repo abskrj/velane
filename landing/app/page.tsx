@@ -1039,8 +1039,7 @@ export default function Home() {
               Velane
             </div>
             <p className="text-sm text-zinc-500">
-              The agent-first code runtime. Build, connect, and ship APIs on
-              autopilot.
+              Integration infrastructure agents actually control.
             </p>
           </div>
 

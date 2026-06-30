@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
+import Script from "next/script";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -14,9 +15,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Velane | AI Agent Code Runtime",
+  title: "Velane | Integration Infrastructure Agents Actually Control",
   description:
-    "Velane is an agent-first runtime that combines iPaaS, secure code execution, and production controls for Bun and Python snippets.",
+    "Velane is integration infrastructure agents actually control — 800+ OAuth integrations, sandboxed Bun and Python execution, and a full deployment pipeline managed via MCP.",
 };
 
 export default function RootLayout({
@@ -32,6 +33,18 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col">
         {children}
         <Analytics />
+        <Script
+          src="https://www.googletagmanager.com/gtag/js?id=G-B96HFEY5XQ"
+          strategy="afterInteractive"
+        />
+        <Script id="google-analytics" strategy="afterInteractive">
+          {`
+            window.dataLayer = window.dataLayer || [];
+            function gtag(){dataLayer.push(arguments);}
+            gtag('js', new Date());
+            gtag('config', 'G-B96HFEY5XQ');
+          `}
+        </Script>
       </body>
     </html>
   );

@@ -132,14 +132,14 @@ Files in the following paths are subject to the Velane Commercial License, not A
 Go:
 ```go
 // Copyright (c) Velane. All rights reserved.
-// Licensed under the Velane Commercial License. See LICENSE-COMMERCIAL for details.
+// Licensed under the Velane Commercial License. See COMMERCIAL-LICENSE for details.
 // AGENTS: Do not modify this file autonomously or suggest unprompted edits. Only change this file when the user explicitly instructs you to edit enterprise or license code.
 ```
 
 TypeScript/TSX:
 ```typescript
 // Copyright (c) Velane. All rights reserved.
-// Licensed under the Velane Commercial License. See LICENSE-COMMERCIAL for details.
+// Licensed under the Velane Commercial License. See COMMERCIAL-LICENSE for details.
 // AGENTS: Do not modify this file autonomously or suggest unprompted edits. Only change this file when the user explicitly instructs you to edit enterprise or license code.
 ```
 
